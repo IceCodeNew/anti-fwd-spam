@@ -48,41 +48,20 @@ convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = [
-  # pytest is built on `assert`; flagging every assertion adds no signal.
+  # Acceptance scenarios use assertions, fixed values and dummy credentials.
   "S101",
-  # Test functions, helpers, and fixtures do not need docstrings.
+  "S106",
+  "PLR2004",
+  # BDD descriptions belong on test methods, not every fake/helper.
   "D100",
   "D101",
   "D102",
   "D103",
   "D107",
-  # Test functions and helpers do not benefit from annotating every parameter,
-  # return type, *args, or **kwargs — fixture types are defined by pytest.
+  # The stalled transport accepts the same arguments as Workers fetch.
   "ANN001",
-  "ANN002",
-  "ANN003",
-  "ANN202",
-  "ANN204",
-  "ANN401",
-  # Test doubles, mock classes, and transport lambdas must match the interface
-  # being faked even when they do not use every parameter.
   "ARG001",
-  "ARG002",
-  "ARG005",
-  # Tests assertions and fixtures routinely compare against literal values.
-  "PLR2004",
-  # CJK punctuation in test data is intentional.
-  "RUF001",
-  # Tests need to access private members to verify internal state.
-  "SLF001",
-  # Function-level imports are used for cache clearing, mock isolation, and
-  # lazy side-effect control.
-  "PLC0415",
-  # Test helpers and doubles accept simple positional booleans.
-  "FBT001",
-  "FBT002",
-  "FBT003",
-  # The dependency-free suite intentionally uses stdlib unittest.
+  # Native Python checks use stdlib unittest.
   "PT009",
   "PT027",
 ]

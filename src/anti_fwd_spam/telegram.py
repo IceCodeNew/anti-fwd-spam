@@ -57,10 +57,11 @@ class Fetch(Protocol):
 class TelegramError(Exception):
     """A Bot API failure, without credentials or remote response contents."""
 
-    def __init__(self, *, retryable: bool) -> None:
-        """Expose only whether Telegram should redeliver the update."""
+    def __init__(self, *, retryable: bool, rejected: bool = False) -> None:
+        """Distinguish explicit rejection from an uncertain remote outcome."""
         super().__init__("Telegram request failed")
         self.retryable = retryable
+        self.rejected = rejected
 
 
 async def _request(
@@ -68,7 +69,6 @@ async def _request(
     token: str,
     method: str,
     parameters: dict[str, object],
-    deadline_seconds: float,
 ) -> tuple[int, bytes]:
     async def send_and_read() -> tuple[int, bytes]:
         response = await fetcher(
@@ -80,7 +80,7 @@ async def _request(
         return response.status, await response.bytes()
 
     try:
-        status, body = await asyncio.wait_for(send_and_read(), timeout=deadline_seconds)
+        status, body = await asyncio.wait_for(send_and_read(), timeout=TELEGRAM_TIMEOUT_SECONDS)
     except Exception as error:
         # Workers fetch can raise a JavaScript exception rather than OSError.
         raise TelegramError(retryable=True) from error
@@ -91,19 +91,26 @@ async def _request(
 
 async def call_method(fetcher: Fetch, token: str, method: str, parameters: dict[str, object]) -> object:
     """Call a Bot API method and validate its success envelope."""
-    status, body = await _request(fetcher, token, method, parameters, TELEGRAM_TIMEOUT_SECONDS)
+    status, body = await _request(fetcher, token, method, parameters)
     payload = _decode_response(body)
+    code = payload.get("error_code") if payload else None
+    rejected = (
+        status < HTTPStatus.INTERNAL_SERVER_ERROR
+        and payload is not None
+        and payload.get("ok") is False
+        and type(code) is int
+        and HTTPStatus.BAD_REQUEST <= code < HTTPStatus.INTERNAL_SERVER_ERROR
+    )
     if status == HTTPStatus.TOO_MANY_REQUESTS or status >= HTTPStatus.INTERNAL_SERVER_ERROR:
-        raise TelegramError(retryable=True)
+        raise TelegramError(retryable=True, rejected=rejected)
     if payload is None or not isinstance(payload.get("ok"), bool):
         raise TelegramError(retryable=True)
     if HTTPStatus.OK <= status < HTTPStatus.MULTIPLE_CHOICES and payload["ok"] is True and "result" in payload:
         return payload["result"]
-    code = payload.get("error_code")
     retryable = (
         type(code) is not int or code == HTTPStatus.TOO_MANY_REQUESTS or code >= HTTPStatus.INTERNAL_SERVER_ERROR
     )
-    raise TelegramError(retryable=retryable)
+    raise TelegramError(retryable=retryable, rejected=rejected)
 
 
 async def delete_message(
@@ -111,8 +118,6 @@ async def delete_message(
     token: str,
     chat_id: int,
     message_id: int,
-    *,
-    deadline_seconds: float = TELEGRAM_TIMEOUT_SECONDS,
 ) -> DeleteOutcome:
     """Await one bounded deleteMessage call and classify its outcome."""
     try:
@@ -121,7 +126,6 @@ async def delete_message(
             token,
             "deleteMessage",
             {"chat_id": chat_id, "message_id": message_id},
-            deadline_seconds,
         )
     except TelegramError:
         return DeleteOutcome.RETRYABLE_FAILURE

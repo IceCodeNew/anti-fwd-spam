@@ -219,3 +219,5 @@ __marimo__/
 
 # Ampcode
 .amp/
+.wrangler/
+python_modules/

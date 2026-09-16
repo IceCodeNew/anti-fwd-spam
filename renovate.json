@@ -25,8 +25,12 @@
     },
     {
       "matchDatasources": ["pypi"],
-      "matchRegistryUrls": ["https://pypi.flatt.tech/simple"],
+      "registryUrls": ["https://pypi.flatt.tech/simple/"],
       "minimumReleaseAge": null
+    },
+    {
+      "matchDatasources": ["npm"],
+      "registryUrls": ["https://npm.flatt.tech/"]
     }
   ],
   "automergeType": "branch",

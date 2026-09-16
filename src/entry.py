@@ -4,15 +4,13 @@ from __future__ import annotations
 
 import hmac
 import logging
-import time
 from http import HTTPMethod
 from urllib.parse import urlsplit
 
 from workers import Request, Response, WorkerEntrypoint, fetch
 
-from anti_fwd_spam.app import AppResponse, handle_update
 from anti_fwd_spam.evidence import ReportStore
-from anti_fwd_spam.moderation import Moderator
+from anti_fwd_spam.moderation import AppResponse, Moderator
 from anti_fwd_spam.policy import DEFAULT_BLACKLIST_BOT_IDS, Config, ConfigError
 
 MAX_UPDATE_BYTES = 1_048_576
@@ -69,17 +67,12 @@ class Default(WorkerEntrypoint):
         except ValueError:
             return _response(AppResponse(413, "update too large"))
 
-        app_response = await handle_update(
-            content_type=request.headers.get("content-type"),
-            body=body,
-            config=config,
-            process_update=Moderator(
-                config,
-                fetch,
-                ReportStore(getattr(self.env, "REPORTS", None)),
-                bot_username,
-            ).process,
-        )
+        app_response = await Moderator(
+            config,
+            fetch,
+            ReportStore(getattr(self.env, "REPORTS", None)),
+            bot_username,
+        ).process(request.headers.get("content-type"), body)
         if any(marker in app_response.body for marker in ("failed", "rejected", "retry")):
             logging.getLogger(__name__).warning("Moderation outcome: %s", app_response.body)
         return _response(app_response)
@@ -93,9 +86,9 @@ class Default(WorkerEntrypoint):
             raise ConfigError(message)
         return Config.from_values(bot_token=bot_token, webhook_secret=webhook_secret, bot_ids=bot_ids)
 
-    async def scheduled(self, _controller: object, _env: object, _ctx: object) -> None:
+    async def scheduled(self, controller: object, _env: object, _ctx: object) -> None:
         """Remove report evidence after its three-day retention period."""
-        await ReportStore(self.env.REPORTS).expire(int(time.time()))
+        await ReportStore(self.env.REPORTS).expire(int(getattr(controller, "scheduledTime") // 1000))  # noqa: B009
 
 
 async def _read_bounded_body(request: Request, maximum: int) -> bytes:

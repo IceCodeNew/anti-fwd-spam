@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from http import HTTPStatus
 from typing import Any
 
@@ -121,6 +122,16 @@ class EvidenceError(Exception):
     """Evidence was not durably saved; moderation must not proceed."""
 
 
+@dataclass(frozen=True, slots=True)
+class StoredReport:
+    """Track target moderation independently of final report cleanup."""
+
+    status: int | None
+    body: str
+    moderation_result: str | None
+    ban_claimed: bool
+
+
 class ReportStore:
     """Use the Worker D1 binding without exposing report contents in logs."""
 
@@ -135,8 +146,8 @@ class ReportStore:
         raw_json: str,
         target: dict[str, object],
         now: int,
-    ) -> tuple[int, str] | None:
-        """Insert immutable evidence once, returning any completed response."""
+    ) -> StoredReport:
+        """Insert immutable evidence once and read durable processing progress."""
         try:
             await (
                 self.database.prepare(
@@ -155,16 +166,60 @@ class ReportStore:
             )
             row = (
                 await self.database.prepare(
-                    "SELECT response_status, response_body FROM reports WHERE bot_id = ? AND update_id = ?",
+                    "SELECT response_status, response_body, moderation_result, ban_claimed "
+                    "FROM reports WHERE bot_id = ? AND update_id = ?",
                 )
                 .bind(bot_id, update_id)
                 .first()
             )
-            if row is not None and row.response_status is not None:
-                return int(row.response_status), str(row.response_body)
+            return StoredReport(
+                int(row.response_status) if row.response_status is not None else None,
+                str(row.response_body or ""),
+                str(row.moderation_result) if row.moderation_result is not None else None,
+                bool(row.ban_claimed),
+            )
         except Exception as error:
             raise EvidenceError from error
-        return None
+
+    async def claim_ban(self, bot_id: int, update_id: int) -> bool:
+        """Allow only one delivery to issue a destructive Telegram request."""
+        try:
+            row = await (
+                self.database.prepare(
+                    "UPDATE reports SET ban_claimed = 1 WHERE bot_id = ? AND update_id = ? "
+                    "AND ban_claimed = 0 AND moderation_result IS NULL AND response_status IS NULL RETURNING bot_id",
+                )
+                .bind(bot_id, update_id)
+                .first()
+            )
+        except Exception as error:
+            raise EvidenceError from error
+        return row is not None
+
+    async def release_ban(self, bot_id: int, update_id: int) -> None:
+        """Permit retries only when Telegram explicitly rejected the ban."""
+        try:
+            await (
+                self.database.prepare("UPDATE reports SET ban_claimed = 0 WHERE bot_id = ? AND update_id = ?")
+                .bind(bot_id, update_id)
+                .run()
+            )
+        except Exception as error:
+            raise EvidenceError from error
+
+    async def remember_moderation(self, bot_id: int, update_id: int, body: str) -> None:
+        """Checkpoint target removal before attempting report-message cleanup."""
+        try:
+            await (
+                self.database.prepare(
+                    "UPDATE reports SET moderation_result = ? "
+                    "WHERE bot_id = ? AND update_id = ? AND moderation_result IS NULL",
+                )
+                .bind(body, bot_id, update_id)
+                .run()
+            )
+        except Exception as error:
+            raise EvidenceError from error
 
     async def finish(self, bot_id: int, update_id: int, status: int, body: str) -> None:
         """Record an outcome without overwriting a concurrent completion."""

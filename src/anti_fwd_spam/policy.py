@@ -85,8 +85,8 @@ def _message_matches(message: dict[str, object], config: Config) -> bool:
     return _bot_id(origin.get("sender_user"), require_bot=False) in config.bot_ids
 
 
-def extract_deletion_target(update: object, config: Config) -> tuple[int, int] | None:
-    """Return the destination chat and message IDs for a matching update."""
+def matches_update(update: object, config: Config) -> bool:
+    """Validate consumed fields and match explicit bot provenance in groups."""
     if not isinstance(update, dict):
         message = "update must be an object"
         raise TypeError(message)
@@ -97,7 +97,7 @@ def extract_deletion_target(update: object, config: Config) -> tuple[int, int] |
         message = "update must contain at most one supported message"
         raise ValueError(message)
     if not has_message and not has_edited_message:
-        return None
+        return False
 
     raw_message = update.get("message" if has_message else "edited_message")
     if not isinstance(raw_message, dict):
@@ -112,13 +112,11 @@ def extract_deletion_target(update: object, config: Config) -> tuple[int, int] |
         message = "message.chat.type is invalid"
         raise ValueError(message)
     if chat_type not in {"group", "supergroup"}:
-        return None
+        return False
 
-    chat_id = _telegram_id(chat.get("id"), allow_negative=True)
-    message_id = _telegram_id(raw_message.get("message_id"), allow_negative=False)
-    if not _message_matches(raw_message, config):
-        return None
-    return chat_id, message_id
+    _telegram_id(chat.get("id"), allow_negative=True)
+    _telegram_id(raw_message.get("message_id"), allow_negative=False)
+    return _message_matches(raw_message, config)
 
 
 def _required_string(name: str, value: object, *, maximum: int) -> str:

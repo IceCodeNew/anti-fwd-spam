@@ -1,6 +1,13 @@
 {
   "name": "anti-fwd-spam-worker-tools",
   "private": true,
+  "scripts": {
+    "test": "npm run test:unit && npm run test:e2e",
+    "test:unit": "PYTHONPATH=src uv run python -m unittest discover -s tests -v",
+    "pretest:e2e": "rm -rf .wrangler/test-build && uv run pywrangler deploy --dry-run --outdir .wrangler/test-build",
+    "test:e2e": "node --test tests/worker.test.mjs",
+    "test:contract": "node --test tests/telegram.contract.mjs"
+  },
   "devDependencies": {
     "wrangler": "4.132.0"
   }

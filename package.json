@@ -1,0 +1,7 @@
+{
+  "name": "anti-fwd-spam-worker-tools",
+  "private": true,
+  "devDependencies": {
+    "wrangler": "4.132.0"
+  }
+}

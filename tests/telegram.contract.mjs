@@ -24,7 +24,8 @@ test('user checks API compatibility: Given live Bot API documentation, When requ
     for (const [field, value] of Object.entries(params)) {
       const spec = fields.get(field);
       assert.ok(spec, `${method}.${field} is not in the Bot API`);
-      const valid = spec.type.includes('Integer') ? Number.isSafeInteger(value)
+      const valid = spec.type === 'Array of Integer' ? Array.isArray(value) && value.every(Number.isSafeInteger)
+        : spec.type.includes('Integer') ? Number.isSafeInteger(value)
         : spec.type === 'Boolean' ? typeof value === 'boolean' : typeof value === 'object';
       assert.ok(valid, `${method}.${field} expects ${spec.type}`);
     }
@@ -58,5 +59,15 @@ test('user checks API compatibility: Given live Bot API documentation, When requ
   assert.deepEqual(await call('deleteMessage', { chat_id: chat.id, message_id: 80 }), { ok: true, result: true });
   assert.equal(telegram.has(80), false);
   assert.equal((await call('getChatMember', target)).result.status, 'kicked');
+  assert.match(text(section('deleteMessages')), /1-100/);
+  assert.match(text(section('deleteMessages')), /See deleteMessage for limitations/);
+  assert.match(text(section('deleteMessage')), /less than 48 hours ago/);
+  const now = Math.floor(Date.now() / 1000);
+  telegram.send({ ...message(90), date: now - 60 });
+  assert.deepEqual(await call('deleteMessages', { chat_id: chat.id, message_ids: [90, 91] }), { ok: true, result: true });
+  assert.equal(telegram.has(90), false);
+  telegram.send({ ...message(92), date: now - 48 * 3600 });
+  assert.equal((await call('deleteMessages', { chat_id: chat.id, message_ids: [92] })).ok, false);
+  assert.equal(telegram.has(92), true);
   assert.deepEqual(telegram.violations, []);
 });

@@ -87,9 +87,11 @@ Check that both `ok` and `result` are `true` in the response. For later rule or 
 1. Long-press or right-click the target message and choose **Reply**.
 2. Type `@`, select your moderation bot from Telegram's suggestions, and send the reply.
 
-Reports from ordinary members only save evidence; both messages remain in the group. An owner or administrator's report permanently bans a non-admin sender in a supergroup, preventing comments and rejoining until an administrator unbans them. The bot separately deletes the reported message and requests deletion of the sender's history through Telegram's ban API. History cleanup is not independently confirmed; check for remaining messages and delete them manually if needed. Check the reply target before reporting: unbanning does not restore deleted messages.
+Reports from ordinary members only save evidence; both messages remain in the group. An owner or administrator's report permanently bans a non-admin sender in a supergroup, preventing comments and rejoining until an administrator unbans them. The bot deletes the reported message and clears that sender's indexed messages in the same group, sent before the report and less than 48 hours ago. It processes up to 100 indexed messages per delivery and continues on retries. Check the reply target before reporting: unbanning does not restore deleted messages.
 
-The bot removes the administrator's report only after Telegram confirms that the target was deleted or is already absent. If target deletion is rejected, the report stays visible and the log says `deletion rejected; banned` when the ban succeeded. Delete the remaining message manually. Anonymous administrators can report while sending as the group itself. Reports sent as a linked channel or another chat are ignored.
+Cleanup covers messages the bot received while indexing was active. The bot cannot search older history or recover missed updates. It also requests history revocation through Telegram's ban API, but cannot verify cleanup outside its index. Check for remaining messages and delete them manually if needed.
+
+The bot removes the administrator's report after confirming target deletion and finishing eligible history cleanup. If target deletion is rejected, the report stays visible and the log includes `deletion rejected; banned` when the ban succeeded; eligible recent history is still processed. `history cleanup rejected` means Telegram rejected a batch. Check the remaining messages manually. Anonymous administrators can report while sending as the group itself. Reports sent as a linked channel or another chat are ignored.
 
 After a saved ban confirmation, retries after a temporary deletion failure continue deletion without banning again. If logs show `ban confirmation failed`, the bot could not confirm the result and will not repeat the ban for that report. Check the sender's membership; if moderation is still needed, send a new report or ban them in Telegram's member settings. The bot leaves the unconfirmed report visible for this check.
 
@@ -101,7 +103,7 @@ Automatic filtering requires Telegram's explicit inline-bot or forwarded-bot pro
 
 In a test supergroup or channel discussion group, use a non-admin account to send a normal message followed by an inline message from a blacklisted source bot. Check that only the inline message disappears, the account cannot send more messages, and its earlier message remains.
 
-Remove the account's restriction in the group's member settings, then send another test message or sticker. Report it first from an ordinary member account and check that it remains. Report it from an administrator account and check that the target and report disappear, the sender cannot comment through the linked channel, and they cannot rejoin through an invite link. Check separately whether Telegram removed their earlier messages. Other users' messages should remain.
+Remove the account's restriction in the group's member settings, then send several messages and a sticker while the bot is running. Report the sticker first from an ordinary member account and check that the messages remain. Report it from an administrator account and check that the target, earlier indexed messages and report disappear, the sender cannot comment through the linked channel, and they cannot rejoin through an invite link. Other users' messages and messages in other groups should remain.
 
 Repeat the administrator report with **Remain Anonymous** enabled and send as the group itself. Also test a commenter who has not joined the discussion group. Check target deletion and both commenting and rejoining restrictions.
 
@@ -121,12 +123,14 @@ Check that `result.url` matches the deployment URL plus `/webhook`. Query again 
 - For `401`, save the webhook secret again and register the webhook with the same value.
 - For `404`, check that the URL ends in `/webhook`.
 - For deletion, mute, or ban failures, check the bot's administrator permissions and whether the target is an administrator or anonymous sender. `report cleanup rejected` means report deletion was rejected; read the same log entry for the target's moderation outcome. Telegram retries `report cleanup pending` responses.
-- For report storage failures, check the `REPORTS` binding, database migrations, and D1 usage in the Cloudflare dashboard.
+- For report storage or message-index failures, check the `REPORTS` binding, database migrations, and D1 usage in the Cloudflare dashboard. `history cleanup pending retry` means more batches remain or a temporary error interrupted cleanup; the bot keeps the report visible until processing finishes.
 
 `pending_update_count: 0` only means there is no backlog. Verify message and membership changes in the test group. Run `unset BOT_TOKEN` when finished.
 
-## View report evidence
+## View stored data
 
 Open the `reports` table in the `anti-fwd-spam-reports` D1 database in the Cloudflare dashboard. `raw_update` contains Telegram's complete report JSON, including the replied-to message. `classification` contains content-type and media-field classifications. Keep member information private when viewing or exporting records.
 
 Reports are retained for 3 days. The bot does not download images or other media. Scheduled cleanup removes expired records; service failures or exhausted quotas can delay deletion. Cloudflare backups have separate retention rules; see [D1 Time Travel](https://developers.cloudflare.com/d1/reference/time-travel/).
+
+The `recent_messages` table stores only bot, group, sender and message IDs plus the original sending time for observed user messages in supergroups. It stores no message text or media. Edits do not renew retention. Identifiers stop qualifying for deletion after 48 hours; scheduled cleanup removes expired rows in bounded batches and can lag behind a backlog. Successful batch deletion removes identifiers sooner. Indexing adds D1 writes for received messages, so monitor database usage even when nobody reports spam.

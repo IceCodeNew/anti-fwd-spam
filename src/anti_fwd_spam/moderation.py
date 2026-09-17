@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from http import HTTPStatus
 from typing import TYPE_CHECKING, Any
 
-from .evidence import EvidenceError, ReportStore
+from .evidence import DELETE_BATCH_SIZE, MESSAGE_WINDOW_SECONDS, EvidenceError, ReportStore
 from .policy import matches_update
 from .telegram import DeleteOutcome, Fetch, TelegramError, call_method, delete_message
 
@@ -102,6 +102,7 @@ class AppResponse:
     status: int
     body: str
     target_removed: bool = False
+    sender_banned: bool = False
 
 
 class Moderator:
@@ -145,6 +146,24 @@ class Moderator:
             return AppResponse(200, "ignored")
         if automatic:
             return await self.moderate(message)
+        identifier, sent_at, now = user_id(message), message.get("date"), int(time.time())
+        if (
+            message["chat"]["type"] == "supergroup"
+            and identifier is not None
+            and type(sent_at) is int
+            and now - MESSAGE_WINDOW_SECONDS < sent_at <= now
+            and not {"supergroup_chat_created", "channel_chat_created", "forum_topic_created"}.intersection(message)
+        ):
+            try:
+                await self.store.remember_message(
+                    int(self.config.bot_token.split(":", 1)[0]),
+                    message["chat"]["id"],
+                    message["message_id"],
+                    identifier,
+                    sent_at,
+                )
+            except EvidenceError:
+                return AppResponse(503, "message index unavailable; retry pending")
         target = message.get("reply_to_message")
         if not isinstance(target, dict) or (user_id(message) is None and not sent_as_chat_itself(message)):
             return AppResponse(200, "ignored")
@@ -191,7 +210,12 @@ class Moderator:
             # Older releases also inferred target deletion from a successful ban.
             response = await self.remove_banned_target(chat_id, target["message_id"])
         elif saved.moderation_result is not None:
-            response = AppResponse(200, saved.moderation_result, target_removed=True)
+            response = AppResponse(
+                200,
+                saved.moderation_result,
+                target_removed=True,
+                sender_banned=saved.moderation_result == "already absent; banned",
+            )
         elif saved.ban_claimed:
             # A lost response may hide a successful ban followed by an administrator's unban.
             return AppResponse(200, "ban confirmation failed; check membership and submit a new report if needed")
@@ -211,6 +235,15 @@ class Moderator:
                 response = AppResponse(503 if error.retryable else 200, "report recorded; authority check failed")
         if response.target_removed:
             await self.store.remember_moderation(bot_id, update_id, response.body)
+        identifier = user_id(target)
+        if response.status == HTTPStatus.OK and identifier is not None and response.sender_banned:
+            response = await self.remove_recent_history(
+                bot_id,
+                chat_id,
+                identifier,
+                message["message_id"],
+                response,
+            )
         response = await self.remove_report_message(chat_id, message, response)
         await self.store.finish(bot_id, update_id, response.status, response.body)
         return response
@@ -219,11 +252,47 @@ class Moderator:
         """Confirm target removal separately from a ban or history-revocation request."""
         outcome = await delete_message(self.fetcher, self.config.bot_token, chat_id, message_id)
         if outcome is DeleteOutcome.PERMANENT_FAILURE:
-            return AppResponse(200, "deletion rejected; banned")
+            return AppResponse(200, "deletion rejected; banned", sender_banned=True)
         if outcome is DeleteOutcome.RETRYABLE_FAILURE:
-            return AppResponse(503, "deletion pending retry; banned")
+            return AppResponse(503, "deletion pending retry; banned", sender_banned=True)
         deletion = "deleted" if outcome is DeleteOutcome.DELETED else "already absent"
-        return AppResponse(200, f"{deletion}; banned", target_removed=True)
+        return AppResponse(200, f"{deletion}; banned", target_removed=True, sender_banned=True)
+
+    async def remove_recent_history(
+        self,
+        bot_id: int,
+        chat_id: int,
+        sender_id: int,
+        before_message_id: int,
+        response: AppResponse,
+    ) -> AppResponse:
+        """Resume one bounded batch without extending cleanup beyond the original report."""
+        message_ids = await self.store.recent_messages(
+            bot_id,
+            chat_id,
+            sender_id,
+            before_message_id,
+            int(time.time()),
+        )
+        if not message_ids:
+            return response
+        batch = message_ids[:DELETE_BATCH_SIZE]
+        try:
+            if await self.member_status(chat_id, sender_id) in ADMIN_STATUSES:
+                return AppResponse(200, response.body + "; history cleanup skipped", response.target_removed)
+            result = await self.call("deleteMessages", {"chat_id": chat_id, "message_ids": batch})
+            if result is not True:
+                return AppResponse(503, response.body + "; history cleanup pending retry")
+        except TelegramError as error:
+            return AppResponse(
+                503 if error.retryable else 200,
+                response.body
+                + ("; history cleanup pending retry" if error.retryable else "; history cleanup rejected"),
+            )
+        await self.store.forget_messages(bot_id, chat_id, batch)
+        if len(message_ids) > DELETE_BATCH_SIZE:
+            return AppResponse(503, response.body + "; history cleanup pending retry")
+        return AppResponse(200, response.body + "; recent history cleared", response.target_removed)
 
     async def remove_report_message(
         self,

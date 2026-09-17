@@ -55,13 +55,30 @@ export class Telegram {
       assert.equal(request.headers.get('content-type'), 'application/json');
       assert.ok(url.pathname.startsWith(`/bot${token}/`));
       const method = url.pathname.slice(`/bot${token}/`.length);
-      assert.ok(['deleteMessage', 'getChatMember', 'restrictChatMember', 'banChatMember'].includes(method));
+      assert.ok(['deleteMessage', 'deleteMessages', 'getChatMember', 'restrictChatMember', 'banChatMember'].includes(method));
       const params = await request.json();
       assert.ok(Number.isSafeInteger(params.chat_id));
-      assert.ok(Number.isSafeInteger(params.message_id ?? params.user_id));
+      if (method === 'deleteMessages') {
+        assert.ok(Array.isArray(params.message_ids));
+        assert.ok(params.message_ids.length >= 1 && params.message_ids.length <= 100);
+        assert.ok(params.message_ids.every(Number.isSafeInteger));
+      } else {
+        assert.ok(Number.isSafeInteger(params.message_id ?? params.user_id));
+      }
       const fault = this.faults.get(`${method}:${params.message_id ?? params.user_id}`) ?? this.faults.get(method);
       if (fault) return fault();
 
+      if (method === 'deleteMessages') {
+        const tooOld = params.message_ids.some(id => {
+          const msg = this.messages.get(`${params.chat_id}:${id}`);
+          return msg && (msg.date <= Math.floor(Date.now() / 1000) - 48 * 3600 || msg.forum_topic_created);
+        });
+        if (tooOld) return Response.json({
+          ok: false, error_code: 400, description: "Bad Request: message can't be deleted",
+        }, { status: 400 });
+        for (const id of params.message_ids) this.messages.delete(`${params.chat_id}:${id}`);
+        return Response.json({ ok: true, result: true });
+      }
       if (method === 'deleteMessage') {
         const found = this.messages.delete(`${params.chat_id}:${params.message_id}`);
         return found ? Response.json({ ok: true, result: true }) : Response.json({

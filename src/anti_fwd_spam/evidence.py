@@ -8,6 +8,8 @@ from http import HTTPStatus
 from typing import Any
 
 RETENTION_SECONDS = 3 * 24 * 60 * 60
+MESSAGE_WINDOW_SECONDS = 48 * 60 * 60
+DELETE_BATCH_SIZE = 100
 CONTENT_FIELDS = frozenset(
     [
         "text",
@@ -139,6 +141,65 @@ class ReportStore:
         """Bind the request's D1 database."""
         self.database = database
 
+    async def remember_message(
+        self,
+        bot_id: int,
+        chat_id: int,
+        message_id: int,
+        sender_id: int,
+        sent_at: int,
+    ) -> None:
+        """Index identifiers only; edits and redelivery must not refresh message age."""
+        try:
+            await (
+                self.database.prepare(
+                    "INSERT INTO recent_messages (bot_id, chat_id, message_id, sender_id, sent_at) "
+                    "VALUES (?, ?, ?, ?, ?) ON CONFLICT(bot_id, chat_id, message_id) DO NOTHING",
+                )
+                .bind(bot_id, chat_id, message_id, sender_id, sent_at)
+                .run()
+            )
+        except Exception as error:
+            raise EvidenceError from error
+
+    async def recent_messages(
+        self,
+        bot_id: int,
+        chat_id: int,
+        sender_id: int,
+        before_message_id: int,
+        now: int,
+    ) -> list[int]:
+        """Select a recent pre-report batch plus one row to detect remaining work."""
+        try:
+            result = await (
+                self.database.prepare(
+                    "SELECT message_id FROM recent_messages WHERE bot_id = ? AND chat_id = ? AND sender_id = ? "
+                    "AND message_id < ? AND sent_at > ? ORDER BY message_id LIMIT ?",
+                )
+                .bind(
+                    bot_id, chat_id, sender_id, before_message_id, now - MESSAGE_WINDOW_SECONDS, DELETE_BATCH_SIZE + 1
+                )
+                .all()
+            )
+            return [int(row.message_id) for row in result.results]
+        except Exception as error:
+            raise EvidenceError from error
+
+    async def forget_messages(self, bot_id: int, chat_id: int, message_ids: list[int]) -> None:
+        """Remove only the batch Telegram confirmed, leaving failed batches retryable."""
+        try:
+            await (
+                self.database.prepare(
+                    "DELETE FROM recent_messages WHERE bot_id = ? AND chat_id = ? "
+                    "AND message_id IN (SELECT value FROM json_each(?))",
+                )
+                .bind(bot_id, chat_id, json.dumps(message_ids))
+                .run()
+            )
+        except Exception as error:
+            raise EvidenceError from error
+
     async def save(
         self,
         bot_id: int,
@@ -237,7 +298,15 @@ class ReportStore:
             raise EvidenceError from error
 
     async def expire(self, now: int) -> None:
-        """Delete expired evidence in bounded batches; the expiry column is indexed."""
+        """Delete expired evidence and message identifiers in bounded indexed batches."""
+        await (
+            self.database.prepare(
+                "DELETE FROM recent_messages WHERE rowid IN "
+                "(SELECT rowid FROM recent_messages WHERE sent_at <= ? ORDER BY sent_at LIMIT 1000)",
+            )
+            .bind(now - MESSAGE_WINDOW_SECONDS)
+            .run()
+        )
         await (
             self.database.prepare(
                 "DELETE FROM reports WHERE rowid IN "

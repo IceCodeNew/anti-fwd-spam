@@ -33,6 +33,7 @@ after(async () => { await runtime?.dispose(); });
 beforeEach(async () => {
   telegram.reset();
   await database.prepare('DELETE FROM reports').run();
+  await database.prepare('DELETE FROM recent_messages').run();
 });
 afterEach(() => { assert.deepEqual(telegram.violations, []); });
 
@@ -46,9 +47,39 @@ async function evidence() {
   return (await database.prepare('SELECT * FROM reports ORDER BY update_id').all()).results;
 }
 
+test('user clears recent history: Given observed messages from different senders and groups, When an administrator reports spam, Then only the reported sender\'s recent messages in that group disappear', async () => {
+  const now = Math.floor(Date.now() / 1000);
+  const recent = { ...message(70), date: now - 3600 };
+  const old = { ...message(71), date: now - 49 * 3600 };
+  const other = { ...message(72, 11), date: now - 3600 };
+  const elsewhere = { ...message(73), date: now - 3600, chat: { ...chat, id: -10099 } };
+  for (const msg of [recent, old, other, elsewhere]) {
+    telegram.send(msg);
+    assert.equal((await dispatch({ message: msg })).status, 200);
+  }
+  // This message was indexed earlier and has since aged beyond the API window.
+  await database.prepare('INSERT INTO recent_messages (bot_id, chat_id, message_id, sender_id, sent_at) VALUES (?, ?, ?, ?, ?)')
+    .bind(123, chat.id, old.message_id, 22, old.date).run();
+  const update = report({ ...message(), date: now });
+  telegram.send(update.message.reply_to_message);
+  telegram.send(update.message);
+
+  assert.equal((await dispatch(update)).status, 200);
+
+  assert.equal(telegram.has(70), false);
+  assert.equal(telegram.has(71), true);
+  assert.equal(telegram.has(72), true);
+  assert.equal(telegram.messages.has('-10099:73'), true);
+  assert.equal(telegram.has(81), false);
+  assert.equal(telegram.has(82), false);
+  assert.equal(telegram.canJoin(22), false);
+});
+
 test('user keeps history: Given an old message, When a blacklisted inline message arrives, Then only the new message disappears and the sender is permanently muted', async () => {
   const spam = { ...message(), via_bot: { id: 273234066, is_bot: true, first_name: 'Source' } };
-  telegram.send(message(80));
+  const history = { ...message(80), date: Math.floor(Date.now() / 1000) - 3600 };
+  telegram.send(history);
+  assert.equal((await dispatch({ message: history })).status, 200);
   telegram.send(spam);
 
   const response = await dispatch({ update_id: 70, message: spam });
@@ -91,6 +122,9 @@ test('user bans reported spam: Given a non-member commenter and a sticker report
 test('user reports old spam: Given a target Telegram refuses to delete, When an administrator reports it, Then the sender is banned but the report remains and the outcome does not claim deletion', async () => {
   const target = { ...message(), date: 1 };
   const update = report(target);
+  const recent = { ...message(70), date: Math.floor(Date.now() / 1000) - 60 };
+  telegram.send(recent);
+  await dispatch({ message: recent });
   telegram.send(target);
   telegram.send(update.message);
   telegram.send(message(80));
@@ -99,11 +133,153 @@ test('user reports old spam: Given a target Telegram refuses to delete, When an 
   const response = await dispatch(update);
 
   assert.equal(response.status, 200);
-  assert.equal(await response.text(), 'deletion rejected; banned');
+  assert.match(await response.text(), /^deletion rejected; banned/);
+  assert.equal(telegram.has(70), false);
   assert.equal(telegram.has(81), true);
   assert.equal(telegram.has(82), true);
   assert.equal(telegram.has(80), true);
   assert.equal(telegram.canJoin(22), false);
+});
+
+test('user resumes bulk cleanup: Given more than one batch and a temporary failure, When an administrator unbans the sender before redelivery, Then older observed messages disappear but new messages and membership survive', async () => {
+  const now = Math.floor(Date.now() / 1000);
+  for (let id = 100; id < 202; id++) {
+    const msg = { ...message(id), date: now - 60 };
+    telegram.send(msg);
+    assert.equal((await dispatch({ message: msg })).status, 200);
+  }
+  const update = report({ ...message(300), date: now });
+  update.message.message_id = 400;
+  telegram.send(update.message.reply_to_message);
+  telegram.send(update.message);
+  assert.equal((await dispatch(update)).status, 503);
+  for (let id = 100; id < 200; id++) assert.equal(telegram.has(id), false);
+  assert.equal(telegram.has(200), true);
+  assert.equal(telegram.has(201), true);
+  assert.equal(telegram.has(400), true);
+  telegram.members.set(22, { status: 'left' });
+  const fresh = { ...message(401), date: now };
+  telegram.send(fresh);
+  assert.equal((await dispatch({ message: fresh })).status, 200);
+  telegram.faults.set('deleteMessages', () => Response.json({ ok: false, error_code: 429 }, { status: 429 }));
+  assert.equal((await dispatch(update)).status, 503);
+  assert.equal(telegram.has(200), true);
+  assert.equal(telegram.has(400), true);
+  telegram.faults.clear();
+
+  assert.equal((await dispatch(update)).status, 200);
+
+  assert.equal(telegram.has(200), false);
+  assert.equal(telegram.has(201), false);
+  assert.equal(telegram.has(400), false);
+  assert.equal(telegram.has(401), true);
+  assert.equal(telegram.canJoin(22), true);
+  assert.equal(telegram.canSend(22), true);
+  assert.equal((await dispatch(update)).status, 200);
+  assert.equal(telegram.has(401), true);
+});
+
+test('user completes a full batch: Given exactly 100 indexed messages, When an administrator reports, Then cleanup finishes without another delivery', async () => {
+  for (let id = 100; id < 200; id++) {
+    const msg = { ...message(id), date: Math.floor(Date.now() / 1000) - 60 };
+    telegram.send(msg);
+    await dispatch({ message: msg });
+  }
+  const update = report(message(300));
+  update.message.message_id = 400;
+  telegram.send(update.message);
+
+  assert.equal((await dispatch(update)).status, 200);
+
+  for (let id = 100; id < 200; id++) assert.equal(telegram.has(id), false);
+  assert.equal(telegram.has(400), false);
+});
+
+test('user retains failed cleanup evidence: Given a permanent bulk deletion rejection, When an administrator reports, Then the target disappears but the report and remaining history stay visible', async () => {
+  const history = { ...message(70), date: Math.floor(Date.now() / 1000) - 60 };
+  telegram.send(history);
+  await dispatch({ message: history });
+  const update = report();
+  telegram.send(update.message.reply_to_message);
+  telegram.send(update.message);
+  telegram.faults.set('deleteMessages', () => Response.json({ ok: false, error_code: 403 }, { status: 403 }));
+
+  const response = await dispatch(update);
+
+  assert.equal(response.status, 200);
+  assert.match(await response.text(), /history cleanup rejected/);
+  assert.equal(telegram.has(70), true);
+  assert.equal(telegram.has(81), false);
+  assert.equal(telegram.has(82), true);
+  assert.equal(telegram.canJoin(22), false);
+});
+
+test('user preserves message age: Given duplicate updates, edits and messages outside the deletion window, When an administrator reports, Then only eligible user messages disappear without storing their text', async () => {
+  const now = Math.floor(Date.now() / 1000);
+  const recent = { ...message(70), date: now - 47 * 3600, text: 'private text' };
+  const old = { ...message(71), date: now - 48 * 3600, edit_date: now };
+  const sentAsChat = { ...message(72), date: now, sender_chat: chat };
+  const topic = { ...message(73), date: now, forum_topic_created: { name: 'topic', icon_color: 1 } };
+  for (const msg of [recent, old, sentAsChat, topic]) {
+    telegram.send(msg);
+    await dispatch({ message: msg });
+    await dispatch({ edited_message: { ...msg, edit_date: now } });
+  }
+  const rows = (await database.prepare('SELECT * FROM recent_messages').all()).results;
+  assert.deepEqual(rows, [{ bot_id: 123, chat_id: chat.id, message_id: 70, sender_id: 22, sent_at: recent.date }]);
+
+  assert.equal((await dispatch(report())).status, 200);
+
+  assert.equal(telegram.has(70), false);
+  for (const id of [71, 72, 73]) assert.equal(telegram.has(id), true);
+});
+
+test('user expires message identifiers: Given an indexed message and a controlled scheduled clock, When its original age reaches 48 hours, Then its identifier expires without deleting report evidence', async () => {
+  const recent = { ...message(70), date: Math.floor(Date.now() / 1000) - 60 };
+  await dispatch({ message: recent });
+  telegram.members.set(11, { status: 'member' });
+  await dispatch(report());
+  const worker = await runtime.getWorker();
+  const count = async () => (await database.prepare('SELECT count(*) AS count FROM recent_messages WHERE message_id = 70').first()).count;
+  await worker.scheduled({ scheduledTime: new Date((recent.date + 48 * 3600 - 1) * 1000), cron: '* * * * *' });
+  assert.equal(await count(), 1);
+  await worker.scheduled({ scheduledTime: new Date((recent.date + 48 * 3600) * 1000), cron: '* * * * *' });
+  assert.equal(await count(), 0);
+  assert.equal((await evidence()).length, 1);
+});
+
+test('user recovers indexing: Given unavailable index storage, When delivery resumes after storage recovers, Then recent history is retained for cleanup while automatic filtering remains available', async () => {
+  const recent = { ...message(70), date: Math.floor(Date.now() / 1000) - 60 };
+  telegram.send(recent);
+  await database.prepare('ALTER TABLE recent_messages RENAME TO unavailable_messages').run();
+  try {
+    assert.equal((await dispatch({ message: recent })).status, 503);
+    assert.equal(telegram.has(70), true);
+    const spam = { ...message(71), via_bot: { id: 273234066, is_bot: true } };
+    telegram.send(spam);
+    assert.equal((await dispatch({ message: spam })).status, 200);
+    assert.equal(telegram.has(71), false);
+  } finally {
+    await database.prepare('ALTER TABLE unavailable_messages RENAME TO recent_messages').run();
+  }
+  assert.equal((await dispatch({ message: recent })).status, 200);
+  assert.equal((await dispatch(report())).status, 200);
+  assert.equal(telegram.has(70), false);
+});
+
+test('user protects promoted senders: Given paused history cleanup, When the sender becomes an administrator before redelivery, Then their remaining messages and privileges survive', async () => {
+  const history = { ...message(70), date: Math.floor(Date.now() / 1000) - 60 };
+  telegram.send(history);
+  await dispatch({ message: history });
+  telegram.faults.set('deleteMessages', () => Response.json({ ok: false, error_code: 429 }, { status: 429 }));
+  assert.equal((await dispatch(report())).status, 503);
+  telegram.faults.clear();
+  telegram.members.set(22, { status: 'administrator' });
+
+  assert.equal((await dispatch(report())).status, 200);
+
+  assert.equal(telegram.has(70), true);
+  assert.deepEqual(telegram.members.get(22), { status: 'administrator' });
 });
 
 test('user records a report: Given a regular member and rich media, When they mention the bot in a reply, Then all evidence survives without deleting or restricting anyone', async () => {
@@ -116,12 +292,16 @@ test('user records a report: Given a regular member and rich media, When they me
     future_field: { nested: [false, null, { 未知: 42 }] }, via_bot: { id: 777, is_bot: true, first_name: 'Source' },
   };
   const update = report(target);
+  const history = { ...message(70), date: Math.floor(Date.now() / 1000) - 60 };
+  telegram.send(history);
+  await dispatch({ message: history });
   telegram.send(target);
   telegram.send(update.message);
 
   const response = await dispatch(update);
 
   assert.equal(await response.text(), 'report recorded');
+  assert.equal(telegram.has(70), true);
   assert.equal(telegram.has(81), true);
   assert.equal(telegram.has(82), true);
   assert.equal(telegram.canSend(22), true);
@@ -159,7 +339,9 @@ for (const status of ['creator', 'administrator']) {
         ? { update_id: 71, message: { ...target, via_bot: { id: 273234066, is_bot: true } } }
         : report(target);
       telegram.send(target);
-      telegram.send(message(80));
+      const history = { ...message(80), date: Math.floor(Date.now() / 1000) - 60 };
+      telegram.send(history);
+      await dispatch({ message: history });
       if (!automatic) telegram.send(update.message);
 
       const response = await dispatch(update);

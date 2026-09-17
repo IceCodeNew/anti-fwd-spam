@@ -87,11 +87,11 @@ Check that both `ok` and `result` are `true` in the response. For later rule or 
 1. Long-press or right-click the target message and choose **Reply**.
 2. Type `@`, select your moderation bot from Telegram's suggestions, and send the reply.
 
-Reports from ordinary members only save evidence; both messages remain in the group. An owner or administrator's report permanently bans a non-admin sender in a supergroup. Telegram removes that user, blocks rejoining until an administrator unbans them, and deletes their entire message history in that group. Check the reply target before reporting: unbanning does not restore deleted messages.
+Reports from ordinary members only save evidence; both messages remain in the group. An owner or administrator's report permanently bans a non-admin sender in a supergroup, preventing comments and rejoining until an administrator unbans them. The bot separately deletes the reported message and requests deletion of the sender's history through Telegram's ban API. History cleanup is not independently confirmed; check for remaining messages and delete them manually if needed. Check the reply target before reporting: unbanning does not restore deleted messages.
 
-The bot also cleans up processed administrator reports. Check the target's membership status rather than relying only on the report disappearing. Anonymous administrators can report while sending as the group itself. Reports sent as a linked channel or another chat are ignored.
+The bot removes the administrator's report only after Telegram confirms that the target was deleted or is already absent. If target deletion is rejected, the report stays visible and the log says `deletion rejected; banned` when the ban succeeded. Delete the remaining message manually. Anonymous administrators can report while sending as the group itself. Reports sent as a linked channel or another chat are ignored.
 
-After confirmed moderation, retries only clean up the report message. If logs show `ban confirmation failed`, the bot could not confirm the result and will not repeat the ban for that report. Check the sender's membership; if moderation is still needed, send a new report or ban them in Telegram's member settings. The bot leaves the unconfirmed report visible for this check.
+After a saved ban confirmation, retries after a temporary deletion failure continue deletion without banning again. If logs show `ban confirmation failed`, the bot could not confirm the result and will not repeat the ban for that report. Check the sender's membership; if moderation is still needed, send a new report or ban them in Telegram's member settings. The bot leaves the unconfirmed report visible for this check.
 
 Automatic matches delete only the matching message and permanently mute the sender, preserving other history and group membership. For target owners, administrators, or senders acting as a group or channel, the bot only deletes the target message; it does not mute or ban them.
 
@@ -101,9 +101,9 @@ Automatic filtering requires Telegram's explicit inline-bot or forwarded-bot pro
 
 In a test supergroup or channel discussion group, use a non-admin account to send a normal message followed by an inline message from a blacklisted source bot. Check that only the inline message disappears, the account cannot send more messages, and its earlier message remains.
 
-Remove the account's restriction in the group's member settings, then send another test message. Report it first from an ordinary member account and check that it remains. Report it from an administrator account and check that the sender is removed, cannot rejoin through an invite link, and has no remaining message history in the test group. Other users' messages should remain.
+Remove the account's restriction in the group's member settings, then send another test message or sticker. Report it first from an ordinary member account and check that it remains. Report it from an administrator account and check that the target and report disappear, the sender cannot comment through the linked channel, and they cannot rejoin through an invite link. Check separately whether Telegram removed their earlier messages. Other users' messages should remain.
 
-Repeat the administrator report with **Remain Anonymous** enabled and send as the group itself. Check that banning and history deletion still work.
+Repeat the administrator report with **Remain Anonymous** enabled and send as the group itself. Also test a commenter who has not joined the discussion group. Check target deletion and both commenting and rejoining restrictions.
 
 To check administrator protection, report a message from an administrator. Only that message should disappear; the administrator should still be able to send messages and retain their other history. Remove test restrictions or bans after each round. Use disposable accounts and groups for tests that delete history.
 

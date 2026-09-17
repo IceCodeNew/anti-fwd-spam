@@ -184,7 +184,13 @@ class Moderator:
         saved = await self.store.save(bot_id, update_id, raw_json, target, int(time.time()))
         if saved.status is not None:
             return AppResponse(saved.status, saved.body)
-        if saved.moderation_result is not None:
+        if saved.moderation_result in {"banned", "deleted; banned"} or (
+            saved.moderation_result == "target removed before upgrade"
+            and (saved.body.startswith("deleted; banned") or saved.body == "deletion pending retry; banned")
+        ):
+            # Older releases also inferred target deletion from a successful ban.
+            response = await self.remove_banned_target(chat_id, target["message_id"])
+        elif saved.moderation_result is not None:
             response = AppResponse(200, saved.moderation_result, target_removed=True)
         elif saved.ban_claimed:
             # A lost response may hide a successful ban followed by an administrator's unban.
@@ -203,11 +209,21 @@ class Moderator:
                 )
             except TelegramError as error:
                 response = AppResponse(503 if error.retryable else 200, "report recorded; authority check failed")
-            if response.target_removed:
-                await self.store.remember_moderation(bot_id, update_id, response.body)
+        if response.target_removed:
+            await self.store.remember_moderation(bot_id, update_id, response.body)
         response = await self.remove_report_message(chat_id, message, response)
         await self.store.finish(bot_id, update_id, response.status, response.body)
         return response
+
+    async def remove_banned_target(self, chat_id: int, message_id: int) -> AppResponse:
+        """Confirm target removal separately from a ban or history-revocation request."""
+        outcome = await delete_message(self.fetcher, self.config.bot_token, chat_id, message_id)
+        if outcome is DeleteOutcome.PERMANENT_FAILURE:
+            return AppResponse(200, "deletion rejected; banned")
+        if outcome is DeleteOutcome.RETRYABLE_FAILURE:
+            return AppResponse(503, "deletion pending retry; banned")
+        deletion = "deleted" if outcome is DeleteOutcome.DELETED else "already absent"
+        return AppResponse(200, f"{deletion}; banned", target_removed=True)
 
     async def remove_report_message(
         self,
@@ -234,7 +250,7 @@ class Moderator:
         *,
         report_key: tuple[int, int] | None = None,
     ) -> AppResponse:
-        """Preserve history for automatic matches; revoke it for authorized reports."""
+        """Preserve history for automatic matches; request revocation for reports."""
         ban = report_key is not None
         action = "ban" if ban else "mute"
         chat_id = message["chat"]["id"]
@@ -247,16 +263,14 @@ class Moderator:
                     claimed = await self.store.claim_ban(*report_key)
                     if not claimed:
                         return AppResponse(503, "ban already attempted; retry pending")
-                    # A ban revokes history without deleteMessage's 48-hour limit.
                     result = await self.call(
                         "banChatMember",
                         {"chat_id": chat_id, "user_id": identifier, "until_date": 0, "revoke_messages": True},
                     )
-                    return (
-                        AppResponse(200, "deleted; banned", target_removed=True)
-                        if result is True
-                        else AppResponse(503, "ban failed")
-                    )
+                    if result is not True:
+                        return AppResponse(503, "ban failed")
+                    await self.store.remember_moderation(*report_key, "banned")
+                    return await self.remove_banned_target(chat_id, message["message_id"])
             except TelegramError as error:
                 if claimed and error.rejected:
                     await self.store.release_ban(*report_key)

@@ -82,12 +82,8 @@ export class Telegram {
       if (method === 'banChatMember') {
         assert.equal(typeof params.revoke_messages, 'boolean');
         this.members.set(params.user_id, { status: 'kicked', until_date: 0 });
-        // In supergroups Telegram revokes history even if revoke_messages is false.
-        for (const [key, msg] of this.messages) {
-          if (msg.chat.id === params.chat_id && !msg.sender_chat && msg.from.id === params.user_id) {
-            this.messages.delete(key);
-          }
-        }
+        // Model the observed failure: a successful ban can leave messages visible.
+        // Target deletion must succeed independently of Telegram's history cleanup.
       } else {
         assert.equal(params.use_independent_chat_permissions, true);
         assert.equal(typeof params.permissions, 'object');

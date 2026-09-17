@@ -64,8 +64,11 @@ test('user keeps history: Given an old message, When a blacklisted inline messag
   assert.deepEqual(await evidence(), []);
 });
 
-test('user bans reported spam: Given an administrator reply mentioning the bot, When the report arrives, Then the sender cannot rejoin and their history is removed', async () => {
-  const update = report();
+test('user bans reported spam: Given a non-member commenter and a sticker report, When an administrator mentions the bot, Then the sticker and report disappear and the sender cannot comment or rejoin', async () => {
+  telegram.members.set(22, { status: 'left' });
+  const target = { ...message(), sticker: { file_id: 'sticker', file_unique_id: 'unique-sticker' } };
+  delete target.text;
+  const update = report(target);
   telegram.send(message(80));
   telegram.send(update.message.reply_to_message);
   telegram.send(update.message);
@@ -76,7 +79,7 @@ test('user bans reported spam: Given an administrator reply mentioning the bot, 
   assert.equal(response.status, 200);
   assert.equal(telegram.canJoin(22), false);
   assert.equal(telegram.canSend(22), false);
-  assert.equal(telegram.has(80), false);
+  assert.equal(telegram.has(80), true);
   assert.equal(telegram.has(81), false);
   assert.equal(telegram.has(82), false);
   assert.equal(telegram.has(79), true);
@@ -85,17 +88,21 @@ test('user bans reported spam: Given an administrator reply mentioning the bot, 
   assert.equal(row.expires_at - row.received_at, 259200);
 });
 
-test('user reports old spam: Given a target older than the individual deletion limit, When an administrator reports it, Then the ban still removes its history and prevents rejoining', async () => {
+test('user reports old spam: Given a target Telegram refuses to delete, When an administrator reports it, Then the sender is banned but the report remains and the outcome does not claim deletion', async () => {
   const target = { ...message(), date: 1 };
+  const update = report(target);
   telegram.send(target);
+  telegram.send(update.message);
   telegram.send(message(80));
   telegram.faults.set('deleteMessage:81', () => Response.json({ ok: false, error_code: 400, description: "Bad Request: message can't be deleted" }, { status: 400 }));
 
-  const response = await dispatch(report(target));
+  const response = await dispatch(update);
 
   assert.equal(response.status, 200);
-  assert.equal(telegram.has(81), false);
-  assert.equal(telegram.has(80), false);
+  assert.equal(await response.text(), 'deletion rejected; banned');
+  assert.equal(telegram.has(81), true);
+  assert.equal(telegram.has(82), true);
+  assert.equal(telegram.has(80), true);
   assert.equal(telegram.canJoin(22), false);
 });
 
@@ -243,6 +250,31 @@ test('user keeps an unban during cleanup: Given a successful ban and temporary r
   assert.equal(telegram.has(82), false);
 });
 
+test('user resumes target deletion: Given a confirmed ban and temporary target-deletion failure, When redelivery follows an administrator unban, Then only the target and report disappear without banning again', async () => {
+  const update = report();
+  telegram.send(update.message.reply_to_message);
+  telegram.send(update.message);
+  telegram.faults.set('deleteMessage:81', () => Response.json({ ok: false, error_code: 429 }, { status: 429 }));
+
+  const pending = await dispatch(update);
+  assert.equal(pending.status, 503);
+  assert.equal(await pending.text(), 'deletion pending retry; banned');
+  assert.equal(telegram.canJoin(22), false);
+  assert.equal(telegram.has(81), true);
+  assert.equal(telegram.has(82), true);
+  telegram.members.set(22, { status: 'member' });
+  telegram.send(message(90));
+  telegram.faults.clear();
+
+  assert.equal((await dispatch(update)).status, 200);
+
+  assert.equal(telegram.canJoin(22), true);
+  assert.equal(telegram.canSend(22), true);
+  assert.equal(telegram.has(90), true);
+  assert.equal(telegram.has(81), false);
+  assert.equal(telegram.has(82), false);
+});
+
 test('user retains evidence during failure: Given unavailable storage, When a report arrives, Then nothing is moderated while automatic filtering still works', async () => {
   await database.prepare('ALTER TABLE reports RENAME TO unavailable_reports').run();
   try {
@@ -280,7 +312,7 @@ for (const stage of ['getChatMember:11', 'getChatMember:22', 'banChatMember', 'd
     assert.equal((await dispatch(update)).status, 200);
 
     assert.equal(telegram.canJoin(22), false);
-    assert.equal(telegram.has(80), false);
+    assert.equal(telegram.has(80), true);
     assert.equal(telegram.has(81), false);
     assert.equal(telegram.has(82), false);
     const [finished] = await evidence();
@@ -606,15 +638,27 @@ test('user upgrades pending reports: Given legacy cleanup and failed-ban records
   }
   await database.batch(statements);
   telegram.send(message(90));
+  telegram.send(message());
+  telegram.send(report().message);
+  telegram.faults.set('deleteMessage:81', () => Response.json({ ok: false, error_code: 429 }, { status: 429 }));
+  for (let attempt = 0; attempt < 2; attempt++) {
+    assert.equal((await dispatch({ ...report(), update_id: 0 })).status, 503);
+    assert.equal(telegram.has(81), true);
+    assert.equal(telegram.has(82), true);
+    assert.equal(telegram.canJoin(22), true);
+  }
+  telegram.faults.clear();
   for (const update_id of [0, 1, 2]) {
     assert.equal((await dispatch({ ...report(), update_id })).status, 200);
     assert.equal(telegram.canJoin(22), true);
     assert.equal(telegram.has(90), true);
+    assert.equal(telegram.has(81), false);
+    assert.equal(telegram.has(82), false);
   }
   telegram.send(message());
   assert.equal((await dispatch({ ...report(), update_id: 3 })).status, 200);
   assert.equal(telegram.canJoin(22), false);
-  assert.equal(telegram.has(90), false);
+  assert.equal(telegram.has(90), true);
   for (const row of await evidence()) {
     assert.deepEqual(JSON.parse(row.raw_update), { ...report(), update_id: row.update_id });
     assert.equal(row.expires_at, 259300);

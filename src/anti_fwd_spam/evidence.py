@@ -208,12 +208,13 @@ class ReportStore:
             raise EvidenceError from error
 
     async def remember_moderation(self, bot_id: int, update_id: int, body: str) -> None:
-        """Checkpoint target removal before attempting report-message cleanup."""
+        """Save 'banned' as incomplete progress or a confirmed target-removal result."""
         try:
             await (
                 self.database.prepare(
                     "UPDATE reports SET moderation_result = ? "
-                    "WHERE bot_id = ? AND update_id = ? AND moderation_result IS NULL",
+                    "WHERE bot_id = ? AND update_id = ? "
+                    "AND (moderation_result IS NULL OR moderation_result = 'banned')",
                 )
                 .bind(body, bot_id, update_id)
                 .run()

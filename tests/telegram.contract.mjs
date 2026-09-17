@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { chat, message, Telegram, token } from './telegram-fake.mjs';
 
 // Documentation compatibility, not a live moderation test. No real bot token is used.
-test('user checks fake assumptions: Given live Bot API documentation, When documented requests run against the fake, Then the modeled outcomes match the documented expectations', async () => {
+test('user checks API compatibility: Given live Bot API documentation, When requests run against the fake, Then parameters and membership outcomes match the documented contract', async () => {
   const response = await fetch('https://core.telegram.org/bots/api', { signal: AbortSignal.timeout(20_000) });
   assert.equal(response.status, 200);
   const html = await response.text();
@@ -51,8 +51,11 @@ test('user checks fake assumptions: Given live Bot API documentation, When docum
   assert.equal(telegram.canSend(22), false);
   assert.equal(telegram.canJoin(22), true);
   assert.equal(telegram.has(80), true);
-  assert.deepEqual(await call('banChatMember', { ...target, until_date: 0, revoke_messages: false }), { ok: true, result: true });
+  assert.deepEqual(await call('banChatMember', { ...target, until_date: 0, revoke_messages: true }), { ok: true, result: true });
   assert.equal(telegram.canJoin(22), false);
+  assert.equal(telegram.canSend(22), false);
+  // History cleanup is intentionally not simulated; docs cannot verify its live result.
+  assert.deepEqual(await call('deleteMessage', { chat_id: chat.id, message_id: 80 }), { ok: true, result: true });
   assert.equal(telegram.has(80), false);
   assert.equal((await call('getChatMember', target)).result.status, 'kicked');
   assert.deepEqual(telegram.violations, []);

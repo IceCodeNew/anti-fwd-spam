@@ -131,6 +131,7 @@ class Moderator:
             raise TelegramError(retryable=True)
         return result["status"]
 
+    # Boundary failures return distinct HTTP outcomes without nesting the moderation routes.
     async def process(self, content_type: str | None, body: bytes) -> AppResponse:  # noqa: PLR0911
         """Parse an authenticated update and apply its moderation policy."""
         if content_type is None or content_type.partition(";")[0].strip().lower() != "application/json":
@@ -144,35 +145,107 @@ class Moderator:
         message = update.get("message", update.get("edited_message"))
         if not isinstance(message, dict) or message["chat"]["type"] not in {"group", "supergroup"}:
             return AppResponse(200, "ignored")
+        account_response = await self.check_account_blacklist(update, message, raw_json)
+        if account_response is not None:
+            return account_response
         if automatic:
             return await self.moderate(message)
-        identifier, sent_at, now = user_id(message), message.get("date"), int(time.time())
-        if (
-            message["chat"]["type"] == "supergroup"
-            and identifier is not None
-            and type(sent_at) is int
-            and now - MESSAGE_WINDOW_SECONDS < sent_at <= now
-            and not {"supergroup_chat_created", "channel_chat_created", "forum_topic_created"}.intersection(message)
-        ):
-            try:
-                await self.store.remember_message(
-                    int(self.config.bot_token.split(":", 1)[0]),
-                    message["chat"]["id"],
-                    message["message_id"],
-                    identifier,
-                    sent_at,
-                )
-            except EvidenceError:
-                return AppResponse(503, "message index unavailable; retry pending")
+        try:
+            await self.index_message(message)
+        except EvidenceError:
+            return AppResponse(503, "message index unavailable; retry pending")
         target = message.get("reply_to_message")
-        if not isinstance(target, dict) or (user_id(message) is None and not sent_as_chat_itself(message)):
-            return AppResponse(200, "ignored")
-        if not mentions_bot(message, self.bot_username):
+        if (
+            not isinstance(target, dict)
+            or (user_id(message) is None and not sent_as_chat_itself(message))
+            or not mentions_bot(message, self.bot_username)
+        ):
             return AppResponse(200, "ignored")
         try:
             return await self.report(update, message, target, raw_json)
         except EvidenceError:
             return AppResponse(503, "report storage unavailable; retry pending")
+
+    async def index_message(self, message: dict[str, object]) -> None:
+        """Index only eligible user messages, sharing the same cutoff for both moderation paths."""
+        identifier, sent_at, now = user_id(message), message.get("date"), int(time.time())
+        chat, message_id = message.get("chat"), message.get("message_id")
+        if (
+            isinstance(chat, dict)
+            and chat.get("type") == "supergroup"
+            and type(chat.get("id")) is int
+            and type(message_id) is int
+            and identifier is not None
+            and type(sent_at) is int
+            and now - MESSAGE_WINDOW_SECONDS < sent_at <= now
+            and not {"supergroup_chat_created", "channel_chat_created", "forum_topic_created"}.intersection(message)
+        ):
+            await self.store.remember_message(
+                int(self.config.bot_token.split(":", 1)[0]),
+                chat["id"],
+                message_id,
+                identifier,
+                sent_at,
+            )
+
+    async def check_account_blacklist(
+        self,
+        update: dict[str, object],
+        message: dict[str, object],
+        raw_json: str,
+    ) -> AppResponse | None:
+        """Ban confirmed accounts and delete indexed messages without single-message fallbacks."""
+        identifier = user_id(message)
+        chat = message.get("chat")
+        if (
+            "message" not in update
+            or identifier is None
+            or not isinstance(chat, dict)
+            or chat.get("type") != "supergroup"
+        ):
+            return None
+        try:
+            bot_id = int(self.config.bot_token.split(":", 1)[0])
+            if await self.store.is_blacklisted(bot_id, identifier):
+                return await self.moderate_account(update, message, raw_json, bot_id, identifier)
+        except EvidenceError:
+            return AppResponse(503, "account moderation storage unavailable; retry pending")
+        return None
+
+    async def moderate_account(
+        self,
+        update: dict[str, object],
+        message: dict[str, object],
+        raw_json: str,
+        bot_id: int,
+        identifier: int,
+    ) -> AppResponse:
+        """Resume a message-triggered ban and its bounded indexed cleanup."""
+        chat, message_id, update_id = message.get("chat"), message.get("message_id"), update.get("update_id")
+        if (
+            not isinstance(chat, dict)
+            or type(chat.get("id")) is not int
+            or type(message_id) is not int
+            or type(update_id) is not int
+            or update_id < 0
+        ):
+            return AppResponse(400, "invalid account update")
+        await self.index_message(message)
+        saved = await self.store.save(bot_id, update_id, raw_json, message, int(time.time()))
+        if saved.status is not None:
+            return AppResponse(saved.status, saved.body)
+        if saved.moderation_result == "banned":
+            response = AppResponse(200, "banned", sender_banned=True)
+        elif saved.ban_claimed:
+            return AppResponse(200, "ban confirmation failed; check membership")
+        else:
+            response = await self.ban(chat["id"], identifier, (bot_id, update_id))
+            if response is None:
+                response = AppResponse(200, "account moderation skipped; protected administrator")
+        if response.sender_banned:
+            response = await self.remove_recent_history(bot_id, chat["id"], identifier, message_id + 1, response)
+        await self.store.finish(bot_id, update_id, response.status, response.body)
+        return response
 
     async def report(
         self,
@@ -221,11 +294,8 @@ class Moderator:
             return AppResponse(200, "ban confirmation failed; check membership and submit a new report if needed")
         else:
             try:
-                if reporter_id is not None:
-                    authorized = await self.member_status(chat_id, reporter_id) in ADMIN_STATUSES
-                else:
-                    # Telegram reserves send-as-chat for this chat's own administrators.
-                    authorized = True
+                # A missing user ID is accepted only for this chat's anonymous administrators above.
+                authorized = reporter_id is None or await self.member_status(chat_id, reporter_id) in ADMIN_STATUSES
                 response = (
                     await self.moderate(target, report_key=(bot_id, update_id))
                     if authorized
@@ -236,14 +306,16 @@ class Moderator:
         if response.target_removed:
             await self.store.remember_moderation(bot_id, update_id, response.body)
         identifier = user_id(target)
-        if response.status == HTTPStatus.OK and identifier is not None and response.sender_banned:
-            response = await self.remove_recent_history(
-                bot_id,
-                chat_id,
-                identifier,
-                message["message_id"],
-                response,
-            )
+        if identifier is not None and response.sender_banned:
+            await self.store.blacklist_user(bot_id, identifier, int(time.time()))
+            if response.status == HTTPStatus.OK:
+                response = await self.remove_recent_history(
+                    bot_id,
+                    chat_id,
+                    identifier,
+                    message["message_id"],
+                    response,
+                )
         response = await self.remove_report_message(chat_id, message, response)
         await self.store.finish(bot_id, update_id, response.status, response.body)
         return response
@@ -311,7 +383,7 @@ class Moderator:
             return AppResponse(200, response.body + "; report cleanup rejected")
         return AppResponse(200, response.body + "; report removed")
 
-    async def moderate(  # noqa: C901, PLR0911
+    async def moderate(
         self,
         message: dict[str, Any],
         *,
@@ -324,24 +396,13 @@ class Moderator:
         identifier = user_id(message)
         restrictable = identifier is not None and message["chat"]["type"] == "supergroup"
         if report_key is not None and restrictable:
-            claimed = False
-            try:
-                if await self.member_status(chat_id, identifier) not in ADMIN_STATUSES:
-                    claimed = await self.store.claim_ban(*report_key)
-                    if not claimed:
-                        return AppResponse(503, "ban already attempted; retry pending")
-                    result = await self.call(
-                        "banChatMember",
-                        {"chat_id": chat_id, "user_id": identifier, "until_date": 0, "revoke_messages": True},
-                    )
-                    if result is not True:
-                        return AppResponse(503, "ban failed")
-                    await self.store.remember_moderation(*report_key, "banned")
-                    return await self.remove_banned_target(chat_id, message["message_id"])
-            except TelegramError as error:
-                if claimed and error.rejected:
-                    await self.store.release_ban(*report_key)
-                return AppResponse(503 if error.retryable else 200, "ban failed")
+            response = await self.ban(chat_id, identifier, report_key)
+            if response is not None:
+                return (
+                    await self.remove_banned_target(chat_id, message["message_id"])
+                    if response.sender_banned
+                    else response
+                )
 
         outcome = await delete_message(self.fetcher, self.config.bot_token, chat_id, message["message_id"])
         if outcome is DeleteOutcome.PERMANENT_FAILURE:
@@ -355,6 +416,27 @@ class Moderator:
             return await self.mute(chat_id, message["message_id"], identifier, deletion)
         except EvidenceError:
             return AppResponse(503, "mute storage unavailable; retry pending")
+
+    async def ban(self, chat_id: int, identifier: int, report_key: tuple[int, int]) -> AppResponse | None:
+        """Persist one ban attempt, keeping target deletion separate from Telegram's ban side effects."""
+        claimed = False
+        try:
+            status = await self.member_status(chat_id, identifier)
+            if status in ADMIN_STATUSES:
+                return None
+            if status != "kicked":
+                claimed = await self.store.claim_ban(*report_key)
+                if not claimed:
+                    return AppResponse(503, "ban already attempted; retry pending")
+                result = await self.call("banChatMember", {"chat_id": chat_id, "user_id": identifier, "until_date": 0})
+                if result is not True:
+                    return AppResponse(503, "ban failed")
+            await self.store.remember_moderation(*report_key, "banned")
+        except TelegramError as error:
+            if claimed and error.rejected:
+                await self.store.release_ban(*report_key)
+            return AppResponse(503 if error.retryable else 200, "ban failed")
+        return AppResponse(200, "banned", sender_banned=True)
 
     async def mute(self, chat_id: int, message_id: int, identifier: int, deletion: str) -> AppResponse:
         """Do not repeat a possibly successful restriction after an administrator's unmute."""

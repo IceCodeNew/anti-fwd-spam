@@ -40,6 +40,12 @@ test('user checks API compatibility: Given live Bot API documentation, When requ
   assert.match(text(section('ChatMemberBanned')), /If 0, then the user is banned forever/);
   assert.match(text(section('ChatMemberRestricted')), /If 0, then the user is restricted forever/);
   assert.match(text(section('getChatMember')), /Returns a ChatMember object/);
+  // Discussion commenters can have Left status without joining the group.
+  telegram.members.set(25, { status: 'left' });
+  assert.deepEqual(await call('banChatMember', {
+    chat_id: chat.id, user_id: 25, until_date: 0,
+  }), { ok: true, result: true });
+  assert.equal(telegram.canJoin(25), false);
   const target = { chat_id: chat.id, user_id: 22 };
   telegram.send(message(80));
   telegram.send(message(81));

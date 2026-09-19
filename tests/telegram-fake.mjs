@@ -27,6 +27,7 @@ export function report(target = message()) {
 export class Telegram {
   messages = new Map();
   members = new Map();
+  groups = new Map();
   faults = new Map();
   violations = [];
   now = Math.floor(Date.now() / 1000);
@@ -34,6 +35,7 @@ export class Telegram {
   reset() {
     this.messages.clear();
     this.members = new Map([[11, { status: 'administrator' }], [22, { status: 'member' }]]);
+    this.groups.clear();
     this.faults.clear();
     this.violations = [];
     this.now = Math.floor(Date.now() / 1000);
@@ -43,10 +45,11 @@ export class Telegram {
     this.messages.set(`${message.chat.id}:${message.message_id}`, structuredClone(message));
   }
 
-  has(id) { return this.messages.has(`${chat.id}:${id}`); }
-  canJoin(id) { return this.members.get(id).status !== 'kicked'; }
-  canSend(id, permission = 'can_send_messages') {
-    const member = this.members.get(id);
+  has(id, chatId = chat.id) { return this.messages.has(`${chatId}:${id}`); }
+  membersIn(chatId) { return chatId === chat.id ? this.members : this.groups.get(chatId); }
+  canJoin(id, chatId = chat.id) { return this.membersIn(chatId).get(id).status !== 'kicked'; }
+  canSend(id, permission = 'can_send_messages', chatId = chat.id) {
+    const member = this.membersIn(chatId).get(id);
     return member.status !== 'kicked' && member.permissions?.[permission] !== false;
   }
 
@@ -87,26 +90,28 @@ export class Telegram {
         for (const id of ids) this.messages.delete(`${params.chat_id}:${id}`);
         return Response.json({ ok: true, result: true });
       }
-      const member = this.members.get(params.user_id);
+      const members = this.membersIn(params.chat_id);
+      const member = members.get(params.user_id);
       assert.ok(member, 'The scenario must supply the Telegram member');
       if (method === 'getChatMember') {
-        return Response.json({ ok: true, result: { ...member, user: message(1, params.user_id).from } });
+        return Response.json({ ok: true, result: { ...member, user: {
+          ...message(1, params.user_id).from, is_bot: params.user_id === 123,
+        } } });
       }
       if (['creator', 'administrator'].includes(member.status)) {
         return Response.json({ ok: false, error_code: 400, description: 'Bad Request: user is an administrator' }, { status: 400 });
       }
-      assert.equal(params.chat_id, chat.id);
       // The scenarios use permanent restrictions; zero is Telegram's permanent date.
       assert.equal(params.until_date, 0);
       if (method === 'banChatMember') {
-        assert.equal(typeof params.revoke_messages, 'boolean');
-        this.members.set(params.user_id, { status: 'kicked', until_date: 0 });
+        if ('revoke_messages' in params) assert.equal(typeof params.revoke_messages, 'boolean');
+        members.set(params.user_id, { status: 'kicked', until_date: 0 });
         // Model the observed failure: a successful ban can leave messages visible.
         // Target deletion must succeed independently of Telegram's history cleanup.
       } else {
         assert.equal(params.use_independent_chat_permissions, true);
         assert.equal(typeof params.permissions, 'object');
-        this.members.set(params.user_id, { status: 'restricted', permissions: params.permissions, until_date: 0 });
+        members.set(params.user_id, { status: 'restricted', permissions: params.permissions, until_date: 0 });
       }
       return Response.json({ ok: true, result: true });
     } catch (error) {

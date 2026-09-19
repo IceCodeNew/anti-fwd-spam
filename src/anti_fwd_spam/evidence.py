@@ -141,6 +141,32 @@ class ReportStore:
         """Bind the request's D1 database."""
         self.database = database
 
+    async def blacklist_user(self, bot_id: int, user_id: int, now: int) -> None:
+        """Retain confirmed administrator-reported accounts independently of expiring evidence."""
+        try:
+            await (
+                self.database.prepare(
+                    "INSERT INTO blacklisted_users (bot_id, user_id, added_at) VALUES (?, ?, ?) "
+                    "ON CONFLICT(bot_id, user_id) DO NOTHING",
+                )
+                .bind(bot_id, user_id, now)
+                .run()
+            )
+        except Exception as error:
+            raise EvidenceError from error
+
+    async def is_blacklisted(self, bot_id: int, user_id: int) -> bool:
+        """Match a sender against this bot's administrator-confirmed accounts."""
+        try:
+            row = await (
+                self.database.prepare("SELECT 1 FROM blacklisted_users WHERE bot_id = ? AND user_id = ?")
+                .bind(bot_id, user_id)
+                .first()
+            )
+        except Exception as error:
+            raise EvidenceError from error
+        return row is not None
+
     async def claim_mute(self, bot_id: int, chat_id: int, message_id: int, now: int) -> bool:
         """Claim a message once, including edits delivered under a different update ID."""
         try:

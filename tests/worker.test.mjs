@@ -1,48 +1,8 @@
 import assert from 'node:assert/strict';
-import { after, afterEach, before, beforeEach, test } from 'node:test';
-import { readdir, readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
-import { Miniflare, convertV4MiniflareOptions } from 'miniflare';
-import { unstable_getMiniflareWorkerOptions } from 'wrangler';
-import { chat, message, report, Telegram, token, username } from './telegram-fake.mjs';
-
-const telegram = new Telegram();
-let runtime, database;
-const secret = 'test-secret';
-const headers = { 'content-type': 'application/json', 'x-telegram-bot-api-secret-token': secret };
-
-before(async () => {
-  const root = resolve('.wrangler/test-build');
-  const paths = (await readdir(root, { recursive: true })).filter(path => path.endsWith('.py') && path !== 'entry.py');
-  const { workerOptions } = unstable_getMiniflareWorkerOptions('wrangler.jsonc');
-  runtime = new Miniflare(convertV4MiniflareOptions({
-    ...workerOptions,
-    modulesRoot: root,
-    modules: ['entry.py', ...paths].map(path => ({ type: 'PythonModule', path: resolve(root, path) })),
-    bindings: { ...workerOptions.bindings, BOT_TOKEN: token, TELEGRAM_WEBHOOK_SECRET: secret, BOT_USERNAME: username },
-    outboundService: request => telegram.fetch(request),
-  }));
-  database = await runtime.getD1Database('REPORTS');
-  for (const file of (await readdir('migrations')).filter(path => path.endsWith('.sql')).sort()) {
-    for (const sql of (await readFile(`migrations/${file}`, 'utf8')).split(';').filter(sql => sql.trim())) {
-      await database.prepare(sql).run();
-    }
-  }
-});
-after(async () => { await runtime?.dispose(); });
-beforeEach(async () => {
-  telegram.reset();
-  await database.prepare('DELETE FROM reports').run();
-  await database.prepare('DELETE FROM recent_messages').run();
-  await database.prepare('DELETE FROM automatic_mutes').run();
-});
-afterEach(() => { assert.deepEqual(telegram.violations, []); });
-
-function dispatch(update, options = {}) {
-  return runtime.dispatchFetch('https://worker.test/webhook', {
-    method: 'POST', headers, body: JSON.stringify(update), ...options,
-  });
-}
+import { test } from 'node:test';
+import { readFile } from 'node:fs/promises';
+import { chat, message, report, token, username } from './telegram-fake.mjs';
+import { database, dispatch, headers, runtime, telegram } from './worker-runtime.mjs';
 
 async function evidence() {
   return (await database.prepare('SELECT * FROM reports ORDER BY update_id').all()).results;
@@ -233,7 +193,7 @@ test('user reports old spam: Given a target Telegram refuses to delete, When an 
   assert.equal(telegram.canJoin(22), false);
 });
 
-test('user resumes bulk cleanup: Given more than one batch and a temporary failure, When an administrator unbans the sender before redelivery, Then older observed messages disappear but new messages and membership survive', async () => {
+test('user resumes bulk cleanup: Given more than one batch and a temporary failure, When an administrator unbans the sender and a later message edit arrives before redelivery, Then older observed messages disappear but later messages and membership survive', async () => {
   const now = Math.floor(Date.now() / 1000);
   for (let id = 100; id < 202; id++) {
     const msg = { ...message(id), date: now - 60 };
@@ -252,7 +212,7 @@ test('user resumes bulk cleanup: Given more than one batch and a temporary failu
   telegram.members.set(22, { status: 'left' });
   const fresh = { ...message(401), date: now };
   telegram.send(fresh);
-  assert.equal((await dispatch({ message: fresh })).status, 200);
+  assert.equal((await dispatch({ update_id: 401, edited_message: fresh })).status, 200);
   telegram.faults.set('deleteMessages', () => Response.json({ ok: false, error_code: 429 }, { status: 429 }));
   assert.equal((await dispatch(update)).status, 503);
   assert.equal(telegram.has(200), true);

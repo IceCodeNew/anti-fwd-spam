@@ -95,9 +95,32 @@ The bot removes the administrator's report after confirming target deletion and 
 
 After a saved ban confirmation, retries after a temporary deletion failure continue deletion without banning again. If logs show `ban confirmation failed`, the bot could not confirm the result and will not repeat the ban for that report. Check the sender's membership; if moderation is still needed, send a new report or ban them in Telegram's member settings. The bot leaves the unconfirmed report visible for this check.
 
-Automatic matches delete only the matching message and permanently mute the sender, preserving other history and group membership. For target owners, administrators, or senders acting as a group or channel, the bot only deletes the target message; it does not mute or ban them.
+Source-bot matches delete only the matching message and permanently mute the sender, preserving other history and group membership. For target owners, administrators, or senders acting as a group or channel, the bot only deletes the target message; it does not mute or ban them.
 
-Automatic filtering requires Telegram's explicit inline-bot or forwarded-bot provenance. Report copied text or forwarded messages with hidden origins manually.
+Source-bot filtering requires Telegram's explicit inline-bot or forwarded-bot provenance. Report copied text or forwarded messages with hidden origins manually, or enable the optional model check below.
+
+## Enable model-based spam detection
+
+Save an [Experiential](https://platform.experientiallabs.ai/models/jev-latest) API key as a **Worker secret**, then deploy the code:
+
+```bash
+mise exec -- uv run pywrangler secret put EXPERIENTIAL_API_KEY
+mise exec -- uv run pywrangler deploy
+```
+
+The bot sends each eligible new group message to `jev-latest`, combining the sender's display name, available biography, and message text or caption with formatting and selected media descriptors. This shares member content with Experiential; review the provider's privacy terms and pricing before enabling it. The bot does not send replied-to messages, conversation history, or media file IDs, and does not download or inspect media. Unavailable biographies are marked unknown. A successful lookup with no biography is marked empty.
+
+The bot deletes only the current message when the returned spam probability is at least 0.95. This score is a model estimate, not a guarantee of 95% accuracy. Model decisions do not mute, ban, add accounts to the blacklist, or clear history. Existing account-blacklist, source-bot, and report processing take priority. Edits, service messages, bot senders, and messages sent as channels or anonymous administrators skip the model check.
+
+Biography lookup and inference each have an eight-second deadline; failed biography lookup still permits classification. Network failures, timeouts, and HTTP 408, 429 or 5xx responses keep the message visible and schedule retries after 1, 2 and 5 minutes. Each inference attempt can incur an API charge. Permanent failures or invalid answers stop processing without deletion. Once classification succeeds, temporary deletion failures retry deletion without another model request.
+
+Keep the Worker's Cron Trigger enabled. It processes one due message per minute, so a backlog can delay retries. Processing stops when a message reaches 48 hours old. An edited update cancels pending work for the original content; a deletion already sent to Telegram cannot be recalled. Remove the Worker secret to disable new checks and pause pending tasks:
+
+```bash
+mise exec -- uv run pywrangler secret delete EXPERIENTIAL_API_KEY
+```
+
+Start in a disposable group with ordinary discussion, promotional messages, and quoted scam warnings. Check that deleted messages leave membership and earlier history unchanged. Inspect Worker CPU usage and errors in Cloudflare; external network waits do not count as CPU time, but local execution still consumes the plan's CPU allowance. A key in a development terminal or Amp project does not configure the deployed Worker's secret.
 
 ## Block reported accounts across groups
 
@@ -149,6 +172,8 @@ Reports are retained for 3 days. Account-blacklist message matches also save the
 The `recent_messages` table stores only bot, group, sender and message IDs plus the original sending time for observed user messages in supergroups. It stores no message text or media. Edits do not renew retention. Identifiers stop qualifying for deletion after 48 hours; scheduled cleanup removes expired rows in bounded batches and can lag behind a backlog. Successful batch deletion removes identifiers sooner. Indexing adds D1 writes for received messages, so monitor database usage even when nobody reports spam.
 
 The `automatic_mutes` table stores bot, group and message IDs with an expiry time to prevent repeated automatic restrictions. It stores no content. Each record expires 3 days after creation; duplicate or edited updates do not refresh an existing record's expiry. Scheduled cleanup removes expired rows in bounded batches.
+
+The `model_tasks` table temporarily stores the model input (nickname, available biography and selected message content) with identifiers and processing progress. The bot clears the input after classification succeeds or processing stops, including edits and exhausted retries. Deduplication metadata expires 3 days after task creation; retries never extend that date. Scheduled cleanup also clears unfinished content after the message reaches 48 hours old. To inspect pending work without exposing member content, run `SELECT phase, COUNT(*) FROM model_tasks GROUP BY phase;` in the D1 console. Apply pending database migrations before enabling model checks.
 
 The `blacklisted_users` table retains bot/user IDs and the time of the first confirmed report ban until manually removed. Report expiry does not remove these accounts.
 

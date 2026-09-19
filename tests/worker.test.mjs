@@ -2,11 +2,35 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFile } from 'node:fs/promises';
 import { chat, message, report, token, username } from './telegram-fake.mjs';
-import { database, dispatch, headers, runtime, telegram } from './worker-runtime.mjs';
+import { database, dispatch, headers, model, runtime, telegram } from './worker-runtime.mjs';
 
 async function evidence() {
   return (await database.prepare('SELECT * FROM reports ORDER BY update_id').all()).results;
 }
+
+test('user: Given no model secret, When an ordinary message arrives, Then it remains and its content is not shared with the model', async () => {
+  model.probability = 1;
+  telegram.send(message());
+  assert.equal((await dispatch({ update_id: 1, message: message() })).status, 200);
+  assert.equal(telegram.has(81), true);
+  assert.equal(model.state, null);
+});
+
+test('user: Given paused model tasks without a secret, When a message is edited, Then its old content is discarded without inference', async () => {
+  const now = Math.floor(Date.now() / 1000);
+  await database.prepare(`INSERT INTO model_tasks
+    (bot_id, chat_id, message_id, phase, input_json, due_at, stop_at, created_at, expires_at)
+    VALUES (123, -10012, 81, 'classify', '{"message":{"text":"old"}}', ?, ?, ?, ?)`)
+    .bind(now, now + 3600, now, now + 3 * 86400).run();
+  telegram.send(message());
+  assert.equal((await dispatch({ update_id: 2, edited_message: message() })).status, 200);
+  const saved = await database.prepare('SELECT phase, input_json, expires_at FROM model_tasks').first();
+  assert.equal(saved.phase, 'done');
+  assert.equal(saved.input_json, null);
+  assert.equal(saved.expires_at, now + 3 * 86400);
+  assert.equal(model.state, null);
+  assert.equal(telegram.has(81), true);
+});
 
 for (const outcome of ['confirmed', 'response lost']) {
   test(`user keeps an administrative unmute after ${outcome}: Given an automatic mute took effect, When an administrator unmutes before redelivery, Then the user remains able to send and new spam is still moderated`, async () => {

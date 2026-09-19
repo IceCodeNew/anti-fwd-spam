@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hmac
 import logging
+import time
 from http import HTTPMethod
 from urllib.parse import urlsplit
 
@@ -12,6 +13,7 @@ from workers import Request, Response, WorkerEntrypoint, fetch
 from anti_fwd_spam.evidence import ReportStore
 from anti_fwd_spam.moderation import AppResponse, Moderator
 from anti_fwd_spam.policy import DEFAULT_BLACKLIST_BOT_IDS, Config, ConfigError
+from anti_fwd_spam.tasks import ModelTasks
 
 MAX_UPDATE_BYTES = 1_048_576
 
@@ -32,6 +34,7 @@ class Default(WorkerEntrypoint):
         try:
             config = self._get_config()
             bot_username = _environment_string(self.env, "BOT_USERNAME")
+            model_key = _environment_string(self.env, "EXPERIENTIAL_API_KEY")
         except ConfigError:
             return _response(AppResponse(500, "invalid worker configuration"))
         if (
@@ -72,6 +75,7 @@ class Default(WorkerEntrypoint):
             fetch,
             ReportStore(getattr(self.env, "REPORTS", None)),
             bot_username,
+            model_key,
         ).process(request.headers.get("content-type"), body)
         if any(marker in app_response.body for marker in ("failed", "rejected", "retry")):
             logging.getLogger(__name__).warning("Moderation outcome: %s", app_response.body)
@@ -87,8 +91,20 @@ class Default(WorkerEntrypoint):
         return Config.from_values(bot_token=bot_token, webhook_secret=webhook_secret, bot_ids=bot_ids)
 
     async def scheduled(self, controller: object, _env: object, _ctx: object) -> None:
-        """Remove report evidence after its three-day retention period."""
-        await ReportStore(self.env.REPORTS).expire(int(getattr(controller, "scheduledTime") // 1000))  # noqa: B009
+        """Expire retained evidence and process one due model task."""
+        # Cloudflare supplies scheduledTime dynamically on the controller.
+        now = int(getattr(controller, "scheduledTime") // 1000)  # noqa: B009
+        now = max(now, int(time.time()))
+        store = ReportStore(self.env.REPORTS)
+        await store.expire(now)
+        config = self._get_config()
+        tasks = ModelTasks(store, int(config.bot_token.split(":", 1)[0]))
+        await tasks.expire(now)
+        model_key = _environment_string(self.env, "EXPERIENTIAL_API_KEY")
+        if model_key:
+            task = await tasks.claim(now)
+            if task is not None:
+                await tasks.run(task, fetch, config.bot_token, model_key, now)
 
 
 async def _read_bounded_body(request: Request, maximum: int) -> bytes:

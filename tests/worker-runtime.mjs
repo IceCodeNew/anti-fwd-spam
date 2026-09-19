@@ -9,6 +9,7 @@ import { Telegram, token, username } from './telegram-fake.mjs';
 export const telegram = new Telegram();
 export const model = { enabled: false, probability: 0, profile: null, state: null, response: null };
 export let runtime, database;
+let runtimeOptions;
 const secret = 'test-secret';
 export const headers = { 'content-type': 'application/json', 'x-telegram-bot-api-secret-token': secret };
 
@@ -16,24 +17,37 @@ before(async () => {
   const root = resolve('.wrangler/test-build');
   const paths = (await readdir(root, { recursive: true })).filter(path => path.endsWith('.py') && path !== 'entry.py');
   const { workerOptions } = unstable_getMiniflareWorkerOptions('wrangler.jsonc');
-  runtime = new Miniflare(convertV4MiniflareOptions({
+  runtimeOptions = {
     ...workerOptions,
     modulesRoot: root,
     modules: ['entry.py', ...paths].map(path => ({ type: 'PythonModule', path: resolve(root, path) })),
-    bindings: { ...workerOptions.bindings, BOT_TOKEN: token, TELEGRAM_WEBHOOK_SECRET: secret, BOT_USERNAME: username,
-      ...(model.enabled ? { EXPERIENTIAL_API_KEY: 'test-model-key' } : {}) },
+    bindings: { ...workerOptions.bindings, BOT_TOKEN: token, TELEGRAM_WEBHOOK_SECRET: secret, BOT_USERNAME: username },
     outboundService: async request => {
-      if (request.url === 'https://api.experientiallabs.ai/v1/systemone') {
+      const providers = {
+        'https://api.experientiallabs.ai/v1/systemone': ['jev-latest', 'test-model-key'],
+        'https://api.typesafe.ai/v1/systemone': ['jev-latest', 'test-typesafe-key'],
+        'https://opencode.ai/zen/v1/systemone': ['jev-1.13', 'test-opencode-key'],
+        'https://ai-gateway.vercel.sh/v4/ai/evaluation-model': ['typesafe-ai/jev', 'test-gateway-key'],
+      };
+      if (Object.hasOwn(providers, request.url)) {
+        const [modelId, apiKey] = providers[request.url];
         assert.equal(request.method, 'POST');
-        assert.equal(request.headers.get('authorization'), 'Bearer test-model-key');
+        assert.equal(request.headers.get('authorization'), `Bearer ${apiKey}`);
         const body = await request.json();
-        assert.equal(body.model, 'jev-latest');
-        assert.equal(body.questions.spam.type, 'noul');
+        const gateway = request.url.includes('ai-gateway.vercel.sh');
+        if (gateway) {
+          assert.equal(request.headers.get('ai-model-id'), modelId);
+          assert.equal(request.headers.get('ai-gateway-protocol-version'), '0.0.1');
+          assert.equal(request.headers.get('ai-gateway-auth-method'), 'api-key');
+          assert.equal(request.headers.get('ai-evaluation-model-specification-version'), '4');
+          assert.equal(body.model, undefined);
+        } else assert.equal(body.model, modelId);
+        assert.equal(body.questions.spam.type, gateway ? 'boolean' : 'noul');
         assert.equal(typeof body.questions.spam.instructions, 'string');
         model.state = body.state;
-        if (typeof model.response === 'function') return model.response();
+        if (typeof model.response === 'function') return model.response(request.url);
         return model.response ?? Response.json({ model: 'jev-latest', answers: {
-          spam: { type: 'noul', noul: model.probability },
+          spam: gateway ? { type: 'boolean', probability: model.probability } : { type: 'noul', noul: model.probability },
         } });
       }
       if (request.url.endsWith(`/bot${token}/getChat`)) {
@@ -45,7 +59,9 @@ before(async () => {
       }
       return telegram.fetch(request);
     },
-  }));
+  };
+  runtime = new Miniflare(convertV4MiniflareOptions({ ...runtimeOptions, bindings: { ...runtimeOptions.bindings,
+    ...(model.enabled ? { EXPERIENTIAL_API_KEY: 'test-model-key' } : {}) } }));
   database = await runtime.getD1Database('REPORTS');
   for (const file of (await readdir('migrations')).filter(path => path.endsWith('.sql')).sort()) {
     for (const sql of (await readFile(`migrations/${file}`, 'utf8')).split(';').filter(sql => sql.trim())) {
@@ -64,6 +80,11 @@ beforeEach(async () => {
   await database.prepare('DELETE FROM model_tasks').run();
 });
 afterEach(() => { assert.deepEqual(telegram.violations, []); });
+
+export async function setModelKeys(keys) {
+  await runtime.setOptions(convertV4MiniflareOptions({ ...runtimeOptions, bindings: { ...runtimeOptions.bindings, ...keys } }));
+  database = await runtime.getD1Database('REPORTS');
+}
 
 export function dispatch(update, options = {}) {
   return runtime.dispatchFetch('https://worker.test/webhook', {

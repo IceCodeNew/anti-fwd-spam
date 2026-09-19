@@ -6,12 +6,14 @@ import unittest
 from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
-from anti_fwd_spam.model import ModelRetryError, model_input, spam_probability
+from anti_fwd_spam.model import ModelConfig, ModelRetryError, model_input, spam_probability
 from tests.test_telegram import ClockLoop
 
 if TYPE_CHECKING:
     import builtins
     from collections.abc import Awaitable, Callable
+
+CONFIG = ModelConfig("https://api.experientiallabs.ai/v1/systemone", "jev-latest", "test-key")
 
 
 class StreamingResponse:
@@ -87,10 +89,10 @@ class ModelDeadlineTests(unittest.TestCase):
             {"from": {"id": 22, "first_name": "Alice"}, "text": "Hello"},
         )
         if stall_profile:
-            self.assertEqual(await spam_probability(fetcher, "test-key", state), 0.99)
+            self.assertEqual(await spam_probability(fetcher, CONFIG, state), 0.99)
         else:
             with self.assertRaises(ModelRetryError):
-                await spam_probability(fetcher, "test-key", state)
+                await spam_probability(fetcher, CONFIG, state)
         self.assertTrue(cancelled.is_set())
 
 
@@ -108,7 +110,9 @@ class ModelStreamTests(unittest.IsolatedAsyncioTestCase):
             response.status = 401
             return response
 
-        self.assertIsNone(await spam_probability(fetcher, "test-key", {}))
+        with self.assertRaises(ModelRetryError) as caught:
+            await spam_probability(fetcher, CONFIG, {})
+        self.assertFalse(caught.exception.retryable)
         self.assertTrue(cancelled.is_set())
 
     async def test_user_retries_a_network_failure(self) -> None:
@@ -118,7 +122,7 @@ class ModelStreamTests(unittest.IsolatedAsyncioTestCase):
             raise ConnectionError
 
         with self.assertRaises(ModelRetryError):
-            await spam_probability(fetcher, "test-key", {})
+            await spam_probability(fetcher, CONFIG, {})
 
     async def test_user_closes_an_oversized_download(self) -> None:
         """user: Given an oversized answer, When its size exceeds the limit, Then its stream closes without a score."""
@@ -132,8 +136,6 @@ class ModelStreamTests(unittest.IsolatedAsyncioTestCase):
 
             return StreamingResponse(read_body, cancelled)
 
-        result = await spam_probability(
-            fetcher, "test-key", {"nickname": "Alice", "bio": "", "message": {"text": "Hello"}}
-        )
+        result = await spam_probability(fetcher, CONFIG, {"nickname": "Alice", "bio": "", "message": {"text": "Hello"}})
         self.assertIsNone(result)
         self.assertTrue(cancelled.is_set())

@@ -15,6 +15,7 @@ from .tasks import ModelTasks
 from .telegram import DeleteOutcome, Fetch, TelegramError, call_method, delete_message
 
 if TYPE_CHECKING:
+    from .model import ModelConfig
     from .policy import Config
 
 ADMIN_STATUSES = frozenset({"creator", "administrator"})
@@ -116,12 +117,12 @@ class Moderator:
         fetcher: Fetch,
         store: ReportStore,
         bot_username: str,
-        model_key: str | None = None,
+        models: tuple[ModelConfig, ...] = (),
     ) -> None:
         """Bind one request's configuration and capabilities."""
         self.config, self.fetcher, self.store = config, fetcher, store
         self.bot_username = bot_username
-        self.model_key = model_key
+        self.models = models
 
     async def call(self, method: str, parameters: dict[str, object]) -> object:
         """Call Telegram through the existing Workers transport."""
@@ -206,14 +207,14 @@ class Moderator:
         if edited:
             await tasks.enqueue(chat["id"], message_id, sent_at, None, now)
             return AppResponse(200, "model task cancelled")
-        if not self.model_key or user_id(message) is None or not MODEL_CONTENT_FIELDS.intersection(message):
+        if not self.models or user_id(message) is None or not MODEL_CONTENT_FIELDS.intersection(message):
             return AppResponse(200, "ignored")
         state = await model_input(self.fetcher, self.config.bot_token, message)
         now = int(time.time())
         if await tasks.enqueue(chat["id"], message_id, sent_at, state, now):
             task = await tasks.claim(now, (chat["id"], message_id))
             if task is not None:
-                await tasks.run(task, self.fetcher, self.config.bot_token, self.model_key, now)
+                await tasks.run(task, self.fetcher, self.config.bot_token, self.models, now)
         return AppResponse(200, "model task recorded")
 
     async def index_message(self, message: dict[str, object]) -> None:

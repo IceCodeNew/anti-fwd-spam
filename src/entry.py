@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 from workers import Request, Response, WorkerEntrypoint, fetch
 
 from anti_fwd_spam.evidence import ReportStore
+from anti_fwd_spam.model import MODEL_PROVIDERS, ModelConfig
 from anti_fwd_spam.moderation import AppResponse, Moderator
 from anti_fwd_spam.policy import DEFAULT_BLACKLIST_BOT_IDS, Config, ConfigError
 from anti_fwd_spam.tasks import ModelTasks
@@ -34,7 +35,7 @@ class Default(WorkerEntrypoint):
         try:
             config = self._get_config()
             bot_username = _environment_string(self.env, "BOT_USERNAME")
-            model_key = _environment_string(self.env, "EXPERIENTIAL_API_KEY")
+            models = self._get_models()
         except ConfigError:
             return _response(AppResponse(500, "invalid worker configuration"))
         if (
@@ -75,7 +76,7 @@ class Default(WorkerEntrypoint):
             fetch,
             ReportStore(getattr(self.env, "REPORTS", None)),
             bot_username,
-            model_key,
+            models,
         ).process(request.headers.get("content-type"), body)
         if any(marker in app_response.body for marker in ("failed", "rejected", "retry")):
             logging.getLogger(__name__).warning("Moderation outcome: %s", app_response.body)
@@ -90,6 +91,13 @@ class Default(WorkerEntrypoint):
             raise ConfigError(message)
         return Config.from_values(bot_token=bot_token, webhook_secret=webhook_secret, bot_ids=bot_ids)
 
+    def _get_models(self) -> tuple[ModelConfig, ...]:
+        return tuple(
+            ModelConfig(url, model, key)
+            for name, (url, model) in MODEL_PROVIDERS.items()
+            if (key := _environment_string(self.env, name))
+        )
+
     async def scheduled(self, controller: object, _env: object, _ctx: object) -> None:
         """Expire retained evidence and process one due model task."""
         # Cloudflare supplies scheduledTime dynamically on the controller.
@@ -100,11 +108,11 @@ class Default(WorkerEntrypoint):
         config = self._get_config()
         tasks = ModelTasks(store, int(config.bot_token.split(":", 1)[0]))
         await tasks.expire(now)
-        model_key = _environment_string(self.env, "EXPERIENTIAL_API_KEY")
-        if model_key:
+        models = self._get_models()
+        if models:
             task = await tasks.claim(now)
             if task is not None:
-                await tasks.run(task, fetch, config.bot_token, model_key, now)
+                await tasks.run(task, fetch, config.bot_token, models, now)
 
 
 async def _read_bounded_body(request: Request, maximum: int) -> bytes:

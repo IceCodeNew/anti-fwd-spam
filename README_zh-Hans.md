@@ -101,23 +101,34 @@ bot 保存封禁成功的记录后，遇到临时删除失败时，会在重试�
 
 ## 启用模型垃圾消息检测
 
-将 [Experiential](https://platform.experientiallabs.ai/models/jev-latest) API key 保存为 **Worker secret**，然后部署代码：
+将所用平台的 API key 保存为 **Worker secret**，然后部署代码。bot 按下表顺序选取配置了非空密钥的平台，无需额外指定平台：
+
+| 平台 | Worker secret |
+| --- | --- |
+| [TypeSafe AI](https://ai-sdk.dev/providers/ai-sdk-providers/typesafe-ai) | `TYPESAFE_AI_API_KEY` |
+| [Vercel AI Gateway](https://vercel.com/ai-gateway/models/jev) | `AI_GATEWAY_API_KEY` |
+| [Experiential](https://platform.experientiallabs.ai/models/jev-latest) | `EXPERIENTIAL_API_KEY` |
+| [OpenCode Zen](https://opencode.ai/docs/zen/) | `OPENCODE_API_KEY` |
+
+例如，使用 Vercel 时执行：
 
 ```bash
-mise exec -- uv run pywrangler secret put EXPERIENTIAL_API_KEY
+mise exec -- uv run pywrangler secret put AI_GATEWAY_API_KEY
 mise exec -- uv run pywrangler deploy
 ```
 
-bot 会将符合条件的群内新消息发送给 `jev-latest`，结合发送者昵称、可获取的个人简介、正文或媒体说明，以及格式信息和选定的媒体描述进行判断。此操作会向 Experiential 传输成员内容，管理员应在启用前查看服务商的隐私条款和价格。bot 不发送被回复消息、聊天历史或媒体文件 ID，也不下载或识别媒体内容。简介无法获取时，bot 将其标记为未知；查询成功但未返回简介时，标记为空。
+OpenCode 使用 Zen 接口，不使用 Go。管理员应核对各平台的账户验证和计费要求。接口地址和模型 ID 定义在 [`src/anti_fwd_spam/model.py`](src/anti_fwd_spam/model.py) 的 `MODEL_PROVIDERS` 中。
+
+bot 会将符合条件的群内新消息发送给 Jev，结合发送者昵称、可获取的个人简介、正文或媒体说明，以及格式信息和选定的媒体描述进行判断。配置多个密钥后，bot 可能在重试时向多个平台发送同一份内容，管理员应在启用前查看各平台的隐私条款和价格。bot 不发送被回复消息、聊天历史或媒体文件 ID，也不下载或识别媒体内容。简介无法获取时，bot 将其标记为未知；查询成功但未返回简介时，标记为空。
 
 返回的垃圾消息概率达到 0.95 时，bot 只删除当前消息。该分数是模型估计值，不代表准确率达到 95%。模型判断不会触发禁言、封禁、加入黑名单或清理历史。bot 优先处理已有的账号黑名单、来源 bot 规则和举报。编辑消息、服务消息、bot 发送的消息，以及频道身份或匿名管理员发送的消息不参与模型检查。
 
-简介查询和模型推理各有 8 秒超时限制；简介查询失败时，bot 仍可继续分类。遇到网络错误、超时，以及 HTTP 408、429 或 5xx 响应时，bot 保留消息，依次等待 1、2、5 分钟后重试。每次推理都可能产生 API 费用。遇到永久失败或无效答案时，bot 停止处理，不删除消息。分类成功后，删除遇到临时失败时只重试删除，不再请求模型。
+简介查询和模型推理各有 8 秒超时限制；简介查询失败时，bot 仍可继续分类。遇到网络错误、超时，以及 HTTP 408、429 或 5xx 响应时，bot 保留消息，依次等待 1、2、5 分钟后重试，并轮换已配置的平台，必要时从头循环。各平台合计最多尝试四次。遇到永久 HTTP 拒绝时，只有首轮中还有未尝试的平台，bot 才会继续安排重试。遇到无效答案或低于阈值的有效分数时，bot 停止处理，不再询问其他平台。每次推理都可能产生 API 费用。分类成功后，删除遇到临时失败时只重试删除，不再请求模型。
 
-管理员应保持 Worker 的 Cron Trigger 启用。定时任务每分钟处理一条到期消息，积压可能延迟重试。消息发送满 48 小时后，bot 停止处理。收到编辑更新时，bot 取消原内容的待处理任务；已经发送给 Telegram 的删除请求无法撤回。删除 Worker secret 可关闭新检查并暂停待处理任务：
+管理员应保持 Worker 的 Cron Trigger 启用。定时任务每分钟处理一条到期消息，积压可能延迟重试。消息发送满 48 小时后，bot 停止处理。收到编辑更新时，bot 取消原内容的待处理任务；已经发送给 Telegram 的删除请求无法撤回。待处理推理使用执行时配置的密钥；更改密钥可能跳过或重复尝试某个平台，但不会重置尝试次数。希望保持轮换顺序时，应在待处理任务结束前保留相同的平台密钥集合。删除已配置的全部模型 secret 可关闭新检查并暂停待处理任务，包括删除任务。仅使用 Vercel 时执行：
 
 ```bash
-mise exec -- uv run pywrangler secret delete EXPERIENTIAL_API_KEY
+mise exec -- uv run pywrangler secret delete AI_GATEWAY_API_KEY
 ```
 
 管理员应先在可丢弃的测试群中发送普通讨论、推广消息和引用诈骗内容的警示消息，检查删除后是否保留群成员身份和之前的消息。同时在 Cloudflare 中查看 Worker CPU 用量和错误。外部网络等待不计入 CPU 时间，但本地执行仍受套餐 CPU 额度约束。开发终端或 Amp project 中的密钥不会自动成为已部署 Worker 的 secret。

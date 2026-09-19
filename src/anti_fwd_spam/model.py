@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 import logging
 from http import HTTPMethod, HTTPStatus
@@ -17,6 +18,24 @@ if TYPE_CHECKING:
 MODEL_TIMEOUT_SECONDS = 8
 MAX_MODEL_RESPONSE_BYTES = 65_536
 SPAM_THRESHOLD = 0.95
+GATEWAY_URL = "https://ai-gateway.vercel.sh/v4/ai/evaluation-model"
+MODEL_PROVIDERS = {
+    "TYPESAFE_AI_API_KEY": ("https://api.typesafe.ai/v1/systemone", "jev-latest"),
+    "AI_GATEWAY_API_KEY": (GATEWAY_URL, "typesafe-ai/jev"),
+    "EXPERIENTIAL_API_KEY": ("https://api.experientiallabs.ai/v1/systemone", "jev-latest"),
+    "OPENCODE_API_KEY": ("https://opencode.ai/zen/v1/systemone", "jev-1.13"),
+}
+
+
+@dataclasses.dataclass(frozen=True)
+class ModelConfig:
+    """One configured endpoint; credentials stay out of repr and durable tasks."""
+
+    url: str
+    model: str
+    api_key: str = dataclasses.field(repr=False)
+
+
 MODEL_CONTENT_FIELDS = MEDIA_FIELDS | frozenset(
     {
         "text",
@@ -90,7 +109,12 @@ def _structured_text(value: object) -> list[str]:
 
 
 class ModelRetryError(Exception):
-    """A transport or temporary HTTP failure permits a delayed inference attempt."""
+    """A failed request permits retry or fallback to an untried provider."""
+
+    def __init__(self, *, retryable: bool = True) -> None:
+        """Distinguish temporary failures from provider-specific permanent rejections."""
+        super().__init__()
+        self.retryable = retryable
 
 
 async def model_input(fetcher: Fetch, token: str, message: dict[str, object]) -> dict[str, object]:
@@ -116,24 +140,32 @@ async def model_input(fetcher: Fetch, token: str, message: dict[str, object]) ->
     }
 
 
-async def spam_probability(fetcher: Fetch, api_key: str, state: dict[str, object]) -> float | None:
+async def spam_probability(fetcher: Fetch, config: ModelConfig, state: dict[str, object]) -> float | None:
     """Return a valid score, stop on invalid answers, or signal a temporary failure."""
+    gateway = config.url == GATEWAY_URL
+    headers = {"authorization": f"Bearer {config.api_key}", "content-type": "application/json"}
+    payload: dict[str, object] = {
+        "state": state,
+        "questions": {"spam": {"type": "boolean" if gateway else "noul", "instructions": INSTRUCTIONS}},
+    }
+    if gateway:
+        headers.update(
+            {
+                "ai-gateway-protocol-version": "0.0.1",
+                "ai-gateway-auth-method": "api-key",
+                "ai-evaluation-model-specification-version": "4",
+                "ai-model-id": config.model,
+            },
+        )
+    else:
+        payload["model"] = config.model
 
     async def send_and_read() -> tuple[int, bytes]:
         response = await fetcher(
-            "https://api.experientiallabs.ai/v1/systemone",
+            config.url,
             method=HTTPMethod.POST,
-            headers={"authorization": f"Bearer {api_key}", "content-type": "application/json"},
-            body=json.dumps(
-                {
-                    "model": "jev-latest",
-                    "state": state,
-                    "questions": {
-                        "spam": {"type": "noul", "instructions": INSTRUCTIONS},
-                    },
-                },
-                ensure_ascii=False,
-            ),
+            headers=headers,
+            body=json.dumps(payload, ensure_ascii=False),
         )
         return response.status, await _read_bounded_response(response)
 
@@ -148,8 +180,8 @@ async def spam_probability(fetcher: Fetch, api_key: str, state: dict[str, object
     ):
         raise ModelRetryError
     if status != HTTPStatus.OK:
-        return None
-    return _decode_probability(body)
+        raise ModelRetryError(retryable=False)
+    return _decode_probability(body, gateway=gateway)
 
 
 async def _read_bounded_response(response: TelegramResponse) -> bytes:
@@ -179,7 +211,7 @@ async def _read_bounded_response(response: TelegramResponse) -> bytes:
             reader.releaseLock()
 
 
-def _decode_probability(body: bytes) -> float | None:
+def _decode_probability(body: bytes, *, gateway: bool) -> float | None:
     try:
         payload = json.loads(body)
     except (UnicodeDecodeError, ValueError, RecursionError):
@@ -187,9 +219,9 @@ def _decode_probability(body: bytes) -> float | None:
     if not isinstance(payload, dict) or not isinstance(payload.get("answers"), dict):
         return None
     answer = payload["answers"].get("spam")
-    if not isinstance(answer, dict) or answer.get("type") != "noul":
+    if not isinstance(answer, dict) or answer.get("type") != ("boolean" if gateway else "noul"):
         return None
-    probability = answer.get("noul")
+    probability = answer.get("probability" if gateway else "noul")
     if type(probability) in (int, float) and 0 <= probability <= 1:
         return float(probability)
     return None

@@ -101,23 +101,34 @@ Source-bot filtering requires Telegram's explicit inline-bot or forwarded-bot pr
 
 ## Enable model-based spam detection
 
-Save an [Experiential](https://platform.experientiallabs.ai/models/jev-latest) API key as a **Worker secret**, then deploy the code:
+Save your provider's API key as a **Worker secret**, then deploy the code. The bot selects providers from nonempty secrets in this order; no platform setting is needed:
+
+| Provider | Worker secret |
+| --- | --- |
+| [TypeSafe AI](https://ai-sdk.dev/providers/ai-sdk-providers/typesafe-ai) | `TYPESAFE_AI_API_KEY` |
+| [Vercel AI Gateway](https://vercel.com/ai-gateway/models/jev) | `AI_GATEWAY_API_KEY` |
+| [Experiential](https://platform.experientiallabs.ai/models/jev-latest) | `EXPERIENTIAL_API_KEY` |
+| [OpenCode Zen](https://opencode.ai/docs/zen/) | `OPENCODE_API_KEY` |
+
+For example, to use Vercel:
 
 ```bash
-mise exec -- uv run pywrangler secret put EXPERIENTIAL_API_KEY
+mise exec -- uv run pywrangler secret put AI_GATEWAY_API_KEY
 mise exec -- uv run pywrangler deploy
 ```
 
-The bot sends each eligible new group message to `jev-latest`, combining the sender's display name, available biography, and message text or caption with formatting and selected media descriptors. This shares member content with Experiential; review the provider's privacy terms and pricing before enabling it. The bot does not send replied-to messages, conversation history, or media file IDs, and does not download or inspect media. Unavailable biographies are marked unknown. A successful lookup with no biography is marked empty.
+OpenCode uses Zen, not Go. Check account verification and billing requirements with each provider. Endpoints and model IDs are defined in `MODEL_PROVIDERS` in [`src/anti_fwd_spam/model.py`](src/anti_fwd_spam/model.py).
+
+The bot sends each eligible new group message to Jev, combining the sender's display name, available biography, and message text or caption with formatting and selected media descriptors. With multiple keys, retries can share the same input with multiple providers; review their privacy terms and pricing before enabling them. The bot does not send replied-to messages, conversation history, or media file IDs, and does not download or inspect media. Unavailable biographies are marked unknown. A successful lookup with no biography is marked empty.
 
 The bot deletes only the current message when the returned spam probability is at least 0.95. This score is a model estimate, not a guarantee of 95% accuracy. Model decisions do not mute, ban, add accounts to the blacklist, or clear history. Existing account-blacklist, source-bot, and report processing take priority. Edits, service messages, bot senders, and messages sent as channels or anonymous administrators skip the model check.
 
-Biography lookup and inference each have an eight-second deadline; failed biography lookup still permits classification. Network failures, timeouts, and HTTP 408, 429 or 5xx responses keep the message visible and schedule retries after 1, 2 and 5 minutes. Each inference attempt can incur an API charge. Permanent failures or invalid answers stop processing without deletion. Once classification succeeds, temporary deletion failures retry deletion without another model request.
+Biography lookup and inference each have an eight-second deadline; failed biography lookup still permits classification. Network failures, timeouts, and HTTP 408, 429 or 5xx responses keep the message visible and schedule retries after 1, 2 and 5 minutes, rotating through configured providers and wrapping around if needed. The four-attempt limit is shared across providers. A permanent HTTP rejection only schedules another attempt if a provider remains untried in the initial rotation. Invalid answers or valid scores below the threshold stop processing without consulting another provider. Each inference attempt can incur an API charge. Once classification succeeds, temporary deletion failures retry deletion without another model request.
 
-Keep the Worker's Cron Trigger enabled. It processes one due message per minute, so a backlog can delay retries. Processing stops when a message reaches 48 hours old. An edited update cancels pending work for the original content; a deletion already sent to Telegram cannot be recalled. Remove the Worker secret to disable new checks and pause pending tasks:
+Keep the Worker's Cron Trigger enabled. It processes one due message per minute, so a backlog can delay retries. Processing stops when a message reaches 48 hours old. An edited update cancels pending work for the original content; a deletion already sent to Telegram cannot be recalled. Pending inference uses the keys configured when it runs; changing keys can skip or revisit a provider without resetting the attempt budget. Keep the configured key set unchanged while tasks are pending to preserve rotation order. Remove every configured model secret to disable new checks and pause pending tasks, including deletion. For a Vercel-only deployment:
 
 ```bash
-mise exec -- uv run pywrangler secret delete EXPERIENTIAL_API_KEY
+mise exec -- uv run pywrangler secret delete AI_GATEWAY_API_KEY
 ```
 
 Start in a disposable group with ordinary discussion, promotional messages, and quoted scam warnings. Check that deleted messages leave membership and earlier history unchanged. Inspect Worker CPU usage and errors in Cloudflare; external network waits do not count as CPU time, but local execution still consumes the plan's CPU allowance. A key in a development terminal or Amp project does not configure the deployed Worker's secret.

@@ -31,6 +31,7 @@ before(async () => {
         assert.equal(body.questions.spam.type, 'noul');
         assert.equal(typeof body.questions.spam.instructions, 'string');
         model.state = body.state;
+        if (typeof model.response === 'function') return model.response();
         return model.response ?? Response.json({ model: 'jev-latest', answers: {
           spam: { type: 'noul', noul: model.probability },
         } });
@@ -60,6 +61,7 @@ beforeEach(async () => {
   await database.prepare('DELETE FROM recent_messages').run();
   await database.prepare('DELETE FROM automatic_mutes').run();
   await database.prepare('DELETE FROM blacklisted_users').run();
+  await database.prepare('DELETE FROM model_tasks').run();
 });
 afterEach(() => { assert.deepEqual(telegram.violations, []); });
 

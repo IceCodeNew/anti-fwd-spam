@@ -9,8 +9,9 @@ from http import HTTPStatus
 from typing import TYPE_CHECKING, Any
 
 from .evidence import DELETE_BATCH_SIZE, MESSAGE_WINDOW_SECONDS, EvidenceError, ReportStore
-from .model import MODEL_CONTENT_FIELDS, SPAM_THRESHOLD, spam_probability
+from .model import MODEL_CONTENT_FIELDS, model_input
 from .policy import matches_update
+from .tasks import ModelTasks
 from .telegram import DeleteOutcome, Fetch, TelegramError, call_method, delete_message
 
 if TYPE_CHECKING:
@@ -140,8 +141,7 @@ class Moderator:
             raise TelegramError(retryable=True)
         return result["status"]
 
-    # Boundary failures return distinct HTTP outcomes without nesting the moderation routes.
-    async def process(self, content_type: str | None, body: bytes) -> AppResponse:  # noqa: PLR0911
+    async def process(self, content_type: str | None, body: bytes) -> AppResponse:
         """Parse an authenticated update and apply its moderation policy."""
         if content_type is None or content_type.partition(";")[0].strip().lower() != "application/json":
             return AppResponse(415, "expected application/json")
@@ -151,9 +151,25 @@ class Moderator:
             automatic = matches_update(update, self.config)
         except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError):
             return AppResponse(400, "invalid update")
+        return await self.process_update(update, raw_json, automatic=automatic)
+
+    # Distinct route outcomes keep storage failures separate from Telegram failures.
+    async def process_update(  # noqa: PLR0911
+        self,
+        update: dict[str, object],
+        raw_json: str,
+        *,
+        automatic: bool,
+    ) -> AppResponse:
+        """Route a validated update through account, source, report and model policies."""
         message = update.get("message", update.get("edited_message"))
         if not isinstance(message, dict) or message["chat"]["type"] not in {"group", "supergroup"}:
             return AppResponse(200, "ignored")
+        if "edited_message" in update:
+            try:
+                await self.check_model(message, edited=True)
+            except EvidenceError:
+                return AppResponse(503, "model task storage unavailable; retry pending")
         account_response = await self.check_account_blacklist(update, message, raw_json)
         if account_response is not None:
             return account_response
@@ -173,26 +189,32 @@ class Moderator:
                 return await self.report(update, message, target, raw_json)
             except EvidenceError:
                 return AppResponse(503, "report storage unavailable; retry pending")
-        return await self.check_model(message) if "message" in update else AppResponse(200, "ignored")
+        try:
+            return await self.check_model(message) if "message" in update else AppResponse(200, "ignored")
+        except EvidenceError:
+            return AppResponse(503, "model task storage unavailable; retry pending")
 
-    async def check_model(self, message: dict[str, object]) -> AppResponse:
-        """Delete only the current message when the optional classifier reaches its threshold."""
-        if not self.model_key or user_id(message) is None or not MODEL_CONTENT_FIELDS.intersection(message):
-            return AppResponse(200, "ignored")
-        probability = await spam_probability(self.fetcher, self.model_key, self.config.bot_token, message)
-        if probability is None or probability < SPAM_THRESHOLD:
-            return AppResponse(
-                200, "model check failed; message retained" if probability is None else "message retained"
-            )
+    async def check_model(self, message: dict[str, object], *, edited: bool = False) -> AppResponse:
+        """Persist one inference task or cancel the old version on an edit."""
         chat, message_id = message.get("chat"), message.get("message_id")
         if not isinstance(chat, dict) or type(chat.get("id")) is not int or type(message_id) is not int:
             return AppResponse(400, "invalid model moderation target")
-        outcome = await delete_message(self.fetcher, self.config.bot_token, chat["id"], message_id)
-        if outcome is DeleteOutcome.RETRYABLE_FAILURE:
-            return AppResponse(503, "model deletion pending retry")
-        if outcome is DeleteOutcome.PERMANENT_FAILURE:
-            return AppResponse(200, "model deletion rejected")
-        return AppResponse(200, "model target removed", target_removed=True)
+        sent_at, now = message.get("date"), int(time.time())
+        if type(sent_at) is not int or not now - MESSAGE_WINDOW_SECONDS < sent_at <= now:
+            return AppResponse(200, "ignored")
+        tasks = ModelTasks(self.store, int(self.config.bot_token.split(":", 1)[0]))
+        if edited:
+            await tasks.enqueue(chat["id"], message_id, sent_at, None, now)
+            return AppResponse(200, "model task cancelled")
+        if not self.model_key or user_id(message) is None or not MODEL_CONTENT_FIELDS.intersection(message):
+            return AppResponse(200, "ignored")
+        state = await model_input(self.fetcher, self.config.bot_token, message)
+        now = int(time.time())
+        if await tasks.enqueue(chat["id"], message_id, sent_at, state, now):
+            task = await tasks.claim(now, (chat["id"], message_id))
+            if task is not None:
+                await tasks.run(task, self.fetcher, self.config.bot_token, self.model_key, now)
+        return AppResponse(200, "model task recorded")
 
     async def index_message(self, message: dict[str, object]) -> None:
         """Index only eligible user messages, sharing the same cutoff for both moderation paths."""

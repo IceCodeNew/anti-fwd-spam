@@ -26,11 +26,13 @@ test('user: Given a spam probability at the threshold, When a new message arrive
 });
 
 test('user: Given a probability below the threshold or an invalid answer, When classified, Then the message remains', async () => {
+  let id = 81;
   for (const probability of [0.9499, null, '0.99', true, -1, 1.01]) {
     model.probability = probability;
-    telegram.send(message());
-    assert.equal((await dispatch({ update_id: 2, message: message() })).status, 200);
-    assert.equal(telegram.has(81), true);
+    const target = message(id++);
+    telegram.send(target);
+    assert.equal((await dispatch({ update_id: id, message: target })).status, 200);
+    assert.equal(telegram.has(target.message_id), true);
   }
 });
 
@@ -72,28 +74,26 @@ test('user: Given an ordinary report or an edit, When the model would flag spam,
 });
 
 test('user: Given a malformed model envelope, When a message is evaluated, Then it remains visible', async () => {
+  let id = 81;
   for (const body of ['not JSON', '[]', '{}', '{"answers":[]}', '{"answers":{"spam":{"type":"text","noul":1}}}',
     '{"answers":{"spam":{"type":"noul","noul":NaN}}}', '{"answers":{"spam":{"type":"noul","noul":Infinity}}}',
     ' '.repeat(65537)]) {
     model.response = new Response(body);
-    telegram.send(message());
-    assert.equal((await dispatch({ update_id: 6, message: message() })).status, 200);
-    assert.equal(telegram.has(81), true);
+    const target = message(id++);
+    telegram.send(target);
+    assert.equal((await dispatch({ update_id: id, message: target })).status, 200);
+    assert.equal(telegram.has(target.message_id), true);
   }
 });
 
-test('user: Given a deletion failure, When spam is detected, Then only temporary failures request redelivery', async () => {
+test('user: Given a permanent deletion rejection, When spam is detected, Then redelivery does not delete it later', async () => {
   model.probability = 1;
-  for (const [status, expected] of [[400, 200], [429, 503], [500, 503]]) {
-    telegram.faults.set('deleteMessage', () => Response.json({ ok: false, error_code: status }, { status }));
-    telegram.send(message());
-    assert.equal((await dispatch({ update_id: 7, message: message() })).status, expected);
-    assert.equal(telegram.has(81), true);
-    assert.equal(telegram.canSend(22), true);
-  }
+  telegram.faults.set('deleteMessage', () => Response.json({ ok: false, error_code: 400 }, { status: 400 }));
+  telegram.send(message());
+  assert.equal((await dispatch({ update_id: 7, message: message() })).status, 200);
   telegram.faults.clear();
   assert.equal((await dispatch({ update_id: 7, message: message() })).status, 200);
-  assert.equal(telegram.has(81), false);
+  assert.equal(telegram.has(81), true);
 });
 
 test('user: Given service events or non-user senders, When a new update arrives, Then the model cannot remove it', async () => {
@@ -112,21 +112,24 @@ test('user: Given service events or non-user senders, When a new update arrives,
 
 test('user: Given a failed or empty biography lookup, When the message is spam, Then it is still evaluated with explicit missing information', async () => {
   model.probability = 0.96;
+  let id = 81;
   for (const [profile, expected] of [
     [new Response('{"ok":false,"error_code":400}', { status: 400 }), null],
     [{}, ''],
   ]) {
     model.profile = profile;
-    telegram.send(message());
-    assert.equal((await dispatch({ update_id: 9, message: message() })).status, 200);
-    assert.equal(telegram.has(81), false);
+    const target = message(id++);
+    telegram.send(target);
+    assert.equal((await dispatch({ update_id: id, message: target })).status, 200);
+    assert.equal(telegram.has(target.message_id), false);
     assert.equal(model.state.bio, expected);
   }
 });
 
 test('user: Given structured text, When spam is detected, Then its text is evaluated without embedded media identifiers', async () => {
+  let id = 81;
   for (const field of ['rich_message', 'checklist', 'poll']) {
-    const target = message();
+    const target = message(id++);
     delete target.text;
     target[field] = field === 'rich_message'
       ? { blocks: [{ type: 'paragraph', text: { type: 'plain', text: 'Advertising offer' } },
@@ -136,8 +139,8 @@ test('user: Given structured text, When spam is detected, Then its text is evalu
         : { question: 'Offers?', options: [{ text: 'Advertising offer', media: { photo: [{ file_id: 'private-media' }] } }] };
     model.probability = 1;
     telegram.send(target);
-    assert.equal((await dispatch({ update_id: 10, message: target })).status, 200);
-    assert.equal(telegram.has(81), false);
+    assert.equal((await dispatch({ update_id: id, message: target })).status, 200);
+    assert.equal(telegram.has(target.message_id), false);
     assert.ok(JSON.stringify(model.state.message).includes('Advertising offer'));
     assert.equal(JSON.stringify(model.state).includes('private-media'), false);
     assert.equal(JSON.stringify(model.state).includes('completed_by_user'), false);

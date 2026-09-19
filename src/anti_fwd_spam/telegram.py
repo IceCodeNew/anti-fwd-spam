@@ -135,7 +135,10 @@ async def delete_message(
 
 def classify_telegram_response(status: int, body: bytes) -> DeleteOutcome:
     """Classify Telegram's HTTP status and JSON result without false success."""
-    if status == HTTPStatus.TOO_MANY_REQUESTS or status >= HTTPStatus.INTERNAL_SERVER_ERROR:
+    if (
+        status in {HTTPStatus.REQUEST_TIMEOUT, HTTPStatus.TOO_MANY_REQUESTS}
+        or status >= HTTPStatus.INTERNAL_SERVER_ERROR
+    ):
         return DeleteOutcome.RETRYABLE_FAILURE
 
     typed_payload = _decode_response(body)
@@ -155,7 +158,10 @@ def classify_telegram_response(status: int, body: bytes) -> DeleteOutcome:
         and "message to delete not found" in description.casefold()
     ):
         return DeleteOutcome.ALREADY_ABSENT
-    retryable = error_code == HTTPStatus.TOO_MANY_REQUESTS or error_code >= HTTPStatus.INTERNAL_SERVER_ERROR
+    retryable = (
+        error_code in {HTTPStatus.REQUEST_TIMEOUT, HTTPStatus.TOO_MANY_REQUESTS}
+        or error_code >= HTTPStatus.INTERNAL_SERVER_ERROR
+    )
     return DeleteOutcome.RETRYABLE_FAILURE if retryable else DeleteOutcome.PERMANENT_FAILURE
 
 

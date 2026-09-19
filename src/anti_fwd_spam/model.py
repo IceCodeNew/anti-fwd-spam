@@ -89,11 +89,15 @@ def _structured_text(value: object) -> list[str]:
     return parts
 
 
-async def spam_probability(fetcher: Fetch, api_key: str, token: str, message: dict[str, object]) -> float | None:
-    """Use an unknown biography on lookup failure; retain messages on model failure."""
+class ModelRetryError(Exception):
+    """A transport or temporary HTTP failure permits a delayed inference attempt."""
+
+
+async def model_input(fetcher: Fetch, token: str, message: dict[str, object]) -> dict[str, object]:
+    """Snapshot the current message and an optional biography without conversation history."""
     sender = message.get("from")
     if not isinstance(sender, dict):
-        return None
+        return {}
     bio = None
     try:
         profile = await call_method(fetcher, token, "getChat", {"chat_id": sender["id"]})
@@ -103,13 +107,17 @@ async def spam_probability(fetcher: Fetch, api_key: str, token: str, message: di
                 bio = candidate
     except TelegramError:
         logging.getLogger(__name__).warning("Biography lookup failed; classifying with unknown biography")
-    state = {
+    return {
         "nickname": " ".join(
             sender[field] for field in ("first_name", "last_name") if isinstance(sender.get(field), str)
         ),
         "bio": bio,
         "message": message_content(message),
     }
+
+
+async def spam_probability(fetcher: Fetch, api_key: str, state: dict[str, object]) -> float | None:
+    """Return a valid score, stop on invalid answers, or signal a temporary failure."""
 
     async def send_and_read() -> tuple[int, bytes]:
         response = await fetcher(
@@ -131,9 +139,14 @@ async def spam_probability(fetcher: Fetch, api_key: str, token: str, message: di
 
     try:
         status, body = await asyncio.wait_for(send_and_read(), timeout=MODEL_TIMEOUT_SECONDS)
-    except Exception:  # noqa: BLE001 - Workers fetch can raise JavaScript exceptions; never log their secrets.
-        logging.getLogger(__name__).warning("Model request failed; message retained")
-        return None
+    except Exception as error:
+        # Workers fetch can raise JavaScript exceptions; callers must not log their secrets.
+        raise ModelRetryError from error
+    if (
+        status in {HTTPStatus.REQUEST_TIMEOUT, HTTPStatus.TOO_MANY_REQUESTS}
+        or status >= HTTPStatus.INTERNAL_SERVER_ERROR
+    ):
+        raise ModelRetryError
     if status != HTTPStatus.OK:
         return None
     return _decode_probability(body)
@@ -148,6 +161,8 @@ async def _read_bounded_response(response: TelegramResponse) -> bytes:
     data = bytearray()
     done = False
     try:
+        if response.status != HTTPStatus.OK:
+            return b""
         while True:
             result = await reader.read()
             done = bool(result.done)

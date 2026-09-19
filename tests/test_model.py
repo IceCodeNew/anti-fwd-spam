@@ -6,7 +6,7 @@ import unittest
 from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
-from anti_fwd_spam.model import spam_probability
+from anti_fwd_spam.model import ModelRetryError, model_input, spam_probability
 from tests.test_telegram import ClockLoop
 
 if TYPE_CHECKING:
@@ -81,20 +81,45 @@ class ModelDeadlineTests(unittest.TestCase):
                 await stall()
             return StreamingResponse(read_body, cancelled)
 
-        result = await spam_probability(
+        state = await model_input(
             fetcher,
-            "test-key",
             "123:token",
-            {
-                "from": {"id": 22, "first_name": "Alice"},
-                "text": "Hello",
-            },
+            {"from": {"id": 22, "first_name": "Alice"}, "text": "Hello"},
         )
-        self.assertEqual(result, 0.99 if stall_profile else None)
+        if stall_profile:
+            self.assertEqual(await spam_probability(fetcher, "test-key", state), 0.99)
+        else:
+            with self.assertRaises(ModelRetryError):
+                await spam_probability(fetcher, "test-key", state)
         self.assertTrue(cancelled.is_set())
 
 
 class ModelStreamTests(unittest.IsolatedAsyncioTestCase):
+    async def test_user_stops_after_permanent_http_rejection(self) -> None:
+        """user: Given rejected credentials and a stalled body, When headers arrive, Then processing stops."""
+        cancelled = asyncio.Event()
+
+        async def fetcher(url, *, method, headers, body) -> StreamingResponse:
+            async def read_body() -> bytes:
+                await asyncio.Future()
+                return b""
+
+            response = StreamingResponse(read_body, cancelled)
+            response.status = 401
+            return response
+
+        self.assertIsNone(await spam_probability(fetcher, "test-key", {}))
+        self.assertTrue(cancelled.is_set())
+
+    async def test_user_retries_a_network_failure(self) -> None:
+        """user: Given a disconnected model service, When inference fails, Then a retry remains possible."""
+
+        async def fetcher(url, *, method, headers, body) -> StreamingResponse:
+            raise ConnectionError
+
+        with self.assertRaises(ModelRetryError):
+            await spam_probability(fetcher, "test-key", {})
+
     async def test_user_closes_an_oversized_download(self) -> None:
         """user: Given an oversized answer, When its size exceeds the limit, Then its stream closes without a score."""
         cancelled = asyncio.Event()
@@ -107,6 +132,8 @@ class ModelStreamTests(unittest.IsolatedAsyncioTestCase):
 
             return StreamingResponse(read_body, cancelled)
 
-        result = await spam_probability(fetcher, "test-key", "123:token", {"from": {"id": 22}, "text": "Hello"})
+        result = await spam_probability(
+            fetcher, "test-key", {"nickname": "Alice", "bio": "", "message": {"text": "Hello"}}
+        )
         self.assertIsNone(result)
         self.assertTrue(cancelled.is_set())

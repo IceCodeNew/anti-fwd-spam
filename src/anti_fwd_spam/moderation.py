@@ -9,6 +9,7 @@ from http import HTTPStatus
 from typing import TYPE_CHECKING, Any
 
 from .evidence import DELETE_BATCH_SIZE, MESSAGE_WINDOW_SECONDS, EvidenceError, ReportStore
+from .model import MODEL_CONTENT_FIELDS, SPAM_THRESHOLD, spam_probability
 from .policy import matches_update
 from .telegram import DeleteOutcome, Fetch, TelegramError, call_method, delete_message
 
@@ -108,10 +109,18 @@ class AppResponse:
 class Moderator:
     """Apply automatic restrictions and administrator-authorized bans."""
 
-    def __init__(self, config: Config, fetcher: Fetch, store: ReportStore, bot_username: str) -> None:
+    def __init__(
+        self,
+        config: Config,
+        fetcher: Fetch,
+        store: ReportStore,
+        bot_username: str,
+        model_key: str | None = None,
+    ) -> None:
         """Bind one request's configuration and capabilities."""
         self.config, self.fetcher, self.store = config, fetcher, store
         self.bot_username = bot_username
+        self.model_key = model_key
 
     async def call(self, method: str, parameters: dict[str, object]) -> object:
         """Call Telegram through the existing Workers transport."""
@@ -156,15 +165,34 @@ class Moderator:
             return AppResponse(503, "message index unavailable; retry pending")
         target = message.get("reply_to_message")
         if (
-            not isinstance(target, dict)
-            or (user_id(message) is None and not sent_as_chat_itself(message))
-            or not mentions_bot(message, self.bot_username)
+            isinstance(target, dict)
+            and (user_id(message) is not None or sent_as_chat_itself(message))
+            and mentions_bot(message, self.bot_username)
         ):
+            try:
+                return await self.report(update, message, target, raw_json)
+            except EvidenceError:
+                return AppResponse(503, "report storage unavailable; retry pending")
+        return await self.check_model(message) if "message" in update else AppResponse(200, "ignored")
+
+    async def check_model(self, message: dict[str, object]) -> AppResponse:
+        """Delete only the current message when the optional classifier reaches its threshold."""
+        if not self.model_key or user_id(message) is None or not MODEL_CONTENT_FIELDS.intersection(message):
             return AppResponse(200, "ignored")
-        try:
-            return await self.report(update, message, target, raw_json)
-        except EvidenceError:
-            return AppResponse(503, "report storage unavailable; retry pending")
+        probability = await spam_probability(self.fetcher, self.model_key, self.config.bot_token, message)
+        if probability is None or probability < SPAM_THRESHOLD:
+            return AppResponse(
+                200, "model check failed; message retained" if probability is None else "message retained"
+            )
+        chat, message_id = message.get("chat"), message.get("message_id")
+        if not isinstance(chat, dict) or type(chat.get("id")) is not int or type(message_id) is not int:
+            return AppResponse(400, "invalid model moderation target")
+        outcome = await delete_message(self.fetcher, self.config.bot_token, chat["id"], message_id)
+        if outcome is DeleteOutcome.RETRYABLE_FAILURE:
+            return AppResponse(503, "model deletion pending retry")
+        if outcome is DeleteOutcome.PERMANENT_FAILURE:
+            return AppResponse(200, "model deletion rejected")
+        return AppResponse(200, "model target removed", target_removed=True)
 
     async def index_message(self, message: dict[str, object]) -> None:
         """Index only eligible user messages, sharing the same cutoff for both moderation paths."""

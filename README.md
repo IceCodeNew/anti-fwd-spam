@@ -95,9 +95,30 @@ The bot removes the administrator's report after confirming target deletion and 
 
 After a saved ban confirmation, retries after a temporary deletion failure continue deletion without banning again. If logs show `ban confirmation failed`, the bot could not confirm the result and will not repeat the ban for that report. Check the sender's membership; if moderation is still needed, send a new report or ban them in Telegram's member settings. The bot leaves the unconfirmed report visible for this check.
 
-Automatic matches delete only the matching message and permanently mute the sender, preserving other history and group membership. For target owners, administrators, or senders acting as a group or channel, the bot only deletes the target message; it does not mute or ban them.
+Source-bot matches delete only the matching message and permanently mute the sender, preserving other history and group membership. For target owners, administrators, or senders acting as a group or channel, the bot only deletes the target message; it does not mute or ban them.
 
-Automatic filtering requires Telegram's explicit inline-bot or forwarded-bot provenance. Report copied text or forwarded messages with hidden origins manually.
+Source-bot filtering requires Telegram's explicit inline-bot or forwarded-bot provenance. Report copied text or forwarded messages with hidden origins manually, or enable the optional model check below.
+
+## Enable model-based spam detection
+
+Save an [Experiential](https://platform.experientiallabs.ai/models/jev-latest) API key as a **Worker secret**, then deploy the code:
+
+```bash
+mise exec -- uv run pywrangler secret put EXPERIENTIAL_API_KEY
+mise exec -- uv run pywrangler deploy
+```
+
+The bot sends each eligible new group message to `jev-latest`, combining the sender's display name, available biography, and message text or caption with formatting and selected media descriptors. This shares member content with Experiential; review the provider's privacy terms and pricing before enabling it. The bot does not send replied-to messages, conversation history, or media file IDs, and does not download or inspect media. Unavailable biographies are marked unknown. A successful lookup with no biography is marked empty.
+
+The bot deletes only the current message when the returned spam probability is at least 0.95. This score is a model estimate, not a guarantee of 95% accuracy. Model decisions do not mute, ban, add accounts to the blacklist, or clear history. Existing account-blacklist, source-bot, and report processing take priority. Edits, service messages, bot senders, and messages sent as channels or anonymous administrators skip the model check.
+
+Biography lookup and inference each have an eight-second deadline. Model failures or invalid answers retain the message and acknowledge delivery; failed biography lookup still permits classification. Temporary deletion failures request webhook redelivery, which may classify the message again and incur another API charge. The bot stores no model score or biography. Check `model check failed`, `model deletion rejected`, and `model deletion pending retry` in Worker logs. Remove the Worker secret to disable model checks:
+
+```bash
+mise exec -- uv run pywrangler secret delete EXPERIENTIAL_API_KEY
+```
+
+Start in a disposable group with ordinary discussion, promotional messages, and quoted scam warnings. Check that deleted messages leave membership and earlier history unchanged. Inspect Worker CPU usage and errors in Cloudflare; external network waits do not count as CPU time, but local execution still consumes the plan's CPU allowance. A key in a development terminal or Amp project does not configure the deployed Worker's secret.
 
 ## Block reported accounts across groups
 

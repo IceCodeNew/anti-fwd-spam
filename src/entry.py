@@ -32,6 +32,7 @@ class Default(WorkerEntrypoint):
         try:
             config = self._get_config()
             bot_username = _environment_string(self.env, "BOT_USERNAME")
+            model_key = _environment_string(self.env, "EXPERIENTIAL_API_KEY")
         except ConfigError:
             return _response(AppResponse(500, "invalid worker configuration"))
         if (
@@ -72,6 +73,7 @@ class Default(WorkerEntrypoint):
             fetch,
             ReportStore(getattr(self.env, "REPORTS", None)),
             bot_username,
+            model_key,
         ).process(request.headers.get("content-type"), body)
         if any(marker in app_response.body for marker in ("failed", "rejected", "retry")):
             logging.getLogger(__name__).warning("Moderation outcome: %s", app_response.body)

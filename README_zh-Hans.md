@@ -95,9 +95,30 @@ bot 确认目标消息已删除或不存在，并完成符合条件的历史清�
 
 bot 保存封禁成功的记录后，遇到临时删除失败时，会在重试中继续删除消息，不会重复封禁。如果日志出现 `ban confirmation failed`，表示 bot 无法确认结果，不会因同一条举报再次封禁。管理员应检查发送者的成员状态；如果仍需处理，可以发送新的举报，或在 Telegram 的成员设置中手动封禁。bot 会保留未确认的举报消息，供管理员检查。
 
-自动匹配时，bot 只删除匹配到的消息，并永久禁言发送者，保留其历史消息和群成员身份。目标发送者为群主、管理员，或以群组、频道身份发言时，bot 只删除目标消息，不执行禁言或封禁。
+匹配来源 bot 时，bot 只删除匹配到的消息，并永久禁言发送者，保留其历史消息和群成员身份。目标发送者为群主、管理员，或以群组、频道身份发言时，bot 只删除目标消息，不执行禁言或封禁。
 
-自动拦截只适用于 Telegram 保留了指定 bot 来源的内联消息或转发消息。复制粘贴的内容、隐藏来源的转发需要手动举报。
+来源 bot 拦截只适用于 Telegram 保留了指定 bot 来源的内联消息或转发消息。复制粘贴的内容、隐藏来源的转发可以手动举报，或启用下方的可选模型检查。
+
+## 启用模型垃圾消息检测
+
+将 [Experiential](https://platform.experientiallabs.ai/models/jev-latest) API key 保存为 **Worker secret**，然后部署代码：
+
+```bash
+mise exec -- uv run pywrangler secret put EXPERIENTIAL_API_KEY
+mise exec -- uv run pywrangler deploy
+```
+
+bot 会将符合条件的群内新消息发送给 `jev-latest`，结合发送者昵称、可获取的个人简介、正文或媒体说明，以及格式信息和选定的媒体描述进行判断。此操作会向 Experiential 传输成员内容，管理员应在启用前查看服务商的隐私条款和价格。bot 不发送被回复消息、聊天历史或媒体文件 ID，也不下载或识别媒体内容。简介无法获取时，bot 将其标记为未知；查询成功但未返回简介时，标记为空。
+
+返回的垃圾消息概率达到 0.95 时，bot 只删除当前消息。该分数是模型估计值，不代表准确率达到 95%。模型判断不会触发禁言、封禁、加入黑名单或清理历史。bot 优先处理已有的账号黑名单、来源 bot 规则和举报。编辑消息、服务消息、bot 发送的消息，以及频道身份或匿名管理员发送的消息不参与模型检查。
+
+简介查询和模型推理各有 8 秒超时限制。模型调用失败或答案无效时，bot 保留消息并确认投递；简介查询失败时，仍可继续分类。删除遇到临时失败时，bot 请求 webhook 重投，重投可能再次调用模型并产生费用。bot 不存储模型分数或个人简介。管理员可以在 Worker 日志中检查 `model check failed`、`model deletion rejected` 和 `model deletion pending retry`。删除 Worker secret 即可关闭模型检查：
+
+```bash
+mise exec -- uv run pywrangler secret delete EXPERIENTIAL_API_KEY
+```
+
+管理员应先在可丢弃的测试群中发送普通讨论、推广消息和引用诈骗内容的警示消息，检查删除后是否保留群成员身份和之前的消息。同时在 Cloudflare 中查看 Worker CPU 用量和错误。外部网络等待不计入 CPU 时间，但本地执行仍受套餐 CPU 额度约束。开发终端或 Amp project 中的密钥不会自动成为已部署 Worker 的 secret。
 
 ## 跨群封禁已举报账号
 

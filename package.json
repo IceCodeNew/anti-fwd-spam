@@ -6,7 +6,7 @@
     "test": "npm run test:unit && npm run test:e2e",
     "test:unit": "PYTHONPATH=src uv run python -m unittest discover -s tests -v",
     "pretest:e2e": "rm -rf .wrangler/test-build && npm run build -- --outdir .wrangler/test-build",
-    "test:e2e": "node --test tests/worker.test.mjs",
+    "test:e2e": "node --test tests/*.test.mjs",
     "test:contract": "node --test tests/telegram.contract.mjs"
   },
   "devDependencies": {

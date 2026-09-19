@@ -13,6 +13,7 @@ from .telegram import DeleteOutcome, delete_message
 
 if TYPE_CHECKING:
     from .evidence import ReportStore
+    from .model import ModelConfig
     from .telegram import Fetch
 
 RETRY_DELAYS = (60, 120, 300)
@@ -169,13 +170,15 @@ class ModelTasks:
             .run()
         )
 
-    async def run(self, task: Task, fetcher: Fetch, token: str, api_key: str, now: int) -> None:
+    async def run(self, task: Task, fetcher: Fetch, token: str, models: tuple[ModelConfig, ...], now: int) -> None:
         """Persist inference before starting deletion, so retries cannot reevaluate a saved score."""
         if task.phase == "classify":
+            model = models[(task.attempts - 1) % len(models)]
             try:
-                probability = await spam_probability(fetcher, api_key, json.loads(task.input_json or "{}"))
-            except ModelRetryError:
-                await self.finish(task, "classify", max(now, int(time.time())), retry=True)
+                probability = await spam_probability(fetcher, model, json.loads(task.input_json or "{}"))
+            except ModelRetryError as error:
+                retry = error.retryable or task.attempts < len(models)
+                await self.finish(task, "classify" if retry else "done", max(now, int(time.time())), retry=retry)
                 return
             now = max(now, int(time.time()))
             phase = "delete" if probability is not None and probability >= SPAM_THRESHOLD else "done"

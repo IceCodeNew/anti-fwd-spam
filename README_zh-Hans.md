@@ -123,7 +123,8 @@ curl --silent --show-error --fail-with-body \
 - 遇到 `401`，重新保存 webhook 密钥，并用同一个值执行「注册 webhook」。
 - 遇到 `404`，核对地址是否以 `/webhook` 结尾。
 - 删除、禁言或封禁失败时，核对 bot 的管理员权限，以及目标发送者是否为管理员或匿名身份。`report cleanup rejected` 表示举报消息删除被拒绝，应从同一条日志中查看目标消息的处理结果。对于 `report cleanup pending` 响应，Telegram 会重试投递。
-- 举报存储或消息索引失败时，在 Cloudflare 控制台检查 `REPORTS` 绑定、数据库迁移和 D1 用量。`history cleanup pending retry` 表示还有批次待处理，或临时错误中断了清理；bot 会保留举报消息，等待后续处理。
+- 遇到 `mute retry skipped` 且仍需处理时，管理员应手动检查发送者权限。去重记录存在期间，bot 不会对同一条消息重复执行可能已经成功的禁言，编辑更新也受此限制，避免重投覆盖管理员解除禁言的操作。Telegram 明确拒绝的临时失败仍可重试；新的匹配消息可以再次触发禁言。
+- 举报存储、禁言存储或消息索引失败时，在 Cloudflare 控制台检查 `REPORTS` 绑定、数据库迁移和 D1 用量。禁言存储不可用时，自动拦截仍可删除目标，但禁言要等待存储恢复。`history cleanup pending retry` 表示还有批次待处理，或临时错误中断了清理；bot 会保留举报消息，等待后续处理。
 
 `pending_update_count` 为 `0` 仅表示没有积压，仍需在测试群确认消息和成员状态的变化。处理完后运行 `unset BOT_TOKEN`，清除当前终端变量。
 
@@ -134,3 +135,5 @@ curl --silent --show-error --fail-with-body \
 举报记录保留 3 天，不下载图片或其他媒体文件。定时任务清理到期记录；服务故障或额度耗尽可能延迟删除。Cloudflare 的备份另有保留周期，具体见 [D1 Time Travel](https://developers.cloudflare.com/d1/reference/time-travel/)。
 
 `recent_messages` 表只保存超级群中已收到的用户消息对应的 bot、群、发送者和消息 ID，以及原始发送时间，不保存正文或媒体。编辑消息不会延长保留时间。消息发送满 48 小时后，bot 不再选取它进行删除；定时任务分批清理到期索引，积压可能延迟清理。批量删除成功后会提前移除索引。建立索引会增加 D1 写入开销，即使没有举报，也应关注数据库用量。
+
+bot 使用 `automatic_mutes` 表中的 bot、群和消息 ID 及到期时间，避免重复自动禁言，不保存消息内容。每条记录在创建后 3 天到期；bot 不会因重复投递或编辑更新刷新已有记录的到期时间。定时任务分批删除到期记录。

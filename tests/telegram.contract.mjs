@@ -62,12 +62,29 @@ test('user checks API compatibility: Given live Bot API documentation, When requ
   assert.match(text(section('deleteMessages')), /1-100/);
   assert.match(text(section('deleteMessages')), /See deleteMessage for limitations/);
   assert.match(text(section('deleteMessage')), /less than 48 hours ago/);
-  const now = Math.floor(Date.now() / 1000);
+  const now = telegram.now;
   telegram.send({ ...message(90), date: now - 60 });
   assert.deepEqual(await call('deleteMessages', { chat_id: chat.id, message_ids: [90, 91] }), { ok: true, result: true });
   assert.equal(telegram.has(90), false);
   telegram.send({ ...message(92), date: now - 48 * 3600 });
   assert.equal((await call('deleteMessages', { chat_id: chat.id, message_ids: [92] })).ok, false);
   assert.equal(telegram.has(92), true);
+  assert.match(text(section('deleteMessage')), /supergroup, channel, or forum topic creation can(?:'|&#39;)t be deleted/);
+  for (const method of ['deleteMessage', 'deleteMessages']) {
+    const params = method === 'deleteMessage' ? { message_id: 93 } : { message_ids: [93] };
+    telegram.send({ ...message(93), date: now - 48 * 3600 + 1 });
+    assert.equal((await call(method, { chat_id: chat.id, ...params })).ok, true);
+    assert.equal(telegram.has(93), false);
+    telegram.send({ ...message(93), date: now - 48 * 3600 + 1 });
+    telegram.now = now + 1;
+    assert.equal((await call(method, { chat_id: chat.id, ...params })).ok, false);
+    assert.equal(telegram.has(93), true);
+    telegram.now = now;
+    for (const kind of ['forum_topic_created', 'supergroup_chat_created', 'channel_chat_created']) {
+      telegram.send({ ...message(93), date: now, [kind]: true });
+      assert.equal((await call(method, { chat_id: chat.id, ...params })).ok, false);
+      assert.equal(telegram.has(93), true);
+    }
+  }
   assert.deepEqual(telegram.violations, []);
 });

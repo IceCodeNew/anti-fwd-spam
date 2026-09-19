@@ -34,6 +34,7 @@ beforeEach(async () => {
   telegram.reset();
   await database.prepare('DELETE FROM reports').run();
   await database.prepare('DELETE FROM recent_messages').run();
+  await database.prepare('DELETE FROM automatic_mutes').run();
 });
 afterEach(() => { assert.deepEqual(telegram.violations, []); });
 
@@ -46,6 +47,98 @@ function dispatch(update, options = {}) {
 async function evidence() {
   return (await database.prepare('SELECT * FROM reports ORDER BY update_id').all()).results;
 }
+
+for (const outcome of ['confirmed', 'response lost']) {
+  test(`user keeps an administrative unmute after ${outcome}: Given an automatic mute took effect, When an administrator unmutes before redelivery, Then the user remains able to send and new spam is still moderated`, async () => {
+    const update = { update_id: 900, message: { ...message(), via_bot: { id: 273234066, is_bot: true } } };
+    telegram.send(update.message);
+    if (outcome === 'response lost') {
+      telegram.faults.set('restrictChatMember', async () => {
+        telegram.faults.clear();
+        await telegram.fetch(new Request(`https://api.telegram.org/bot${token}/restrictChatMember`, {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ chat_id: chat.id, user_id: 22, until_date: 0,
+            use_independent_chat_permissions: true, permissions: { can_send_messages: false } }),
+        }));
+        return new Response('response lost', { status: 502 });
+      });
+    }
+    assert.equal((await dispatch(update)).status, outcome === 'confirmed' ? 200 : 503);
+    assert.equal(telegram.canSend(22), false);
+    telegram.members.set(22, { status: 'member' });
+    assert.equal((await dispatch(update)).status, 200);
+    assert.equal(telegram.canSend(22), true);
+    assert.equal(telegram.has(81), false);
+    assert.equal((await dispatch({ update_id: 901, edited_message: update.message })).status, 200);
+    assert.equal(telegram.canSend(22), true);
+    const fresh = { ...update.message, message_id: 90 };
+    telegram.send(fresh);
+    assert.equal((await dispatch({ update_id: 902, message: fresh })).status, 200);
+    assert.equal(telegram.has(90), false);
+    assert.equal(telegram.canSend(22), false);
+    assert.deepEqual(await evidence(), []);
+  });
+}
+
+test('user recovers automatic moderation: Given unavailable storage followed by a temporary Telegram rejection, When delivery resumes after recovery, Then the message stays deleted and muting eventually succeeds', async () => {
+  const update = { message: { ...message(), via_bot: { id: 273234066, is_bot: true } } };
+  telegram.send(update.message);
+  await database.prepare('ALTER TABLE automatic_mutes RENAME TO unavailable_mutes').run();
+  try {
+    assert.equal((await dispatch(update)).status, 503);
+    assert.equal(telegram.has(81), false);
+    assert.equal(telegram.canSend(22), true);
+  } finally {
+    await database.prepare('ALTER TABLE unavailable_mutes RENAME TO automatic_mutes').run();
+  }
+  telegram.faults.set('restrictChatMember', () => Response.json({ ok: false, error_code: 429 }, { status: 429 }));
+  assert.equal((await dispatch(update)).status, 503);
+  assert.equal(telegram.canSend(22), true);
+  telegram.faults.clear();
+  assert.equal((await dispatch(update)).status, 200);
+  assert.equal(telegram.canSend(22), false);
+});
+
+test('user keeps an unmute across overlapping automatic deliveries: Given a delayed membership lookup, When another delivery finishes and an administrator unmutes, Then the late delivery preserves that permission', async () => {
+  const entered = Promise.withResolvers(), release = Promise.withResolvers();
+  const update = { message: { ...message(), via_bot: { id: 273234066, is_bot: true } } };
+  telegram.send(update.message);
+  telegram.faults.set('getChatMember:22', () => { entered.resolve(); return release.promise; });
+  const pending = dispatch(update);
+  await entered.promise;
+  telegram.faults.clear();
+  try {
+    assert.equal((await dispatch(update)).status, 200);
+    assert.equal(telegram.canSend(22), false);
+    telegram.members.set(22, { status: 'member' });
+  } finally {
+    release.resolve(Response.json({ ok: true, result: { status: 'member', user: message().from } }));
+    assert.equal((await pending).status, 200);
+  }
+  assert.equal(telegram.canSend(22), true);
+  assert.equal(telegram.has(81), false);
+});
+
+test('user expires mute identifiers: Given an automatic restriction, When redelivery and scheduled cleanup run, Then identifiers retain their original three-day expiry without storing content', async () => {
+  const update = { message: { ...message(), via_bot: { id: 273234066, is_bot: true } } };
+  telegram.send(update.message);
+  const before = Math.floor(Date.now() / 1000);
+  assert.equal((await dispatch(update)).status, 200);
+  const rows = async () => (await database.prepare('SELECT * FROM automatic_mutes').all()).results;
+  const [saved] = await rows();
+  assert.deepEqual(Object.keys(saved).sort(), ['bot_id', 'chat_id', 'expires_at', 'message_id']);
+  assert.ok(saved.expires_at >= before + 259200 && saved.expires_at <= Math.floor(Date.now() / 1000) + 259200);
+  // Represent an earlier attempt so an accidental TTL refresh cannot hide within the same second.
+  saved.expires_at -= 60;
+  await database.prepare('UPDATE automatic_mutes SET expires_at = ?').bind(saved.expires_at).run();
+  assert.equal((await dispatch(update)).status, 200);
+  assert.deepEqual(await rows(), [saved]);
+  const worker = await runtime.getWorker();
+  await worker.scheduled({ scheduledTime: new Date((saved.expires_at - 1) * 1000), cron: '* * * * *' });
+  assert.deepEqual(await rows(), [saved]);
+  await worker.scheduled({ scheduledTime: new Date(saved.expires_at * 1000), cron: '* * * * *' });
+  assert.deepEqual(await rows(), []);
+});
 
 test('user clears recent history: Given observed messages from different senders and groups, When an administrator reports spam, Then only the reported sender\'s recent messages in that group disappear', async () => {
   const now = Math.floor(Date.now() / 1000);
@@ -128,7 +221,6 @@ test('user reports old spam: Given a target Telegram refuses to delete, When an 
   telegram.send(target);
   telegram.send(update.message);
   telegram.send(message(80));
-  telegram.faults.set('deleteMessage:81', () => Response.json({ ok: false, error_code: 400, description: "Bad Request: message can't be deleted" }, { status: 400 }));
 
   const response = await dispatch(update);
 
@@ -474,7 +566,7 @@ test('user retains evidence during failure: Given unavailable storage, When a re
   }
 });
 
-for (const stage of ['getChatMember:11', 'getChatMember:22', 'banChatMember', 'deleteMessage:82']) {
+for (const stage of ['getChatMember:11', 'getChatMember:22', 'banChatMember']) {
   test(`user recovers from ${stage}: Given a temporary Telegram failure, When delivery is retried, Then evidence is retained and moderation finishes`, async () => {
     const update = report();
     telegram.send(message(80));
@@ -486,10 +578,8 @@ for (const stage of ['getChatMember:11', 'getChatMember:22', 'banChatMember', 'd
     const [pending] = await evidence();
     assert.equal(pending.response_status, null);
     assert.equal(telegram.has(82), true);
-    if (stage !== 'deleteMessage:82') {
-      assert.equal(telegram.canJoin(22), true);
-      assert.equal(telegram.has(80), true);
-    }
+    assert.equal(telegram.canJoin(22), true);
+    assert.equal(telegram.has(80), true);
     telegram.faults.clear();
     assert.equal((await dispatch(update)).status, 200);
 
@@ -557,12 +647,12 @@ test('user filters provenance: Given bot IDs and lookalike usernames, When messa
     [{ text: '@PostBot', reply_to_message: { via_bot: { id: 273234066, is_bot: true } } }, false],
     [{ from: { id: 273234066, is_bot: true } }, false],
   ];
-  for (const [fields, expected] of cases) {
+  for (const [index, [fields, expected]] of cases.entries()) {
     telegram.reset();
-    const target = { ...message(), ...fields };
+    const target = { ...message(81 + index), ...fields };
     telegram.send(target);
     assert.equal((await dispatch({ edited_message: target })).status, 200);
-    assert.equal(telegram.has(81), !expected, JSON.stringify(fields));
+    assert.equal(telegram.has(target.message_id), !expected, JSON.stringify(fields));
     assert.equal(telegram.canSend(22), !expected);
   }
 });
@@ -679,6 +769,9 @@ test('user keeps history when deletion fails: Given rejected or malformed Telegr
     [403, JSON.stringify({ ok: false, error_code: 403 }), 200],
     [500, JSON.stringify({ ok: false, error_code: 500 }), 503],
     [200, JSON.stringify({ ok: false, error_code: 500 }), 503],
+    [200, JSON.stringify({ ok: false }), 503],
+    [200, JSON.stringify({ ok: false, error_code: '400' }), 503],
+    [200, JSON.stringify({ ok: false, error_code: true }), 503],
     [200, JSON.stringify({ ok: true, result: false }), 503],
     [200, JSON.stringify({ result: true }), 503],
     [200, 'not json', 503],

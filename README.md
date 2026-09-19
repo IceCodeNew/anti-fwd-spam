@@ -123,7 +123,8 @@ Check that `result.url` matches the deployment URL plus `/webhook`. Query again 
 - For `401`, save the webhook secret again and register the webhook with the same value.
 - For `404`, check that the URL ends in `/webhook`.
 - For deletion, mute, or ban failures, check the bot's administrator permissions and whether the target is an administrator or anonymous sender. `report cleanup rejected` means report deletion was rejected; read the same log entry for the target's moderation outcome. Telegram retries `report cleanup pending` responses.
-- For report storage or message-index failures, check the `REPORTS` binding, database migrations, and D1 usage in the Cloudflare dashboard. `history cleanup pending retry` means more batches remain or a temporary error interrupted cleanup; the bot keeps the report visible until processing finishes.
+- For `mute retry skipped`, check the sender's permissions manually if moderation is still needed. The bot does not repeat a potentially successful mute for the same message while its deduplication record exists, including edited updates, so redelivery does not undo an administrator's unmute. Explicit temporary Telegram rejections remain retryable; a new matching message can trigger another mute.
+- For report storage, mute storage, or message-index failures, check the `REPORTS` binding, database migrations, and D1 usage in the Cloudflare dashboard. If mute storage is unavailable, automatic filtering can still delete the target, but muting waits for storage recovery. `history cleanup pending retry` means more batches remain or a temporary error interrupted cleanup; the bot keeps the report visible until processing finishes.
 
 `pending_update_count: 0` only means there is no backlog. Verify message and membership changes in the test group. Run `unset BOT_TOKEN` when finished.
 
@@ -134,3 +135,5 @@ Open the `reports` table in the `anti-fwd-spam-reports` D1 database in the Cloud
 Reports are retained for 3 days. The bot does not download images or other media. Scheduled cleanup removes expired records; service failures or exhausted quotas can delay deletion. Cloudflare backups have separate retention rules; see [D1 Time Travel](https://developers.cloudflare.com/d1/reference/time-travel/).
 
 The `recent_messages` table stores only bot, group, sender and message IDs plus the original sending time for observed user messages in supergroups. It stores no message text or media. Edits do not renew retention. Identifiers stop qualifying for deletion after 48 hours; scheduled cleanup removes expired rows in bounded batches and can lag behind a backlog. Successful batch deletion removes identifiers sooner. Indexing adds D1 writes for received messages, so monitor database usage even when nobody reports spam.
+
+The `automatic_mutes` table stores bot, group and message IDs with an expiry time to prevent repeated automatic restrictions. It stores no content. Each record expires 3 days after creation; duplicate or edited updates do not refresh an existing record's expiry. Scheduled cleanup removes expired rows in bounded batches.

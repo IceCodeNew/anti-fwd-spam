@@ -3,10 +3,11 @@ import assert from 'node:assert/strict';
 export const chat = { id: -10012, type: 'supergroup', title: 'Test discussion' };
 export const token = '123:test-token';
 export const username = 'niuqu_icn_bot';
+const messageDate = Math.floor(Date.now() / 1000) - 60;
 
 export function message(id = 81, sender = 22) {
   return {
-    message_id: id, chat: { ...chat }, date: 1_789_500_000,
+    message_id: id, chat: { ...chat }, date: messageDate,
     from: { id: sender, is_bot: false, first_name: `User ${sender}` }, text: 'message',
   };
 }
@@ -28,12 +29,14 @@ export class Telegram {
   members = new Map();
   faults = new Map();
   violations = [];
+  now = Math.floor(Date.now() / 1000);
 
   reset() {
     this.messages.clear();
     this.members = new Map([[11, { status: 'administrator' }], [22, { status: 'member' }]]);
     this.faults.clear();
     this.violations = [];
+    this.now = Math.floor(Date.now() / 1000);
   }
 
   send(message) {
@@ -68,22 +71,21 @@ export class Telegram {
       const fault = this.faults.get(`${method}:${params.message_id ?? params.user_id}`) ?? this.faults.get(method);
       if (fault) return fault();
 
-      if (method === 'deleteMessages') {
-        const tooOld = params.message_ids.some(id => {
+      if (method === 'deleteMessage' || method === 'deleteMessages') {
+        const ids = method === 'deleteMessages' ? params.message_ids : [params.message_id];
+        const undeletable = ids.some(id => {
           const msg = this.messages.get(`${params.chat_id}:${id}`);
-          return msg && (msg.date <= Math.floor(Date.now() / 1000) - 48 * 3600 || msg.forum_topic_created);
+          return msg && (msg.date <= this.now - 48 * 3600 ||
+            msg.forum_topic_created || msg.supergroup_chat_created || msg.channel_chat_created);
         });
-        if (tooOld) return Response.json({
+        if (undeletable) return Response.json({
           ok: false, error_code: 400, description: "Bad Request: message can't be deleted",
         }, { status: 400 });
-        for (const id of params.message_ids) this.messages.delete(`${params.chat_id}:${id}`);
+        if (method === 'deleteMessage' && !this.messages.has(`${params.chat_id}:${params.message_id}`)) {
+          return Response.json({ ok: false, error_code: 400, description: 'Bad Request: message to delete not found' }, { status: 400 });
+        }
+        for (const id of ids) this.messages.delete(`${params.chat_id}:${id}`);
         return Response.json({ ok: true, result: true });
-      }
-      if (method === 'deleteMessage') {
-        const found = this.messages.delete(`${params.chat_id}:${params.message_id}`);
-        return found ? Response.json({ ok: true, result: true }) : Response.json({
-          ok: false, error_code: 400, description: 'Bad Request: message to delete not found',
-        }, { status: 400 });
       }
       const member = this.members.get(params.user_id);
       assert.ok(member, 'The scenario must supply the Telegram member');

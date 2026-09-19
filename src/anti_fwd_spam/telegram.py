@@ -139,15 +139,15 @@ def classify_telegram_response(status: int, body: bytes) -> DeleteOutcome:
         return DeleteOutcome.RETRYABLE_FAILURE
 
     typed_payload = _decode_response(body)
-    if typed_payload is None:
-        return _malformed_response_outcome(status)
-    if not isinstance(typed_payload.get("ok"), bool):
+    if typed_payload is None or not isinstance(typed_payload.get("ok"), bool):
         return _malformed_response_outcome(status)
     if typed_payload["ok"] is True:
         deleted = HTTPStatus.OK <= status < HTTPStatus.MULTIPLE_CHOICES and typed_payload.get("result") is True
         return DeleteOutcome.DELETED if deleted else DeleteOutcome.RETRYABLE_FAILURE
 
     error_code = typed_payload.get("error_code")
+    if type(error_code) is not int:
+        return DeleteOutcome.RETRYABLE_FAILURE
     description = typed_payload.get("description")
     if (
         error_code == HTTPStatus.BAD_REQUEST
@@ -155,11 +155,7 @@ def classify_telegram_response(status: int, body: bytes) -> DeleteOutcome:
         and "message to delete not found" in description.casefold()
     ):
         return DeleteOutcome.ALREADY_ABSENT
-    retryable = error_code == HTTPStatus.TOO_MANY_REQUESTS or (
-        isinstance(error_code, int)
-        and not isinstance(error_code, bool)
-        and error_code >= HTTPStatus.INTERNAL_SERVER_ERROR
-    )
+    retryable = error_code == HTTPStatus.TOO_MANY_REQUESTS or error_code >= HTTPStatus.INTERNAL_SERVER_ERROR
     return DeleteOutcome.RETRYABLE_FAILURE if retryable else DeleteOutcome.PERMANENT_FAILURE
 
 

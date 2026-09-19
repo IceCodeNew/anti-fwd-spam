@@ -21,7 +21,8 @@ before(async () => {
     ...workerOptions,
     modulesRoot: root,
     modules: ['entry.py', ...paths].map(path => ({ type: 'PythonModule', path: resolve(root, path) })),
-    bindings: { ...workerOptions.bindings, BOT_TOKEN: token, TELEGRAM_WEBHOOK_SECRET: secret, BOT_USERNAME: username },
+    bindings: { ...workerOptions.bindings, BOT_TOKEN: token, TELEGRAM_WEBHOOK_SECRET: secret, BOT_USERNAME: username,
+      REPORTER_IDS: '11,-10012' },
     outboundService: async request => {
       const providers = {
         'https://api.experientiallabs.ai/v1/systemone': ['jev-latest', 'test-model-key'],
@@ -81,8 +82,10 @@ beforeEach(async () => {
 });
 afterEach(() => { assert.deepEqual(telegram.violations, []); });
 
-export async function setModelKeys(keys) {
-  await runtime.setOptions(convertV4MiniflareOptions({ ...runtimeOptions, bindings: { ...runtimeOptions.bindings, ...keys } }));
+export async function setBindings(bindings) {
+  const configured = Object.fromEntries(Object.entries({ ...runtimeOptions.bindings, ...bindings })
+    .filter(([, value]) => value !== undefined));
+  await runtime.setOptions(convertV4MiniflareOptions({ ...runtimeOptions, bindings: configured }));
   database = await runtime.getD1Database('REPORTS');
 }
 

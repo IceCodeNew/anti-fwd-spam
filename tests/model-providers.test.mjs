@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { database, dispatch, model, runtime, setModelKeys, telegram } from './worker-runtime.mjs';
+import { database, dispatch, model, runtime, setBindings as setModelKeys, telegram } from './worker-runtime.mjs';
 import { message } from './telegram-fake.mjs';
 
 const keys = ['TYPESAFE_AI_API_KEY', 'AI_GATEWAY_API_KEY', 'EXPERIENTIAL_API_KEY', 'OPENCODE_API_KEY'];

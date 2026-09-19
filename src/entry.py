@@ -89,7 +89,12 @@ class Default(WorkerEntrypoint):
         if bot_ids is None:
             message = "BLACKLIST_BOT_IDS must be a string"
             raise ConfigError(message)
-        return Config.from_values(bot_token=bot_token, webhook_secret=webhook_secret, bot_ids=bot_ids)
+        return Config.from_values(
+            bot_token=bot_token,
+            webhook_secret=webhook_secret,
+            bot_ids=bot_ids,
+            reporter_ids=_environment_string(self.env, "REPORTER_IDS", default=""),
+        )
 
     def _get_models(self) -> tuple[ModelConfig, ...]:
         return tuple(

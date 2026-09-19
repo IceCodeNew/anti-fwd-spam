@@ -52,14 +52,13 @@ def user_id(message: dict[str, object]) -> int | None:
     return identifier if type(identifier) is int and identifier > 0 else None
 
 
-def sent_as_chat_itself(message: dict[str, object]) -> bool:
-    """Recognize anonymous administrators, whom Telegram sends on behalf of the chat itself."""
-    chat = message.get("chat")
+def reporter_allowed(message: dict[str, object], config: Config) -> bool:
+    """Match the sender's identity against its configured allowlist."""
     sender_chat = message.get("sender_chat")
-    if not isinstance(chat, dict) or not isinstance(sender_chat, dict):
-        return False
-    chat_id, sender_id = chat.get("id"), sender_chat.get("id")
-    return type(chat_id) is int and type(sender_id) is int and sender_id == chat_id
+    if isinstance(sender_chat, dict):
+        identifier = sender_chat.get("id")
+        return type(identifier) is int and identifier in config.reporter_ids
+    return user_id(message) in config.reporter_ids
 
 
 def mention_username(text: object, entity: dict[str, object]) -> str | None:
@@ -181,13 +180,13 @@ class Moderator:
         except EvidenceError:
             return AppResponse(503, "message index unavailable; retry pending")
         target = message.get("reply_to_message")
-        if (
-            isinstance(target, dict)
-            and (user_id(message) is not None or sent_as_chat_itself(message))
-            and mentions_bot(message, self.bot_username)
-        ):
+        if isinstance(target, dict) and mentions_bot(message, self.bot_username):
             try:
-                return await self.report(update, message, target, raw_json)
+                return (
+                    await self.report(update, message, target, raw_json)
+                    if reporter_allowed(message, self.config)
+                    else AppResponse(200, "report ignored; reporter not allowed")
+                )
             except EvidenceError:
                 return AppResponse(503, "report storage unavailable; retry pending")
         try:
@@ -305,14 +304,12 @@ class Moderator:
         target: dict[str, Any],
         raw_json: str,
     ) -> AppResponse:
-        """Save evidence before checking reporter authority or moderating."""
+        """Save an accepted report before checking group authority or moderating."""
         bot_id = int(self.config.bot_token.split(":", 1)[0])
         chat_id = message["chat"]["id"]
         reporter_id = user_id(message)
-        anonymous = reporter_id is None and sent_as_chat_itself(message)
         if (
-            (reporter_id is None and not anonymous)
-            or type(chat_id) is not int
+            type(chat_id) is not int
             or chat_id >= 0
             or not isinstance(target.get("chat"), dict)
             or target["chat"].get("id") != chat_id
@@ -345,7 +342,7 @@ class Moderator:
             return AppResponse(200, "ban confirmation failed; check membership and submit a new report if needed")
         else:
             try:
-                # A missing user ID is accepted only for this chat's anonymous administrators above.
+                # The report route accepts a missing user ID only for an allowlisted sender_chat.
                 authorized = reporter_id is None or await self.member_status(chat_id, reporter_id) in ADMIN_STATUSES
                 response = (
                     await self.moderate(target, report_key=(bot_id, update_id))

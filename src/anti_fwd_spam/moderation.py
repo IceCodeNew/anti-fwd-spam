@@ -303,9 +303,7 @@ class Moderator:
         """Delete the reporter's message once its target finished moderation."""
         if response.status != HTTPStatus.OK or not response.target_removed:
             return response
-        message_id = message.get("message_id")
-        if type(message_id) is not int or message_id <= 0:
-            return response
+        message_id = message["message_id"]
         outcome = await delete_message(self.fetcher, self.config.bot_token, chat_id, message_id)
         if outcome is DeleteOutcome.RETRYABLE_FAILURE:
             return AppResponse(503, response.body + "; report cleanup pending")
@@ -354,9 +352,21 @@ class Moderator:
         if ban or not restrictable:
             return AppResponse(200, f"{deletion}; {action} skipped", target_removed=True)
         try:
+            return await self.mute(chat_id, message["message_id"], identifier, deletion)
+        except EvidenceError:
+            return AppResponse(503, "mute storage unavailable; retry pending")
+
+    async def mute(self, chat_id: int, message_id: int, identifier: int, deletion: str) -> AppResponse:
+        """Do not repeat a possibly successful restriction after an administrator's unmute."""
+        mute_key = (int(self.config.bot_token.split(":", 1)[0]), chat_id, message_id)
+        claimed = False
+        try:
             status = await self.member_status(chat_id, identifier)
             if status in ADMIN_STATUSES or status == "kicked":
                 return AppResponse(200, deletion + "; mute skipped")
+            claimed = await self.store.claim_mute(*mute_key, int(time.time()))
+            if not claimed:
+                return AppResponse(200, deletion + "; mute retry skipped; check permissions if needed")
             result = await self.call(
                 "restrictChatMember",
                 {
@@ -370,5 +380,8 @@ class Moderator:
             if result is not True:
                 return AppResponse(503, deletion + "; mute failed")
         except TelegramError as error:
+            # A lost response can hide a successful mute followed by an administrator's unmute.
+            if claimed and error.rejected and error.retryable:
+                await self.store.release_mute(*mute_key)
             return AppResponse(503 if error.retryable else 200, deletion + "; mute failed")
         return AppResponse(200, deletion + "; muted")

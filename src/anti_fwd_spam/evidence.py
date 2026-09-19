@@ -141,6 +141,32 @@ class ReportStore:
         """Bind the request's D1 database."""
         self.database = database
 
+    async def claim_mute(self, bot_id: int, chat_id: int, message_id: int, now: int) -> bool:
+        """Claim a message once, including edits delivered under a different update ID."""
+        try:
+            row = await (
+                self.database.prepare(
+                    "INSERT INTO automatic_mutes (bot_id, chat_id, message_id, expires_at) VALUES (?, ?, ?, ?) "
+                    "ON CONFLICT(bot_id, chat_id, message_id) DO NOTHING RETURNING bot_id",
+                )
+                .bind(bot_id, chat_id, message_id, now + RETENTION_SECONDS)
+                .first()
+            )
+        except Exception as error:
+            raise EvidenceError from error
+        return row is not None
+
+    async def release_mute(self, bot_id: int, chat_id: int, message_id: int) -> None:
+        """Allow another attempt after an explicit temporary Telegram rejection."""
+        try:
+            await (
+                self.database.prepare("DELETE FROM automatic_mutes WHERE bot_id = ? AND chat_id = ? AND message_id = ?")
+                .bind(bot_id, chat_id, message_id)
+                .run()
+            )
+        except Exception as error:
+            raise EvidenceError from error
+
     async def remember_message(
         self,
         bot_id: int,
@@ -299,6 +325,14 @@ class ReportStore:
 
     async def expire(self, now: int) -> None:
         """Delete expired evidence and message identifiers in bounded indexed batches."""
+        await (
+            self.database.prepare(
+                "DELETE FROM automatic_mutes WHERE rowid IN "
+                "(SELECT rowid FROM automatic_mutes WHERE expires_at <= ? ORDER BY expires_at LIMIT 1000)",
+            )
+            .bind(now)
+            .run()
+        )
         await (
             self.database.prepare(
                 "DELETE FROM recent_messages WHERE rowid IN "

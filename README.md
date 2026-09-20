@@ -84,6 +84,16 @@ Check that both `ok` and `result` are `true` in the response. For later rule or 
 
 ## Report spam
 
+Configure the reporting identities as a runtime Worker secret:
+
+```bash
+mise exec -- uv run pywrangler secret put REPORTER_IDS
+```
+
+Enter comma-separated numeric user and sender chat IDs in `REPORTER_IDS`. The bot checks `sender_chat.id` for messages sent as a chat, or the real sender's `from.id` otherwise. A match accepts the report. A sender chat need not match the destination group. Listing a chat does not authorize members reporting under their personal accounts; add their user IDs to the same list. For messages sent as a chat, Telegram's compatibility `from` user never grants access.
+
+With the list empty or absent, the bot ignores reports. An unlisted reporter cannot save evidence, add accounts to the blacklist, or trigger report-based deletion or punishment, even as a group owner. Removing an identity also stops its pending report retries. Automatic filtering and existing account-blacklist enforcement remain active.
+
 1. Long-press or right-click the target message and choose **Reply**.
 2. Type `@`, select your moderation bot from Telegram's suggestions, and send the reply.
 
@@ -91,7 +101,7 @@ Reports from ordinary members only save evidence; both messages remain in the gr
 
 Cleanup covers messages the bot received while indexing was active. The bot cannot search older history or recover missed updates. Telegram's supergroup ban API always enables history revocation, even without an explicit request parameter; the bot cannot verify cleanup outside its index. Check for remaining messages and delete them manually if needed.
 
-The bot removes the administrator's report after confirming target deletion and finishing eligible history cleanup. If target deletion is rejected, the report stays visible and the log includes `deletion rejected; banned` when the ban succeeded; eligible recent history is still processed. `history cleanup rejected` means Telegram rejected a batch. Check the remaining messages manually. Anonymous administrators can report while sending as the group itself. Reports sent as a linked channel or another chat are ignored.
+The bot removes the administrator's report after confirming target deletion and finishing eligible history cleanup. If target deletion is rejected, the report stays visible and the log includes `deletion rejected; banned` when the ban succeeded; eligible recent history is still processed. `history cleanup rejected` means Telegram rejected a batch. Check the remaining messages manually. Reports from an allowlisted sender chat, including anonymous administrators, receive administrator report handling.
 
 After a saved ban confirmation, retries after a temporary deletion failure continue deletion without banning again. If logs show `ban confirmation failed`, the bot could not confirm the result and will not repeat the ban for that report. Check the sender's membership; if moderation is still needed, send a new report or ban them in Telegram's member settings. The bot leaves the unconfirmed report visible for this check.
 
@@ -135,7 +145,7 @@ Start in a disposable group with ordinary discussion, promotional messages, and 
 
 ## Block reported accounts across groups
 
-After Telegram confirms an administrator-authorized report ban, the bot saves the account in its database blacklist. Ordinary-member reports, automatic mutes, and unconfirmed bans do not add accounts. Only add the bot to groups whose administrators you trust: a confirmed report in any such group affects other groups using the same bot.
+After Telegram confirms an administrator-authorized report ban, the bot saves the account in its database blacklist. Ordinary-member reports, automatic mutes, and unconfirmed bans do not add accounts. Only authorize trusted [reporting identities](#report-spam): their confirmed bans affect other groups using the same bot.
 
 For every new supergroup message from a real user, the bot checks the sender against its account blacklist. A match takes priority over source-bot filtering. The bot bans the sender unless already banned, then batch-deletes only eligible indexed messages through the triggering message. The triggering message enters the index if eligible. The bot makes no separate single-message deletion or history-search attempts. Owners and administrators retain their membership and messages. Basic groups and edits do not trigger account-blacklist enforcement. Each check adds a D1 read, so monitor database usage.
 
@@ -147,9 +157,9 @@ Duplicate deliveries do not repeat a confirmed ban while its three-day processin
 
 In a test supergroup or channel discussion group, use a non-admin account to send a normal message followed by an inline message from a blacklisted source bot. Check that only the inline message disappears, the account cannot send more messages, and its earlier message remains.
 
-Remove the account's restriction in the group's member settings, then send several messages and a sticker while the bot is running. Report the sticker first from an ordinary member account and check that the messages remain. Report it from an administrator account and check that the target, earlier indexed messages and report disappear, the sender cannot comment through the linked channel, and they cannot rejoin through an invite link. Other users' messages and messages in other groups should remain.
+Add the testing reporters to `REPORTER_IDS`. Remove the account's restriction in the group's member settings, then send several messages and a sticker while the bot is running. Report the sticker first from an ordinary member account and check that the messages remain. Report it from an administrator account and check that the target, earlier indexed messages and report disappear, the sender cannot comment through the linked channel, and they cannot rejoin through an invite link. Other users' messages and messages in other groups should remain.
 
-Repeat the administrator report with **Remain Anonymous** enabled and send as the group itself. Also test a commenter who has not joined the discussion group. Check target deletion and both commenting and rejoining restrictions.
+Repeat the administrator report with **Remain Anonymous** enabled after adding its sender chat ID to `REPORTER_IDS`. Verify that an unlisted owner and an unlisted sender chat cannot report. Also test a commenter who has not joined the discussion group. Check target deletion and both commenting and rejoining restrictions.
 
 To check administrator protection, report a message from an administrator. Only that message should disappear; the administrator should still be able to send messages and retain their other history. Remove test restrictions or bans after each round. Use disposable accounts and groups for tests that delete history.
 

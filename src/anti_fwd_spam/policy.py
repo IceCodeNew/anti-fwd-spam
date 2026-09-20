@@ -7,7 +7,7 @@ from dataclasses import dataclass
 DEFAULT_BLACKLIST_BOT_IDS = "273234066"
 MAX_TELEGRAM_ID = (1 << 52) - 1
 MAX_CONFIG_LENGTH = 4_096
-MAX_BLACKLIST_ENTRIES = 500
+MAX_ID_ENTRIES = 500
 TOKEN_PART_COUNT = 2
 SUPPORTED_CHAT_TYPES = frozenset({"group", "supergroup", "private", "channel"})
 SUPPORTED_FORWARD_ORIGINS = frozenset({"user", "hidden_user", "chat", "channel"})
@@ -24,6 +24,7 @@ class Config:
     bot_token: str
     webhook_secret: str
     bot_ids: frozenset[int]
+    reporter_ids: frozenset[int] = frozenset()
 
     @classmethod
     def from_values(
@@ -32,6 +33,7 @@ class Config:
         bot_token: object,
         webhook_secret: object,
         bot_ids: object = DEFAULT_BLACKLIST_BOT_IDS,
+        reporter_ids: object = "",
     ) -> Config:
         """Validate raw environment values and construct a configuration."""
         token = _required_string("BOT_TOKEN", bot_token, maximum=128)
@@ -58,11 +60,16 @@ class Config:
             message = "TELEGRAM_WEBHOOK_SECRET contains unsupported characters"
             raise ConfigError(message)
 
-        parsed_bot_ids = _parse_bot_ids(bot_ids)
+        parsed_bot_ids = _parse_ids("BLACKLIST_BOT_IDS", bot_ids)
         if not parsed_bot_ids:
             message = "at least one blacklisted bot ID is required"
             raise ConfigError(message)
-        return cls(token, secret, parsed_bot_ids)
+        return cls(
+            token,
+            secret,
+            parsed_bot_ids,
+            _parse_ids("REPORTER_IDS", reporter_ids, allow_negative=True),
+        )
 
 
 def _message_matches(message: dict[str, object], config: Config) -> bool:
@@ -126,23 +133,24 @@ def _required_string(name: str, value: object, *, maximum: int) -> str:
     return value
 
 
-def _parse_bot_ids(value: object) -> frozenset[int]:
+def _parse_ids(name: str, value: object, *, allow_negative: bool = False) -> frozenset[int]:
     if not isinstance(value, str) or len(value) > MAX_CONFIG_LENGTH:
-        message = f"BLACKLIST_BOT_IDS must be a string no longer than {MAX_CONFIG_LENGTH} characters"
+        message = f"{name} must be a string no longer than {MAX_CONFIG_LENGTH} characters"
         raise ConfigError(message)
     entries = [entry.strip() for entry in value.split(",") if entry.strip()]
-    if len(entries) > MAX_BLACKLIST_ENTRIES:
-        message = f"BLACKLIST_BOT_IDS supports at most {MAX_BLACKLIST_ENTRIES} entries"
+    if len(entries) > MAX_ID_ENTRIES:
+        message = f"{name} supports at most {MAX_ID_ENTRIES} entries"
         raise ConfigError(message)
     parsed: set[int] = set()
     for entry in entries:
-        if not entry.isascii() or not entry.isdecimal():
-            message = "BLACKLIST_BOT_IDS entries must be decimal integers"
+        digits = entry.removeprefix("-") if allow_negative else entry
+        if not digits.isascii() or not digits.isdecimal():
+            message = f"{name} entries must be decimal integers"
             raise ConfigError(message)
         try:
-            parsed.add(_telegram_id(int(entry), allow_negative=False))
+            parsed.add(_telegram_id(int(entry), allow_negative=allow_negative))
         except ValueError as error:
-            message = "BLACKLIST_BOT_IDS entry is outside Telegram's range"
+            message = f"{name} entry is outside Telegram's range"
             raise ConfigError(message) from error
     return frozenset(parsed)
 

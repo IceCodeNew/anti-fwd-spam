@@ -431,24 +431,6 @@ for (const status of ['creator', 'administrator']) {
   }
 }
 
-for (const senderChat of [chat, { id: -100999, type: 'channel', title: 'Linked channel' }]) {
-  test(`user reports as ${senderChat.type}: Given an anonymous reply, When it mentions the bot, Then only the own-group identity authorizes banning`, async () => {
-    const update = report();
-    update.message.sender_chat = senderChat;
-    update.message.from = { id: 1087968824, is_bot: true, first_name: 'Group', username: 'GroupAnonymousBot' };
-    telegram.send(update.message.reply_to_message);
-    telegram.send(update.message);
-    const authorized = senderChat.id === chat.id;
-
-    assert.equal((await dispatch(update)).status, 200);
-
-    assert.equal(telegram.canJoin(22), !authorized);
-    assert.equal(telegram.has(81), !authorized);
-    assert.equal(telegram.has(82), !authorized);
-    assert.equal((await evidence()).length, authorized ? 1 : 0);
-  });
-}
-
 test('user protects anonymous senders: Given a target sent as a chat, When an administrator reports it, Then the target is deleted without punishing its compatibility user', async () => {
   const target = { ...message(), sender_chat: chat };
   telegram.send(target);

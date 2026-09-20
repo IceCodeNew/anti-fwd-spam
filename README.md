@@ -110,10 +110,12 @@ To report a message, choose **Reply**, type `@`, select your moderation bot from
 | --- | --- |
 | A listed ordinary member reports | Save evidence; leave both messages visible. |
 | A listed administrator or sender-chat identity reports | Delete the target, ban its non-admin sender, and clear eligible indexed history. Remove the report after cleanup succeeds. |
-| A user posts through a blocked source bot | Delete the matching message and permanently mute its non-admin sender, retaining other history and membership. |
+| A user posts through a blocked source bot | Delete the current message and permanently mute its non-admin sender, retaining other history and membership. Ban the source bot and clear its eligible indexed messages. |
 | An account on the account blacklist posts | Ban it unless already banned and clear eligible indexed messages. |
 
-Group owners and administrators are exempt from mutes and bans. Their reported messages or source-matched messages can still be deleted. Account-blacklist matches leave administrators' messages intact.
+Group owners and administrators are exempt from mutes and bans. Source and account matches also leave their messages intact; an authorized administrator report can still delete a targeted message.
+
+When user A posts through source bot B, only B belongs in `blacklisted_sources`. Source filtering does not add A to either blacklist. A confirmed ban of B also records B in `blacklisted_users`, using the same ban and indexed-history cleanup as account matches.
 
 History cleanup covers messages received by the bot in the same group, up to the triggering message or before the report, and less than 48 hours old. The bot cannot search unread history. Telegram may remove additional history when banning an account. After an administrator-authorized report ban is confirmed, the actual sender enters `blacklisted_users`, shared across groups using the same bot. Reporting a message does not add its source bot to the source list.
 
@@ -121,7 +123,7 @@ History cleanup covers messages received by the bot in the same group, up to the
 
 Send `/bs @example_bot` using a listed reporting identity, in a private chat or group. In a group, use `/bs@your_moderation_bot @example_bot` to address this bot explicitly. Replace the example usernames. The bot saves the resolved ID in `blacklisted_sources` and replies with that ID.
 
-The command only adds a source. It does not delete messages, change membership, or add an account-blacklist entry. Future messages whose inline bot (`via_bot.id`) or forwarded bot matches the source list trigger the source-filtering policy above.
+The command adds a source without changing membership, clearing history, or adding an account-blacklist entry. In groups, the bot deletes the command after replying, including when the username cannot be resolved. It keeps private-chat commands and result replies. Future messages whose inline bot (`via_bot.id`) or forwarded bot matches the source list trigger the source-filtering policy above.
 
 Username resolution depends on Telegram. Some accounts cannot be resolved; an unsuccessful lookup adds nothing. The command does not require the target to be a bot. Source matching applies only to Telegram's explicit inline-bot or forwarded-bot information; adding an ordinary user or group ID does not block their direct messages. Copied text and hidden forwarding origins do not match this filter.
 

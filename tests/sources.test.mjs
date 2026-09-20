@@ -11,17 +11,18 @@ function command(text = '/bs example_bot', sender = 11) {
 test('user: Given an empty source table and an obsolete environment value, When an inline message arrives, Then the removed source is not blocked', async () => {
   await setBindings({ BLACKLIST_BOT_IDS: '273234066' });
   await database.prepare('DELETE FROM blacklisted_sources').run();
-  const update = { message: { ...message(), via_bot: { id: 273234066, is_bot: true } } };
+  const update = { update_id: 1, message: { ...message(), via_bot: { id: 273234066, is_bot: true } } };
   telegram.send(update.message);
   assert.equal((await dispatch(update)).status, 200);
   assert.equal(telegram.has(81), true);
   assert.equal(telegram.canSend(22), true);
 });
 
-test('user: Given an authorized group reporter, When a source is added twice, Then membership and history stay unchanged while later inline senders are only muted', async () => {
+test('user: Given an authorized group reporter, When a source is registered then used, Then registration is inert and matching mutes the sender but bans and cleans the source', async () => {
   telegram.accounts.set('@example_bot', { id: 777, type: 'private', username: 'example_bot' });
   telegram.members.set(777, { status: 'member' });
   const history = message(200, 777);
+  history.from.is_bot = true;
   telegram.send(history);
   await dispatch({ update_id: 299, message: history });
   const update = command();
@@ -38,12 +39,14 @@ test('user: Given an authorized group reporter, When a source is added twice, Th
   const spam = { ...message(301), via_bot: { id: 777, is_bot: true } };
   telegram.send(message(299));
   telegram.send(spam);
-  assert.equal((await dispatch({ message: spam })).status, 200);
+  assert.equal((await dispatch({ update_id: 302, message: spam })).status, 200);
   assert.equal(telegram.has(301), false);
   assert.equal(telegram.has(299), true);
   assert.equal(telegram.canSend(22), false);
   assert.equal(telegram.canJoin(22), true);
-  assert.deepEqual((await database.prepare('SELECT user_id FROM blacklisted_users').all()).results, []);
+  assert.equal(telegram.canJoin(777), false);
+  assert.equal(telegram.has(200), false);
+  assert.deepEqual((await database.prepare('SELECT user_id FROM blacklisted_users').all()).results, [{ user_id: 777 }]);
 });
 
 test('user: Given a listed private-chat reporter, When an ordinary username is added, Then its numeric ID is accepted without restricting that account directly', async () => {
@@ -199,4 +202,111 @@ test('user: Given a message sent through a bot, When an authorized administrator
   assert.equal(telegram.canJoin(22), false);
   assert.deepEqual((await database.prepare('SELECT user_id FROM blacklisted_users').all()).results, [{ user_id: 22 }]);
   assert.equal((await database.prepare('SELECT count(*) AS n FROM blacklisted_sources').first()).n, 0);
+});
+
+for (const status of ['administrator', 'creator']) {
+  test(`user: Given a ${status} sender using a listed source, When their message arrives, Then their message and permissions survive while the source is banned`, async () => {
+    telegram.members.set(22, { status });
+    telegram.members.set(273234066, { status: 'member' });
+    const target = { ...message(), via_bot: { id: 273234066, is_bot: true } };
+    telegram.send(target);
+    assert.equal((await dispatch({ update_id: 801, message: target })).status, 200);
+    assert.equal(telegram.has(81), true);
+    assert.deepEqual(telegram.members.get(22), { status });
+    assert.equal(telegram.canJoin(273234066), false);
+  });
+}
+
+test('user: Given two listed sources and an already blacklisted sender, When indexed cleanup retries after manual unban, Then each subject finishes independently without repeating bans', async () => {
+  await database.exec('INSERT INTO blacklisted_sources VALUES (777)');
+  await database.exec('INSERT INTO blacklisted_users VALUES (123, 22, 1)');
+  telegram.members.set(777, { status: 'kicked' });
+  telegram.members.set(273234066, { status: 'member' });
+  for (const [id, sender] of [[70, 777], [71, 273234066], [72, 22]]) {
+    telegram.send(message(id, sender));
+    await database.prepare('INSERT INTO recent_messages VALUES (123, -10012, ?, ?, unixepoch()-60)').bind(id, sender).run();
+  }
+  const target = { ...message(), via_bot: { id: 777, is_bot: true },
+    forward_origin: { type: 'user', date: 1, sender_user: { id: 273234066, is_bot: true } } };
+  telegram.send(target);
+  const update = { update_id: 802, message: target };
+  telegram.faults.set('deleteMessages', () => Response.json({ ok: false, error_code: 429 }, { status: 429 }));
+  assert.equal((await dispatch(update)).status, 503);
+  for (const id of [22, 777, 273234066]) assert.equal(telegram.canJoin(id), false);
+  telegram.faults.clear();
+  for (const id of [22, 777, 273234066]) telegram.members.set(id, { status: 'left' });
+  assert.equal((await dispatch(update)).status, 200);
+  for (const id of [70, 71, 72, 81]) assert.equal(telegram.has(id), false);
+  for (const id of [22, 777, 273234066]) assert.equal(telegram.canJoin(id), true);
+});
+
+test('user: Given one listed source and another unlisted source, When a message matches, Then only the listed source is banned', async () => {
+  telegram.members.set(777, { status: 'member' });
+  telegram.members.set(273234066, { status: 'member' });
+  const target = { ...message(), via_bot: { id: 777, is_bot: true },
+    forward_origin: { type: 'user', date: 1, sender_user: { id: 273234066, is_bot: true } } };
+  telegram.send(target);
+  assert.equal((await dispatch({ update_id: 803, message: target })).status, 200);
+  assert.equal(telegram.canJoin(777), true);
+  assert.equal(telegram.canJoin(273234066), false);
+});
+
+for (const type of ['group', 'supergroup', 'private']) {
+  test(`user: Given an authorized bs command in a ${type}, When its result is delivered, Then only group commands disappear and the reply remains`, async () => {
+    telegram.accounts.set('@example_bot', { id: 777, type: 'private', username: 'example_bot' });
+    for (const text of ['/bs example_bot', '/bs missing']) {
+      const update = command(text);
+      update.update_id += text === '/bs missing' ? 1 : 0;
+      update.message.chat.type = type;
+      telegram.send(update.message);
+      assert.equal((await dispatch(update)).status, 200);
+      assert.equal(telegram.has(300), type === 'private');
+      assert.ok(telegram.replies.at(-1).text.length > 0);
+    }
+  });
+}
+
+test('user: Given a group command whose acknowledgement or deletion fails temporarily, When Telegram recovers, Then the command is removed without changing the resolved source', async () => {
+  telegram.accounts.set('@example_bot', { id: 777, type: 'private', username: 'example_bot' });
+  const update = command();
+  telegram.send(update.message);
+  telegram.faults.set('sendMessage', () => Response.json({ ok: false, error_code: 429 }, { status: 429 }));
+  assert.equal((await dispatch(update)).status, 503);
+  assert.equal(telegram.has(300), true);
+  telegram.faults.clear();
+  telegram.faults.set('deleteMessage', () => Response.json({ ok: false, error_code: 429 }, { status: 429 }));
+  assert.equal((await dispatch(update)).status, 503);
+  assert.equal(telegram.has(300), true);
+  assert.match(telegram.replies.at(-1).text, /777/);
+  telegram.faults.clear();
+  telegram.accounts.set('@example_bot', { id: 778, type: 'private', username: 'example_bot' });
+  assert.equal((await dispatch(update)).status, 200);
+  assert.equal(telegram.has(300), false);
+  assert.match(telegram.replies.at(-1).text, /777/);
+  assert.equal(await database.prepare('SELECT source_id FROM blacklisted_sources WHERE source_id=778').first(), null);
+});
+
+test('user: Given a source match without a valid update identifier, When delivered, Then no message or membership changes', async () => {
+  const target = { ...message(), via_bot: { id: 273234066, is_bot: true } };
+  telegram.send(target);
+  for (const update_id of [undefined, true, -1]) {
+    assert.equal((await dispatch({ update_id, message: target })).status, 400);
+    assert.equal(telegram.has(81), true);
+    assert.equal(telegram.canSend(22), true);
+    assert.equal(telegram.canJoin(273234066), true);
+  }
+});
+
+test('user: Given a protected source bot and an ordinary inline sender, When the source matches, Then only the current user message disappears and the bot remains protected', async () => {
+  telegram.members.set(273234066, { status: 'administrator' });
+  telegram.send(message(70, 273234066));
+  await database.exec('INSERT INTO recent_messages VALUES (123, -10012, 70, 273234066, unixepoch()-60)');
+  const target = { ...message(), via_bot: { id: 273234066, is_bot: true } };
+  telegram.send(target);
+  assert.equal((await dispatch({ update_id: 804, message: target })).status, 200);
+  assert.equal(telegram.has(81), false);
+  assert.equal(telegram.canSend(22), false);
+  assert.equal(telegram.has(70), true);
+  assert.deepEqual(telegram.members.get(273234066), { status: 'administrator' });
+  assert.deepEqual((await database.prepare('SELECT user_id FROM blacklisted_users').all()).results, []);
 });

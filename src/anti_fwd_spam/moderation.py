@@ -42,12 +42,14 @@ MUTE_PERMISSIONS = dict.fromkeys(
 )
 
 
-def user_id(message: dict[str, object]) -> int | None:
+def user_id(message: dict[str, object], *, include_bots: bool = False) -> int | None:
     """Return a real sender, never the fake user attached to sender_chat."""
     if "sender_chat" in message:
         return None
     sender = message.get("from")
-    if not isinstance(sender, dict) or sender.get("is_bot") is not False:
+    if not isinstance(sender, dict) or type(sender.get("is_bot")) is not bool:
+        return None
+    if sender["is_bot"] and not include_bots:
         return None
     identifier = sender.get("id")
     return identifier if type(identifier) is int and identifier > 0 else None
@@ -164,10 +166,10 @@ class Moderator:
                 response = AppResponse(503 if error.retryable else 200, "command failed")
             return response
         try:
-            automatic = bool(sources) and await self.store.has_source(sources)
+            matches = await self.store.matching_sources(sources) if sources else ()
         except EvidenceError:
             return AppResponse(503, "source list unavailable; retry pending")
-        return await self.process_update(update, raw_json, automatic=automatic)
+        return await self.process_update(update, raw_json, sources=matches)
 
     # Distinct route outcomes keep storage failures separate from Telegram failures.
     async def process_update(  # noqa: PLR0911
@@ -175,7 +177,7 @@ class Moderator:
         update: dict[str, object],
         raw_json: str,
         *,
-        automatic: bool,
+        sources: tuple[int, ...],
     ) -> AppResponse:
         """Route a validated update through account, source, report and model policies."""
         message = update.get("message", update.get("edited_message"))
@@ -187,10 +189,10 @@ class Moderator:
             except EvidenceError:
                 return AppResponse(503, "model task storage unavailable; retry pending")
         account_response = await self.check_account_blacklist(update, message, raw_json)
+        if sources:
+            return await self.moderate_sources(update, message, raw_json, sources, account_response)
         if account_response is not None:
             return account_response
-        if automatic:
-            return await self.moderate(message)
         try:
             await self.index_message(message)
         except EvidenceError:
@@ -210,6 +212,49 @@ class Moderator:
         except EvidenceError:
             return AppResponse(503, "model task storage unavailable; retry pending")
 
+    async def moderate_sources(
+        self,
+        update: dict[str, object],
+        message: dict[str, object],
+        raw_json: str,
+        sources: tuple[int, ...],
+        account_response: AppResponse | None,
+    ) -> AppResponse:
+        """Moderate the sender and each matched source with independent retry progress."""
+        response = account_response if account_response is not None else await self.moderate_source_sender(message)
+        for identifier in sources:
+            if account_response is not None and identifier == user_id(message, include_bots=True):
+                continue
+            try:
+                source_response = await self.moderate_account(
+                    update,
+                    message,
+                    raw_json,
+                    identifier,
+                    subject_id=identifier,
+                )
+            except EvidenceError:
+                source_response = AppResponse(503, "source moderation storage unavailable; retry pending")
+            if source_response.status != HTTPStatus.OK:
+                response = source_response
+        return response
+
+    async def moderate_source_sender(self, message: dict[str, object]) -> AppResponse:
+        """Leave administrator messages intact before applying source-based restrictions."""
+        chat = message.get("chat")
+        if not isinstance(chat, dict) or type(chat.get("id")) is not int:
+            return AppResponse(400, "invalid source target")
+        chat_id, identifier = chat["id"], user_id(message, include_bots=True)
+        sender_chat = message.get("sender_chat")
+        if isinstance(sender_chat, dict) and sender_chat.get("id") == chat_id:
+            return AppResponse(200, "automatic moderation skipped; protected administrator")
+        try:
+            if identifier is not None and await self.member_status(chat_id, identifier) in ADMIN_STATUSES:
+                return AppResponse(200, "automatic moderation skipped; protected administrator")
+        except TelegramError as error:
+            return AppResponse(503 if error.retryable else 200, "automatic authority check failed")
+        return await self.moderate(message)
+
     async def source_command(
         self,
         update: dict[str, object],
@@ -217,7 +262,7 @@ class Moderator:
         raw_json: str,
         username: str,
     ) -> AppResponse:
-        """Save a resolved source without changing membership or message history."""
+        """Save a resolved source, reply, and remove the command from group chats."""
         chat, message_id, update_id = message.get("chat"), message.get("message_id"), update.get("update_id")
         if (
             not isinstance(chat, dict)
@@ -235,7 +280,7 @@ class Moderator:
             identifier = await resolve_source(self.fetcher, self.config.bot_token, username)
         reply = "Could not resolve the account. Use /bs username or /bs @username with one valid Telegram username."
         if identifier is not None:
-            await self.store.save(bot_id, update_id, raw_json, message, int(time.time()))
+            await self.store.save((bot_id, update_id), raw_json, message, int(time.time()))
             await self.store.pin_command_source(bot_id, update_id, identifier)
             # Concurrent deliveries must use the first resolution stored for this update.
             identifier = await self.store.command_source(bot_id, update_id)
@@ -251,6 +296,12 @@ class Moderator:
                 "reply_parameters": {"message_id": message_id, "allow_sending_without_reply": True},
             },
         )
+        if chat.get("type") in {"group", "supergroup"}:
+            outcome = await delete_message(self.fetcher, self.config.bot_token, chat["id"], message_id)
+            if outcome is DeleteOutcome.RETRYABLE_FAILURE:
+                return AppResponse(503, "command handled; command cleanup pending retry")
+            if outcome is DeleteOutcome.PERMANENT_FAILURE:
+                return AppResponse(200, "command handled; command cleanup rejected; check deletion permissions")
         return AppResponse(200, "command handled")
 
     async def check_model(self, message: dict[str, object], *, edited: bool = False) -> AppResponse:
@@ -276,8 +327,8 @@ class Moderator:
         return AppResponse(200, "model task recorded")
 
     async def index_message(self, message: dict[str, object]) -> None:
-        """Index only eligible user messages, sharing the same cutoff for both moderation paths."""
-        identifier, sent_at, now = user_id(message), message.get("date"), int(time.time())
+        """Index eligible account messages, including bots, within the deletion window."""
+        identifier, sent_at, now = user_id(message, include_bots=True), message.get("date"), int(time.time())
         chat, message_id = message.get("chat"), message.get("message_id")
         if (
             isinstance(chat, dict)
@@ -304,7 +355,7 @@ class Moderator:
         raw_json: str,
     ) -> AppResponse | None:
         """Ban confirmed accounts and delete indexed messages without single-message fallbacks."""
-        identifier = user_id(message)
+        identifier = user_id(message, include_bots=True)
         chat = message.get("chat")
         if (
             "message" not in update
@@ -317,7 +368,7 @@ class Moderator:
             bot_id = int(self.config.bot_token.split(":", 1)[0])
             if await self.store.is_blacklisted(bot_id, identifier):
                 await self.index_message(message)
-                return await self.moderate_account(update, message, raw_json, bot_id, identifier)
+                return await self.moderate_account(update, message, raw_json, identifier)
         except EvidenceError:
             return AppResponse(503, "account moderation storage unavailable; retry pending")
         return None
@@ -327,10 +378,12 @@ class Moderator:
         update: dict[str, object],
         message: dict[str, object],
         raw_json: str,
-        bot_id: int,
         identifier: int,
+        *,
+        subject_id: int = 0,
     ) -> AppResponse:
         """Resume a message-triggered ban and its bounded indexed cleanup."""
+        bot_id = int(self.config.bot_token.split(":", 1)[0])
         chat, message_id, update_id = message.get("chat"), message.get("message_id"), update.get("update_id")
         if (
             not isinstance(chat, dict)
@@ -340,7 +393,7 @@ class Moderator:
             or update_id < 0
         ):
             return AppResponse(400, "invalid account update")
-        saved = await self.store.save(bot_id, update_id, raw_json, message, int(time.time()))
+        saved = await self.store.save((bot_id, update_id), raw_json, message, int(time.time()), subject_id)
         if saved.status is not None:
             return AppResponse(saved.status, saved.body)
         if saved.moderation_result == "banned":
@@ -348,13 +401,13 @@ class Moderator:
         elif saved.ban_claimed:
             return AppResponse(200, "ban confirmation failed; check membership")
         else:
-            response = await self.ban(chat["id"], identifier, (bot_id, update_id))
+            response = await self.ban(chat["id"], identifier, (bot_id, update_id), subject_id=subject_id)
             if response is None:
                 response = AppResponse(200, "account moderation skipped; protected administrator")
         if response.sender_banned:
             await self.store.blacklist_user(bot_id, identifier, int(time.time()))
             response = await self.remove_recent_history(bot_id, chat["id"], identifier, message_id + 1, response)
-        await self.store.finish(bot_id, update_id, response.status, response.body)
+        await self.store.finish(bot_id, update_id, response.status, response.body, subject_id)
         return response
 
     async def report(
@@ -381,7 +434,7 @@ class Moderator:
         ):
             return AppResponse(400, "invalid report target")
         update_id = update["update_id"]
-        saved = await self.store.save(bot_id, update_id, raw_json, target, int(time.time()))
+        saved = await self.store.save((bot_id, update_id), raw_json, target, int(time.time()))
         if saved.status is not None:
             return AppResponse(saved.status, saved.body)
         if saved.moderation_result in {"banned", "deleted; banned"} or (
@@ -525,7 +578,14 @@ class Moderator:
         except EvidenceError:
             return AppResponse(503, "mute storage unavailable; retry pending")
 
-    async def ban(self, chat_id: int, identifier: int, report_key: tuple[int, int]) -> AppResponse | None:
+    async def ban(
+        self,
+        chat_id: int,
+        identifier: int,
+        report_key: tuple[int, int],
+        *,
+        subject_id: int = 0,
+    ) -> AppResponse | None:
         """Persist one ban attempt, keeping target deletion separate from Telegram's ban side effects."""
         claimed = False
         try:
@@ -533,16 +593,16 @@ class Moderator:
             if status in ADMIN_STATUSES:
                 return None
             if status != "kicked":
-                claimed = await self.store.claim_ban(*report_key)
+                claimed = await self.store.claim_ban(*report_key, subject_id)
                 if not claimed:
                     return AppResponse(503, "ban already attempted; retry pending")
                 result = await self.call("banChatMember", {"chat_id": chat_id, "user_id": identifier, "until_date": 0})
                 if result is not True:
                     return AppResponse(503, "ban failed")
-            await self.store.remember_moderation(*report_key, "banned")
+            await self.store.remember_moderation(*report_key, "banned", subject_id)
         except TelegramError as error:
             if claimed and error.rejected:
-                await self.store.release_ban(*report_key)
+                await self.store.release_ban(*report_key, subject_id)
             return AppResponse(503 if error.retryable else 200, "ban failed")
         return AppResponse(200, "banned", sender_banned=True)
 

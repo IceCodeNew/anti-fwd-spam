@@ -127,7 +127,7 @@ Copied text, hidden forwarding origins, and messages sent directly by an ordinar
 
 ### Administrator protection and history limits
 
-Group owners and administrators are exempt from mutes and bans, including when the source bot is an administrator. Source and account matches leave their messages intact. An authorized administrator report can still delete a targeted administrator message.
+Group owners and administrators are exempt from mutes and bans, including when the source bot is an administrator. Automatic filtering leaves their messages intact. An authorized administrator report can still delete a targeted administrator message.
 
 History cleanup covers indexed messages received in the same group, up to the triggering message or before the report, and less than 48 hours old. The bot cannot search unread history. Telegram may remove additional history when banning an account.
 
@@ -168,9 +168,9 @@ For Vercel, run:
 mise exec -- uv run pywrangler secret put AI_GATEWAY_API_KEY
 ```
 
-Jev checks new user messages after the other moderation rules. A sufficiently high spam score deletes only that message, without muting, banning, or adding a blacklist entry. The threshold is `SPAM_THRESHOLD` in [model.py](src/anti_fwd_spam/model.py); a score is not an accuracy guarantee. Edited messages, service events, bot senders, and messages sent as a group or channel skip this check.
+Jev checks new user messages after the other moderation rules. A sufficiently high spam score deletes that message and permanently mutes its sender, preserving their earlier messages and leaving both blacklists unchanged. Group owners and administrators are protected. The threshold is `SPAM_THRESHOLD` in [model.py](src/anti_fwd_spam/model.py); a score is not an accuracy guarantee. Edited messages, service events, bot senders, and messages sent as a group or channel skip this check.
 
-Temporary failures leave the message visible while scheduled retries run. Keep the scheduled trigger enabled. Each attempt can incur charges and can send the same content to another configured provider.
+Temporary model failures leave the message visible while scheduled retries run. Temporary deletion and mute failures also retry; a deleted message stays deleted while a mute is pending. Keep the scheduled trigger enabled. Each model request can incur charges and can send the same content to another configured provider.
 
 To disable checks and pause pending model tasks, delete every configured model secret. For a Vercel-only setup:
 
@@ -205,6 +205,6 @@ In a fresh terminal, re-enter `BOT_TOKEN` using the command in step 4. Run `unse
 
 ## Data storage
 
-D1 retains report and source-moderation JSON, resolved command IDs, and temporary processing records for 3 days. The recent-message index stores IDs and timestamps, not message text. Model tasks temporarily retain submitted content. The bot does not download media files.
+D1 retains report and source-moderation JSON, resolved command IDs, and temporary processing records for 3 days. The recent-message index stores IDs and timestamps, not message text. Model tasks retain submitted content while classification is pending, then keep only the identities needed to finish deletion and muting. The bot does not download media files.
 
 Source and account blacklists remain until manually removed. Scheduled cleanup removes expired records; outages or exhausted quotas can delay it. Cloudflare backups have separate [retention rules](https://developers.cloudflare.com/d1/reference/time-travel/). Keep member information private when viewing or exporting the database.

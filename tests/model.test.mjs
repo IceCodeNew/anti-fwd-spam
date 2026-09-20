@@ -5,7 +5,7 @@ import { message, report } from './telegram-fake.mjs';
 
 model.enabled = true;
 
-test('user: Given a spam probability at the threshold, When a new message arrives, Then only that message disappears', async () => {
+test('user: Given a spam probability at the threshold, When a new message arrives, Then that message disappears and its sender is permanently muted with history intact', async () => {
   const target = message();
   target.from.first_name = 'Alice';
   target.from.last_name = 'Example';
@@ -17,13 +17,26 @@ test('user: Given a spam probability at the threshold, When a new message arrive
   assert.equal((await dispatch({ update_id: 1, message: target })).status, 200);
   assert.equal(telegram.has(81), false);
   assert.equal(telegram.has(80), true);
-  assert.equal(telegram.canSend(22), true);
+  assert.equal(telegram.canSend(22), false);
+  assert.equal(telegram.members.get(22).until_date, 0);
   assert.equal(telegram.canJoin(22), true);
   assert.equal((await database.prepare('SELECT COUNT(*) AS n FROM blacklisted_users').first()).n, 0);
   assert.equal(model.state.nickname, 'Alice Example');
   assert.equal(model.state.bio, 'Advertising service');
   assert.equal(model.state.message.text, target.text);
 });
+
+for (const status of ['creator', 'administrator', 'kicked']) {
+  test(`user: Given a ${status} sender, When Jev flags their message, Then administrator messages and existing bans stay protected`, async () => {
+    telegram.members.set(22, { status });
+    model.probability = 1;
+    telegram.send(message());
+    assert.equal((await dispatch({ update_id: 1, message: message() })).status, 200);
+    assert.equal(telegram.has(81), status !== 'kicked');
+    assert.equal(telegram.members.get(22).status, status);
+    assert.equal((await database.prepare('SELECT COUNT(*) AS n FROM blacklisted_users').first()).n, 0);
+  });
+}
 
 test('user: Given a probability below the threshold or an invalid answer, When classified, Then the message remains', async () => {
   let id = 81;

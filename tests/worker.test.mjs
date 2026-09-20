@@ -755,6 +755,34 @@ test('user keeps history when deletion fails: Given rejected or malformed Telegr
   }
 });
 
+test('user: Given a ban awaiting confirmation and a duplicate report, When deletion temporarily fails afterward, Then redelivery still deletes the target', async () => {
+  const entered = Promise.withResolvers(), release = Promise.withResolvers();
+  const update = report();
+  telegram.send(update.message.reply_to_message);
+  telegram.send(update.message);
+  telegram.faults.set('banChatMember', async () => {
+    entered.resolve();
+    await release.promise;
+    telegram.members.set(22, { status: 'kicked' });
+    return Response.json({ ok: true, result: true });
+  });
+  telegram.faults.set('deleteMessage:81', () => Response.json({ ok: false, error_code: 429 }, { status: 429 }));
+  const pending = dispatch(update);
+  await entered.promise;
+  try {
+    assert.equal((await dispatch(update)).status, 200);
+  } finally {
+    release.resolve();
+    await pending;
+  }
+  assert.equal(telegram.has(81), true);
+  telegram.faults.clear();
+  assert.equal((await dispatch(update)).status, 200);
+  assert.equal(telegram.has(81), false);
+  assert.equal(telegram.has(82), false);
+  assert.equal(telegram.canJoin(22), false);
+});
+
 test('user preserves concurrent completion: Given overlapping deliveries, When a late attempt fails after another succeeds, Then redelivery does not repeat a completed punishment', async () => {
   const entered = Promise.withResolvers(), release = Promise.withResolvers();
   telegram.faults.set('getChatMember:11', () => { entered.resolve(); return release.promise; });

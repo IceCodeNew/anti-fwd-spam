@@ -120,7 +120,12 @@ def source_ids(update: object) -> frozenset[int]:
 
     _telegram_id(chat.get("id"), allow_negative=True)
     _telegram_id(raw_message.get("message_id"), allow_negative=False)
-    return _message_sources(raw_message)
+    sources = _message_sources(raw_message)
+    update_id = update.get("update_id")
+    if sources and (type(update_id) is not int or update_id < 0):
+        message = "update.update_id is invalid"
+        raise ValueError(message)
+    return sources
 
 
 def _required_string(name: str, value: object, *, maximum: int) -> str:

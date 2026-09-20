@@ -36,7 +36,8 @@ export class Telegram {
 
   reset() {
     this.messages.clear();
-    this.members = new Map([[11, { status: 'administrator' }], [22, { status: 'member' }]]);
+    this.members = new Map([[11, { status: 'administrator' }], [22, { status: 'member' }],
+      [273234066, { status: 'left' }]]);
     this.groups.clear();
     this.faults.clear();
     this.accounts.clear();

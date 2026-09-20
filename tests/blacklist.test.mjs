@@ -129,13 +129,13 @@ test('user retries blacklist persistence without re-banning: Given storage fails
     [{ bot_id: 123, user_id: 22 }]);
 });
 
-test('user excludes automatic mutes from shared bans: Given an inline source match, When automatic filtering mutes the sender, Then no account blacklist record is created', async () => {
+test('user excludes automatic mutes from shared bans: Given an inline source match, When automatic filtering mutes the sender, Then only the source bot enters the account blacklist', async () => {
   const target = { ...message(), via_bot: { id: 273234066, is_bot: true, first_name: 'Source' } };
   telegram.send(target);
   assert.equal((await dispatch({ update_id: 1, message: target })).status, 200);
   assert.equal(telegram.canSend(22), false);
   assert.equal(telegram.canJoin(22), true);
-  assert.deepEqual((await database.prepare('SELECT user_id FROM blacklisted_users').all()).results, []);
+  assert.deepEqual((await database.prepare('SELECT user_id FROM blacklisted_users').all()).results, [{ user_id: 273234066 }]);
 });
 
 test('user removes false positives: Given an account blacklist entry, When the operator deletes it before a new message, Then the sender and message remain unaffected', async () => {

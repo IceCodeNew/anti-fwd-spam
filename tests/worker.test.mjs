@@ -60,12 +60,12 @@ for (const outcome of ['confirmed', 'response lost']) {
     assert.equal((await dispatch({ update_id: 902, message: fresh })).status, 200);
     assert.equal(telegram.has(90), false);
     assert.equal(telegram.canSend(22), false);
-    assert.deepEqual(await evidence(), []);
+    assert.equal(await database.prepare('SELECT user_id FROM blacklisted_users WHERE user_id=22').first(), null);
   });
 }
 
 test('user recovers automatic moderation: Given unavailable storage followed by a temporary Telegram rejection, When delivery resumes after recovery, Then the message stays deleted and muting eventually succeeds', async () => {
-  const update = { message: { ...message(), via_bot: { id: 273234066, is_bot: true } } };
+  const update = { update_id: 1, message: { ...message(), via_bot: { id: 273234066, is_bot: true } } };
   telegram.send(update.message);
   await database.prepare('ALTER TABLE automatic_mutes RENAME TO unavailable_mutes').run();
   try {
@@ -85,7 +85,7 @@ test('user recovers automatic moderation: Given unavailable storage followed by 
 
 test('user keeps an unmute across overlapping automatic deliveries: Given a delayed membership lookup, When another delivery finishes and an administrator unmutes, Then the late delivery preserves that permission', async () => {
   const entered = Promise.withResolvers(), release = Promise.withResolvers();
-  const update = { message: { ...message(), via_bot: { id: 273234066, is_bot: true } } };
+  const update = { update_id: 1, message: { ...message(), via_bot: { id: 273234066, is_bot: true } } };
   telegram.send(update.message);
   telegram.faults.set('getChatMember:22', () => { entered.resolve(); return release.promise; });
   const pending = dispatch(update);
@@ -104,7 +104,7 @@ test('user keeps an unmute across overlapping automatic deliveries: Given a dela
 });
 
 test('user expires mute identifiers: Given an automatic restriction, When redelivery and scheduled cleanup run, Then identifiers retain their original three-day expiry without storing content', async () => {
-  const update = { message: { ...message(), via_bot: { id: 273234066, is_bot: true } } };
+  const update = { update_id: 1, message: { ...message(), via_bot: { id: 273234066, is_bot: true } } };
   telegram.send(update.message);
   const before = Math.floor(Date.now() / 1000);
   assert.equal((await dispatch(update)).status, 200);
@@ -169,7 +169,7 @@ test('user keeps history: Given an old message, When a blacklisted inline messag
   }
   assert.equal(telegram.members.get(22).until_date, 0);
   assert.equal(telegram.canJoin(22), true);
-  assert.deepEqual(await evidence(), []);
+  assert.equal(await database.prepare('SELECT user_id FROM blacklisted_users WHERE user_id=22').first(), null);
 });
 
 test('user bans reported spam: Given a non-member commenter and a sticker report, When an administrator mentions the bot, Then the sticker and report disappear and the sender cannot comment or rejoin', async () => {
@@ -324,7 +324,7 @@ test('user expires message identifiers: Given an indexed message and a controlle
   assert.equal((await evidence()).length, 1);
 });
 
-test('user recovers indexing: Given unavailable index storage, When delivery resumes after storage recovers, Then recent history is retained for cleanup while automatic filtering remains available', async () => {
+test('user recovers indexing: Given unavailable index storage, When delivery resumes after storage recovers, Then sender filtering succeeds while source history cleanup waits for storage', async () => {
   const recent = { ...message(70), date: Math.floor(Date.now() / 1000) - 60 };
   telegram.send(recent);
   await database.prepare('ALTER TABLE recent_messages RENAME TO unavailable_messages').run();
@@ -333,7 +333,7 @@ test('user recovers indexing: Given unavailable index storage, When delivery res
     assert.equal(telegram.has(70), true);
     const spam = { ...message(71), via_bot: { id: 273234066, is_bot: true } };
     telegram.send(spam);
-    assert.equal((await dispatch({ message: spam })).status, 200);
+    assert.equal((await dispatch({ update_id: 71, message: spam })).status, 503);
     assert.equal(telegram.has(71), false);
   } finally {
     await database.prepare('ALTER TABLE unavailable_messages RENAME TO recent_messages').run();
@@ -407,7 +407,7 @@ test('user searches non-text evidence: Given media and service-message reports, 
 
 for (const status of ['creator', 'administrator']) {
   for (const automatic of [false, true]) {
-    test(`user protects ${status}: Given their old and targeted messages, When ${automatic ? 'an automatic match' : 'an owner report'} arrives, Then the target disappears but history and privileges remain`, async () => {
+    test(`user protects ${status}: Given their old and targeted messages, When ${automatic ? 'an automatic match' : 'an owner report'} arrives, Then ${automatic ? 'both messages survive' : 'only the target disappears'} and privileges remain`, async () => {
       telegram.members.set(11, { status: 'creator' });
       telegram.members.set(22, { status });
       const target = message();
@@ -423,8 +423,8 @@ for (const status of ['creator', 'administrator']) {
       const response = await dispatch(update);
 
       assert.equal(response.status, 200);
-      assert.match(await response.text(), /(?:ban|mute) skipped/);
-      assert.equal(telegram.has(81), false);
+      assert.match(await response.text(), /skipped/);
+      assert.equal(telegram.has(81), automatic);
       assert.equal(telegram.has(80), true);
       assert.deepEqual(telegram.members.get(22), { status });
     });
@@ -449,7 +449,7 @@ test('user reports without joining: Given a commenter with left status, When a r
   const spam = { ...message(), via_bot: { id: 273234066, is_bot: true } };
   telegram.send(spam);
 
-  assert.equal((await dispatch({ message: spam })).status, 200);
+  assert.equal((await dispatch({ update_id: 1, message: spam })).status, 200);
 
   assert.equal(telegram.canSend(22), false);
   assert.equal(telegram.has(80), true);
@@ -515,7 +515,7 @@ test('user resumes target deletion: Given a confirmed ban and temporary target-d
   assert.equal(telegram.has(82), false);
 });
 
-test('user retains evidence during failure: Given unavailable storage, When a report arrives, Then nothing is moderated while automatic filtering still works', async () => {
+test('user retains evidence during failure: Given unavailable report storage, When a report or source match arrives, Then reports wait and automatic sender filtering proceeds while source bans wait', async () => {
   await database.prepare('ALTER TABLE reports RENAME TO unavailable_reports').run();
   try {
     const update = report();
@@ -524,9 +524,10 @@ test('user retains evidence during failure: Given unavailable storage, When a re
     assert.equal(telegram.has(81), true);
     assert.equal(telegram.canSend(22), true);
     update.message = { ...message(), via_bot: { id: 273234066, is_bot: true } };
-    assert.equal((await dispatch(update)).status, 200);
+    assert.equal((await dispatch(update)).status, 503);
     assert.equal(telegram.has(81), false);
     assert.equal(telegram.canSend(22), false);
+    assert.equal(telegram.canJoin(273234066), true);
   } finally {
     await database.prepare('ALTER TABLE unavailable_reports RENAME TO reports').run();
   }
@@ -617,7 +618,7 @@ test('user filters provenance: Given bot IDs and lookalike usernames, When messa
     telegram.reset();
     const target = { ...message(81 + index), ...fields };
     telegram.send(target);
-    assert.equal((await dispatch({ edited_message: target })).status, 200);
+    assert.equal((await dispatch({ update_id: index, edited_message: target })).status, 200);
     assert.equal(telegram.has(target.message_id), !expected, JSON.stringify(fields));
     assert.equal(telegram.canSend(22), !expected);
   }
@@ -627,7 +628,7 @@ test('user limits filtering to groups: Given a private chat, channel or basic gr
   for (const type of ['private', 'channel', 'group']) {
     const target = { ...message(), chat: { ...chat, type }, via_bot: { id: 273234066, is_bot: true } };
     telegram.send(target);
-    assert.equal((await dispatch({ message: target })).status, 200);
+    assert.equal((await dispatch({ update_id: 1, message: target })).status, 200);
     assert.equal(telegram.has(81), type !== 'group');
     assert.equal(telegram.canSend(22), true);
   }
@@ -863,7 +864,7 @@ for (const failure of ['server error', 'unexpected success payload']) {
 }
 
 test('user upgrades pending reports: Given legacy cleanup and failed-ban records, When migrations run and deliveries resume, Then completed actions stay completed while an unattempted ban can still proceed', async () => {
-  const statements = [database.prepare('DROP TABLE reports')];
+  const statements = [database.prepare('DROP TABLE reports'), database.prepare('DROP TABLE blacklisted_sources')];
   for (const sql of (await readFile('migrations/0001_reports.sql', 'utf8')).split(';').filter(sql => sql.trim())) {
     statements.push(database.prepare(sql));
   }
@@ -874,8 +875,10 @@ test('user upgrades pending reports: Given legacy cleanup and failed-ban records
       (bot_id, update_id, received_at, expires_at, raw_update, classification, response_body)
       VALUES (123, ?, 100, 259300, ?, '{}', ?)`).bind(index, JSON.stringify({ ...report(), update_id: index }), outcome));
   }
-  for (const sql of (await readFile('migrations/0002_report_progress.sql', 'utf8')).split(';').filter(sql => sql.trim())) {
-    statements.push(database.prepare(sql));
+  for (const file of ['0002_report_progress.sql', '0009_sources.sql', '0010_report_subjects.sql']) {
+    for (const sql of (await readFile(`migrations/${file}`, 'utf8')).split(';').filter(sql => sql.trim())) {
+      statements.push(database.prepare(sql));
+    }
   }
   await database.batch(statements);
   telegram.send(message(90));

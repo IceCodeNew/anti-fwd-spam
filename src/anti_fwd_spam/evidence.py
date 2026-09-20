@@ -145,7 +145,9 @@ class ReportStore:
         """Keep retries bound to the originally resolved account after username changes."""
         try:
             row = await (
-                self.database.prepare("SELECT command_source_id FROM reports WHERE bot_id = ? AND update_id = ?")
+                self.database.prepare(
+                    "SELECT command_source_id FROM reports WHERE bot_id = ? AND update_id = ? AND subject_id = 0",
+                )
                 .bind(bot_id, update_id)
                 .first()
             )
@@ -159,7 +161,7 @@ class ReportStore:
             await (
                 self.database.prepare(
                     "UPDATE reports SET command_source_id = ? WHERE bot_id = ? AND update_id = ? "
-                    "AND command_source_id IS NULL",
+                    "AND subject_id = 0 AND command_source_id IS NULL",
                 )
                 .bind(source_id, bot_id, update_id)
                 .run()
@@ -178,22 +180,23 @@ class ReportStore:
         except Exception as error:
             raise EvidenceError from error
 
-    async def has_source(self, source_ids: frozenset[int]) -> bool:
+    async def matching_sources(self, source_ids: frozenset[int]) -> tuple[int, ...]:
         """Look up only the message's explicit source IDs using the primary key."""
         try:
-            row = await (
+            rows = await (
                 self.database.prepare(
-                    "SELECT 1 FROM blacklisted_sources WHERE source_id IN (SELECT value FROM json_each(?)) LIMIT 1",
+                    "SELECT source_id FROM blacklisted_sources "
+                    "WHERE source_id IN (SELECT value FROM json_each(?)) ORDER BY source_id",
                 )
                 .bind(json.dumps(sorted(source_ids)))
-                .first()
+                .all()
             )
         except Exception as error:
             raise EvidenceError from error
-        return row is not None
+        return tuple(int(row.source_id) for row in rows.results)
 
     async def blacklist_user(self, bot_id: int, user_id: int, now: int) -> None:
-        """Retain confirmed administrator-reported accounts independently of expiring evidence."""
+        """Retain confirmed banned accounts independently of expiring evidence."""
         try:
             await (
                 self.database.prepare(
@@ -207,7 +210,7 @@ class ReportStore:
             raise EvidenceError from error
 
     async def is_blacklisted(self, bot_id: int, user_id: int) -> bool:
-        """Match a sender against this bot's administrator-confirmed accounts."""
+        """Match a sender against this bot's retained account blacklist."""
         try:
             row = await (
                 self.database.prepare("SELECT 1 FROM blacklisted_users WHERE bot_id = ? AND user_id = ?")
@@ -305,22 +308,25 @@ class ReportStore:
 
     async def save(
         self,
-        bot_id: int,
-        update_id: int,
+        report_key: tuple[int, int],
         raw_json: str,
         target: dict[str, object],
         now: int,
+        subject_id: int = 0,
     ) -> StoredReport:
         """Insert immutable evidence once and read durable processing progress."""
+        bot_id, update_id = report_key
         try:
             await (
                 self.database.prepare(
-                    "INSERT INTO reports (bot_id, update_id, received_at, expires_at, raw_update, classification) "
-                    "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(bot_id, update_id) DO NOTHING",
+                    "INSERT INTO reports "
+                    "(bot_id, update_id, subject_id, received_at, expires_at, raw_update, classification) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(bot_id, update_id, subject_id) DO NOTHING",
                 )
                 .bind(
                     bot_id,
                     update_id,
+                    subject_id,
                     now,
                     now + RETENTION_SECONDS,
                     raw_json,
@@ -331,9 +337,9 @@ class ReportStore:
             row = (
                 await self.database.prepare(
                     "SELECT response_status, response_body, moderation_result, ban_claimed "
-                    "FROM reports WHERE bot_id = ? AND update_id = ?",
+                    "FROM reports WHERE bot_id = ? AND update_id = ? AND subject_id = ?",
                 )
-                .bind(bot_id, update_id)
+                .bind(bot_id, update_id, subject_id)
                 .first()
             )
             return StoredReport(
@@ -345,56 +351,59 @@ class ReportStore:
         except Exception as error:
             raise EvidenceError from error
 
-    async def claim_ban(self, bot_id: int, update_id: int) -> bool:
+    async def claim_ban(self, bot_id: int, update_id: int, subject_id: int = 0) -> bool:
         """Allow only one delivery to issue a destructive Telegram request."""
         try:
             row = await (
                 self.database.prepare(
                     "UPDATE reports SET ban_claimed = 1 WHERE bot_id = ? AND update_id = ? "
+                    "AND subject_id = ? "
                     "AND ban_claimed = 0 AND moderation_result IS NULL AND response_status IS NULL RETURNING bot_id",
                 )
-                .bind(bot_id, update_id)
+                .bind(bot_id, update_id, subject_id)
                 .first()
             )
         except Exception as error:
             raise EvidenceError from error
         return row is not None
 
-    async def release_ban(self, bot_id: int, update_id: int) -> None:
+    async def release_ban(self, bot_id: int, update_id: int, subject_id: int = 0) -> None:
         """Permit retries only when Telegram explicitly rejected the ban."""
         try:
             await (
-                self.database.prepare("UPDATE reports SET ban_claimed = 0 WHERE bot_id = ? AND update_id = ?")
-                .bind(bot_id, update_id)
+                self.database.prepare(
+                    "UPDATE reports SET ban_claimed = 0 WHERE bot_id = ? AND update_id = ? AND subject_id = ?",
+                )
+                .bind(bot_id, update_id, subject_id)
                 .run()
             )
         except Exception as error:
             raise EvidenceError from error
 
-    async def remember_moderation(self, bot_id: int, update_id: int, body: str) -> None:
+    async def remember_moderation(self, bot_id: int, update_id: int, body: str, subject_id: int = 0) -> None:
         """Save 'banned' as incomplete progress or a confirmed target-removal result."""
         try:
             await (
                 self.database.prepare(
                     "UPDATE reports SET moderation_result = ? "
-                    "WHERE bot_id = ? AND update_id = ? "
+                    "WHERE bot_id = ? AND update_id = ? AND subject_id = ? "
                     "AND (moderation_result IS NULL OR moderation_result = 'banned')",
                 )
-                .bind(body, bot_id, update_id)
+                .bind(body, bot_id, update_id, subject_id)
                 .run()
             )
         except Exception as error:
             raise EvidenceError from error
 
-    async def finish(self, bot_id: int, update_id: int, status: int, body: str) -> None:
+    async def finish(self, bot_id: int, update_id: int, status: int, body: str, subject_id: int = 0) -> None:
         """Record an outcome without overwriting a concurrent completion."""
         try:
             await (
                 self.database.prepare(
                     "UPDATE reports SET response_status = ?, response_body = ? "
-                    "WHERE bot_id = ? AND update_id = ? AND response_status IS NULL",
+                    "WHERE bot_id = ? AND update_id = ? AND subject_id = ? AND response_status IS NULL",
                 )
-                .bind(status if status == HTTPStatus.OK else None, body, bot_id, update_id)
+                .bind(status if status == HTTPStatus.OK else None, body, bot_id, update_id, subject_id)
                 .run()
             )
         except Exception as error:

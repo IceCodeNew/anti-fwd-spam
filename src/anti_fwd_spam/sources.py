@@ -12,13 +12,13 @@ if TYPE_CHECKING:
     from .telegram import Fetch
 
 
-def ban_argument(message: dict[str, object], bot_username: str) -> str | None:
+def source_argument(message: dict[str, object], bot_username: str) -> str | None:
     """Recognize a leading Telegram command addressed to this bot."""
     text, entities = message.get("text"), message.get("entities")
     if not isinstance(text, str) or not isinstance(entities, list):
         return None
     parts = text.split(maxsplit=1)
-    if not parts or parts[0].casefold() not in {"/ban", f"/ban@{bot_username.casefold()}"}:
+    if not parts or parts[0].casefold() not in {"/bs", f"/bs@{bot_username.casefold()}"}:
         return None
     if not any(
         isinstance(entity, dict)

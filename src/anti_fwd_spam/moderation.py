@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 from .evidence import DELETE_BATCH_SIZE, MESSAGE_WINDOW_SECONDS, EvidenceError, ReportStore
 from .model import MODEL_CONTENT_FIELDS, model_input
 from .policy import MAX_TELEGRAM_ID, source_ids
-from .sources import ban_argument, resolve_source
+from .sources import resolve_source, source_argument
 from .tasks import ModelTasks
 from .telegram import DeleteOutcome, Fetch, TelegramError, call_method, delete_message
 
@@ -153,11 +153,11 @@ class Moderator:
         except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError):
             return AppResponse(400, "invalid update")
         message = update.get("message", update.get("edited_message"))
-        if isinstance(message, dict) and (argument := ban_argument(message, self.bot_username)) is not None:
+        if isinstance(message, dict) and (argument := source_argument(message, self.bot_username)) is not None:
             if "message" not in update or not reporter_allowed(message, self.config):
                 return AppResponse(200, "command ignored")
             try:
-                response = await self.ban_command(update, message, raw_json, argument)
+                response = await self.source_command(update, message, raw_json, argument)
             except EvidenceError:
                 response = AppResponse(503, "command storage unavailable; retry pending")
             except TelegramError as error:
@@ -210,14 +210,14 @@ class Moderator:
         except EvidenceError:
             return AppResponse(503, "model task storage unavailable; retry pending")
 
-    async def ban_command(
+    async def source_command(
         self,
         update: dict[str, object],
         message: dict[str, object],
         raw_json: str,
         username: str,
     ) -> AppResponse:
-        """Save a resolved source and resume the shared account ban and history cleanup."""
+        """Save a resolved source without changing membership or message history."""
         chat, message_id, update_id = message.get("chat"), message.get("message_id"), update.get("update_id")
         if (
             not isinstance(chat, dict)
@@ -233,8 +233,7 @@ class Moderator:
         identifier = await self.store.command_source(bot_id, update_id)
         if identifier is None:
             identifier = await resolve_source(self.fetcher, self.config.bot_token, username)
-        response = AppResponse(200, "command handled")
-        reply = "Could not resolve the account. Use /ban username or /ban @username with one valid Telegram username."
+        reply = "Could not resolve the account. Use /bs username or /bs @username with one valid Telegram username."
         if identifier is not None:
             await self.store.save(bot_id, update_id, raw_json, message, int(time.time()))
             await self.store.pin_command_source(bot_id, update_id, identifier)
@@ -243,11 +242,7 @@ class Moderator:
             if identifier is None:
                 raise EvidenceError
             await self.store.add_source(identifier)
-            outcome = "No group ban attempted: send the command in the target supergroup."
-            if chat.get("type") == "supergroup" and identifier > 0:
-                response = await self.moderate_account(update, message, raw_json, bot_id, identifier)
-                outcome = response.body
-            reply = f"Source saved in D1: @{username}\nID: {identifier}\n{outcome}"
+            reply = f"Source saved in D1: @{username}\nID: {identifier}"
         await self.call(
             "sendMessage",
             {
@@ -256,7 +251,7 @@ class Moderator:
                 "reply_parameters": {"message_id": message_id, "allow_sending_without_reply": True},
             },
         )
-        return response
+        return AppResponse(200, "command handled")
 
     async def check_model(self, message: dict[str, object], *, edited: bool = False) -> AppResponse:
         """Persist one inference task or cancel the old version on an edit."""

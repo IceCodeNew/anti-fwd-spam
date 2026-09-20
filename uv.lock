@@ -169,26 +169,26 @@ wheels = [
 
 [[package]]
 name = "pyodide-py"
-version = "0.29.4"
+version = "0.29.5"
 source = { registry = "https://pypi.flatt.tech/simple/" }
 resolution-markers = [
     "python_full_version < '3.14'",
 ]
-sdist = { url = "https://pypi.flatt.tech/files/packages/57/85/db25e6a10a2600cb96e4ebe423ada255aa738b991fd8843776ebe4f3173f/pyodide_py-0.29.4.tar.gz", hash = "sha256:2ef83817457364fd1a3dc42bfd0617350244776c8b9f7e37f17efcbc38e3bf0a", size = 58868, upload-time = "2026-05-07T15:14:45.97Z" }
+sdist = { url = "https://pypi.flatt.tech/files/packages/1d/85/d89ea2de12b8da5e82d5d8c2c8a03f2aebd0830416d22d654b5cfe05c6d9/pyodide_py-0.29.5.tar.gz", hash = "sha256:a38d410aec95e2e2b3d59bdd93176b207db32952953bc3e9df81406a5ee3facd", size = 58799, upload-time = "2026-09-15T22:04:04.018Z" }
 wheels = [
-    { url = "https://pypi.flatt.tech/files/packages/b2/03/7805e80a7d9824b03fe40b1c7c4192250f1ea231ee49a57ada62f736c506/pyodide_py-0.29.4-py3-none-any.whl", hash = "sha256:5df0615640e39d3b365da8b8fd653ec0af5361aef28275ded2218af773d766d1", size = 66013, upload-time = "2026-05-07T15:14:44.637Z" },
+    { url = "https://pypi.flatt.tech/files/packages/82/b3/137eb4fcd365e1442e38e3470572cac2ec9eeadbf7a4c9c25bd791f6c757/pyodide_py-0.29.5-py3-none-any.whl", hash = "sha256:9d6d62c5167df01b1d8a94c762197f1fd89a5771fd78bbd07393c812d979352b", size = 66017, upload-time = "2026-09-15T22:04:02.68Z" },
 ]
 
 [[package]]
 name = "pyodide-py"
-version = "314.0.6"
+version = "314.0.7"
 source = { registry = "https://pypi.flatt.tech/simple/" }
 resolution-markers = [
     "python_full_version >= '3.14'",
 ]
-sdist = { url = "https://pypi.flatt.tech/files/packages/65/5a/da47f8e91c0e47a74025bf8e1aec8ddc2f3ff17974977dfb34ee8da93396/pyodide_py-314.0.6.tar.gz", hash = "sha256:7bc3a9f7ec7bead703b4b3495ef97ce4868f7bea5209f421afe5441c7ced497a", size = 62813, upload-time = "2026-08-25T07:00:50.538Z" }
+sdist = { url = "https://pypi.flatt.tech/files/packages/f9/98/df30f080ce2ec52bbb02c3db039edd60fe85d977f6afbf90e09abeb34804/pyodide_py-314.0.7.tar.gz", hash = "sha256:a33774c96f9c51c138e3ef2295ae7b524064d9501e896ceb1a0aa6d4da55f9e5", size = 62895, upload-time = "2026-09-14T05:07:35.015Z" }
 wheels = [
-    { url = "https://pypi.flatt.tech/files/packages/2e/e0/4dffe56b7aad80bd527d1514e717e11661c361f0f4ad30b7be6e514371f6/pyodide_py-314.0.6-py3-none-any.whl", hash = "sha256:e1c613566d7b5f94046316171f85288e5db0f1c6fd4eb4f21f7a658e57ef2195", size = 70398, upload-time = "2026-08-25T07:00:49.23Z" },
+    { url = "https://pypi.flatt.tech/files/packages/f4/ec/f2848eda90e7b8571376a846bed27bff3f0d5b10bfd87792f1ac6e7d794d/pyodide_py-314.0.7-py3-none-any.whl", hash = "sha256:75377c696639863ea966330f2eff4a3b6bd1c58a95fbd339859e6949c4be35e3", size = 70473, upload-time = "2026-09-14T05:07:33.664Z" },
 ]
 
 [[package]]
@@ -237,8 +237,8 @@ dependencies = [
     { name = "click" },
     { name = "pyjson5" },
     { name = "pyodide-cli" },
-    { name = "pyodide-py", version = "0.29.4", source = { registry = "https://pypi.flatt.tech/simple/" }, marker = "python_full_version < '3.14'" },
-    { name = "pyodide-py", version = "314.0.6", source = { registry = "https://pypi.flatt.tech/simple/" }, marker = "python_full_version >= '3.14'" },
+    { name = "pyodide-py", version = "0.29.5", source = { registry = "https://pypi.flatt.tech/simple/" }, marker = "python_full_version < '3.14'" },
+    { name = "pyodide-py", version = "314.0.7", source = { registry = "https://pypi.flatt.tech/simple/" }, marker = "python_full_version >= '3.14'" },
     { name = "rich" },
     { name = "workers-runtime-sdk" },
 ]

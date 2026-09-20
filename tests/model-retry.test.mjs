@@ -21,7 +21,7 @@ for (const stage of ['inference', 'deletion']) {
     assert.equal((await dispatch({ update_id: 1, message: message() })).status, 200);
     const initial = await task();
     if (stage === 'inference') assert.ok(initial.input_json.includes('User 22'));
-    else assert.equal(initial.input_json, null);
+    else assert.equal(initial.input_json.includes('User 22'), false);
     let due = initial.due_at - 60;
     assert.ok(due >= initial.created_at);
     for (const delay of [60, 120, 300]) {
@@ -52,14 +52,120 @@ test('user: Given a saved spam decision and failed deletion, When Telegram recov
   telegram.send(message());
   assert.equal((await dispatch({ update_id: 2, message: message() })).status, 200);
   const pending = await task();
-  assert.equal(pending.input_json, null);
+  assert.equal(pending.input_json.includes('User 22'), false);
   model.probability = 0;
   telegram.faults.clear();
   await dispatch({ update_id: 2, message: message() });
   assert.equal(telegram.has(81), true);
   await tick(pending.due_at);
   assert.equal(telegram.has(81), false);
+  assert.equal(telegram.canSend(22), false);
+  assert.equal(telegram.canJoin(22), true);
+});
+
+test('user: Given a deleted spam message and a temporarily rejected mute, When retries become due, Then the original sender is muted without reevaluating or clearing history', async () => {
+  model.probability = 1;
+  telegram.send(message(80));
+  telegram.send(message());
+  telegram.faults.set('restrictChatMember', () => Response.json({ ok: false, error_code: 429 }, { status: 429 }));
+  await dispatch({ update_id: 2, message: message() });
+  const pending = await task();
+  assert.equal(telegram.has(81), false);
   assert.equal(telegram.canSend(22), true);
+  telegram.faults.clear();
+  model.probability = 0;
+  await tick(pending.due_at - 1);
+  assert.equal(telegram.canSend(22), true);
+  await tick(pending.due_at);
+  assert.equal(telegram.canSend(22), false);
+  assert.equal(telegram.canJoin(22), true);
+  assert.equal(telegram.has(80), true);
+  assert.equal((await task()).input_json, null);
+});
+
+test('user: Given a possibly successful mute followed by a manual unmute, When a model task retries, Then it preserves the manual unmute', async () => {
+  model.probability = 1;
+  telegram.send(message());
+  telegram.faults.set('restrictChatMember', () => {
+    telegram.members.set(22, { status: 'restricted', permissions: { can_send_messages: false } });
+    return new Response('response lost', { status: 502 });
+  });
+  await dispatch({ update_id: 2, message: message() });
+  const pending = await task();
+  assert.equal(telegram.canSend(22), false);
+  telegram.members.set(22, { status: 'member' });
+  telegram.faults.clear();
+  await tick(pending.due_at);
+  assert.equal(telegram.canSend(22), true);
+  assert.equal(telegram.has(81), false);
+});
+
+test('user: Given a sender promoted while model deletion is pending, When Telegram recovers, Then the administrator and their message are protected', async () => {
+  model.probability = 1;
+  telegram.send(message());
+  telegram.faults.set('deleteMessage', () => Response.json({ ok: false, error_code: 429 }, { status: 429 }));
+  await dispatch({ update_id: 2, message: message() });
+  const pending = await task();
+  telegram.members.set(22, { status: 'administrator' });
+  telegram.faults.clear();
+  await tick(pending.due_at);
+  assert.equal(telegram.has(81), true);
+  assert.equal(telegram.canSend(22), true);
+});
+
+test('user: Given a spam decision awaiting a permission check, When the message is edited, Then the cancelled task neither deletes nor mutes', async () => {
+  const started = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  model.probability = 1;
+  telegram.send(message());
+  telegram.faults.set('getChatMember:22', async () => {
+    started.resolve();
+    await release.promise;
+    return Response.json({ ok: true, result: { status: 'member', user: message().from } });
+  });
+  const delivery = dispatch({ update_id: 1, message: message() });
+  await started.promise;
+  try {
+    const edited = { ...message(), text: 'Ordinary conversation' };
+    telegram.send(edited);
+    await dispatch({ update_id: 2, edited_message: edited });
+  } finally {
+    release.resolve();
+  }
+  await delivery;
+  assert.equal(telegram.has(81), true);
+  assert.equal(telegram.canSend(22), true);
+});
+
+test('user: Given model moderation cancelled before muting, When a later edit matches a blocked source, Then source filtering can still mute the sender', async () => {
+  const started = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  model.probability = 1;
+  telegram.send(message());
+  telegram.faults.set('getChatMember:22', async () => {
+    if (!telegram.has(81)) {
+      started.resolve();
+      await release.promise;
+    }
+    return Response.json({ ok: true, result: { status: 'member', user: message().from } });
+  });
+  const delivery = dispatch({ update_id: 1, message: message() });
+  await started.promise;
+  try {
+    const edited = { ...message(), text: 'Ordinary conversation' };
+    telegram.send(edited);
+    await dispatch({ update_id: 2, edited_message: edited });
+  } finally {
+    telegram.faults.clear();
+    release.resolve();
+  }
+  await delivery;
+  assert.equal(telegram.canSend(22), true);
+  const sourced = { ...message(), via_bot: { id: 273234066, is_bot: true, first_name: 'Source' } };
+  telegram.send(sourced);
+  await dispatch({ update_id: 3, edited_message: sourced });
+  assert.equal(telegram.has(81), false);
+  assert.equal(telegram.canSend(22), false);
   assert.equal(telegram.canJoin(22), true);
 });
 
@@ -147,6 +253,7 @@ test('user: Given transient HTTP failures or permanent rejections, When the serv
 test('user: Given a crashed leased inference, When its lease and retry delay expire, Then processing resumes and removes only its target', async () => {
   const now = Math.floor(Date.now() / 1000);
   telegram.send(message());
+  await database.prepare('INSERT INTO recent_messages VALUES (123, -10012, 81, 22, ?)').bind(message().date).run();
   await database.prepare(`INSERT INTO model_tasks
     (bot_id, chat_id, message_id, phase, input_json, attempts, generation, due_at, lease_until, stop_at, created_at, expires_at)
     VALUES (123, -10012, 81, 'classify', ?, 1, 1, ?, ?, ?, ?, ?)`)
@@ -161,6 +268,51 @@ test('user: Given a crashed leased inference, When its lease and retry delay exp
   assert.equal(telegram.has(81), false);
   assert.equal((await task()).input_json, null);
 });
+
+test('user: Given a legacy spam task, When sender recovery storage fails after classification, Then retry preserves the saved spam decision', async () => {
+  const now = Math.floor(Date.now() / 1000);
+  telegram.send(message());
+  await database.prepare('INSERT INTO recent_messages VALUES (123, -10012, 81, 22, ?)').bind(message().date).run();
+  await database.prepare(`INSERT INTO model_tasks
+    (bot_id, chat_id, message_id, phase, input_json, due_at, stop_at, created_at, expires_at)
+    VALUES (123, -10012, 81, 'classify', ?, ?, ?, ?, ?)`)
+    .bind(JSON.stringify({ nickname: 'User 22', bio: '', message: { text: 'spam' } }),
+      now, message().date + 48 * 3600, now, now + 3 * 86400).run();
+  model.response = async () => {
+    await database.prepare('ALTER TABLE recent_messages RENAME TO unavailable_recent_messages').run();
+    return Response.json({ answers: { spam: { type: 'noul', noul: 1 } } });
+  };
+  try {
+    await tick(now);
+    assert.equal(telegram.has(81), true);
+  } finally {
+    await database.prepare('ALTER TABLE unavailable_recent_messages RENAME TO recent_messages').run();
+  }
+  model.response = null;
+  model.probability = 0;
+  await tick((await task()).due_at);
+  assert.equal(telegram.has(81), false);
+  assert.equal(telegram.canSend(22), false);
+});
+
+for (const phase of ['classify', 'delete']) {
+  test(`user: Given a legacy ${phase} task without a sender snapshot or index, When cron runs, Then it preserves the message and administrator`, async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const target = { ...message(), chat: { ...message().chat, type: 'group' } };
+    telegram.send(target);
+    telegram.members.set(22, { status: 'administrator' });
+    model.probability = 1;
+    await database.prepare(`INSERT INTO model_tasks
+      (bot_id, chat_id, message_id, phase, input_json, due_at, stop_at, created_at, expires_at)
+      VALUES (123, -10012, 81, ?, ?, ?, ?, ?, ?)`)
+      .bind(phase, phase === 'classify' ? JSON.stringify({ nickname: 'User 22', bio: '', message: { text: 'spam' } }) : null,
+        now, now + 3600, now, now + 3 * 86400).run();
+    await tick(now);
+    assert.equal(telegram.has(81), true);
+    assert.equal(telegram.members.get(22).status, 'administrator');
+    assert.equal((await task()).input_json, null);
+  });
+}
 
 test('user: Given a pending deletion, When the target is edited, Then cron does not remove the new version', async () => {
   model.probability = 1;

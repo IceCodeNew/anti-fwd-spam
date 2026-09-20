@@ -237,7 +237,7 @@ class ReportStore:
         return row is not None
 
     async def release_mute(self, bot_id: int, chat_id: int, message_id: int) -> None:
-        """Allow another attempt after an explicit temporary Telegram rejection."""
+        """Allow retry when no restriction was sent or Telegram explicitly rejected it temporarily."""
         try:
             await (
                 self.database.prepare("DELETE FROM automatic_mutes WHERE bot_id = ? AND chat_id = ? AND message_id = ?")

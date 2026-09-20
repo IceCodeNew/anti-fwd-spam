@@ -1,15 +1,16 @@
-"""Persist bounded inference and deletion retries in the existing D1 database."""
+"""Persist bounded inference and moderation retries in the existing D1 database."""
 
 from __future__ import annotations
 
 import json
 import time
 from dataclasses import dataclass
+from http import HTTPStatus
 from typing import TYPE_CHECKING
 
+from .actions import Actions
 from .evidence import MESSAGE_WINDOW_SECONDS, RETENTION_SECONDS, EvidenceError
 from .model import SPAM_THRESHOLD, ModelRetryError, spam_probability
-from .telegram import DeleteOutcome, delete_message
 
 if TYPE_CHECKING:
     from .evidence import ReportStore
@@ -33,10 +34,11 @@ class Task:
 
 
 class ModelTasks:
-    """Share scheduling and retention between classification and single-message deletion."""
+    """Share scheduling and retention between classification and delete-and-mute actions."""
 
     def __init__(self, store: ReportStore, bot_id: int) -> None:
         """Use this bot's D1 task namespace."""
+        self.store = store
         self.database = store.database
         self.bot_id = bot_id
 
@@ -117,7 +119,9 @@ class ModelTasks:
         except Exception as error:
             raise EvidenceError from error
 
-    async def finish(self, task: Task, phase: str, now: int, *, retry: bool = False) -> bool:
+    async def finish(
+        self, task: Task, phase: str, now: int, *, retry: bool = False, target: dict[str, object] | None = None
+    ) -> bool:
         """Commit an owned result, clearing content once classification ends."""
         if retry and task.attempts > len(RETRY_DELAYS):
             phase, retry = "done", False
@@ -125,14 +129,15 @@ class ModelTasks:
         try:
             row = (
                 await self.database.prepare(
-                    "UPDATE model_tasks SET phase = ?, input_json = CASE WHEN ? THEN input_json ELSE NULL END, "
+                    "UPDATE model_tasks SET phase = ?, input_json = CASE WHEN ? THEN input_json ELSE ? END, "
                     "attempts = CASE WHEN ? THEN attempts ELSE 0 END, due_at = ?, lease_until = 0 "
                     "WHERE bot_id = ? AND chat_id = ? AND message_id = ? AND generation = ? "
                     "AND phase = ? AND lease_until > ? AND stop_at > ? AND expires_at > ? RETURNING message_id",
                 )
                 .bind(
                     phase,
-                    retry and phase == "classify",
+                    retry,
+                    json.dumps({"target": target}) if phase == "delete" and target is not None else None,
                     retry,
                     due,
                     self.bot_id,
@@ -171,23 +176,71 @@ class ModelTasks:
         )
 
     async def run(self, task: Task, fetcher: Fetch, token: str, models: tuple[ModelConfig, ...], now: int) -> None:
-        """Persist inference before starting deletion, so retries cannot reevaluate a saved score."""
+        """Persist inference before moderation, so retries cannot reevaluate a saved score."""
         if task.phase == "classify":
             model = models[(task.attempts - 1) % len(models)]
+            payload = json.loads(task.input_json or "{}")
             try:
-                probability = await spam_probability(fetcher, model, json.loads(task.input_json or "{}"))
+                probability = await spam_probability(fetcher, model, payload.get("state", payload))
             except ModelRetryError as error:
                 retry = error.retryable or task.attempts < len(models)
                 await self.finish(task, "classify" if retry else "done", max(now, int(time.time())), retry=retry)
                 return
             now = max(now, int(time.time()))
             phase = "delete" if probability is not None and probability >= SPAM_THRESHOLD else "done"
-            if not await self.finish(task, phase, now) or phase == "done":
+            snapshot = payload.get("target")
+            target = snapshot if isinstance(snapshot, dict) else None
+            if not await self.finish(task, phase, now, target=target) or phase == "done":
                 return
             deletion = await self.claim(now, (task.chat_id, task.message_id))
             if deletion is None:
                 return
             task = deletion
-        outcome = await delete_message(fetcher, token, task.chat_id, task.message_id)
-        retry = outcome is DeleteOutcome.RETRYABLE_FAILURE
+        target = await self._target(task)
+        retry = False
+        if target is not None:
+
+            async def can_act() -> bool:
+                return await self._owns(task, max(now, int(time.time())))
+
+            response = await Actions(fetcher, token, self.store).delete_and_mute(target, can_act=can_act)
+            retry = response.status == HTTPStatus.SERVICE_UNAVAILABLE
         await self.finish(task, "delete" if retry else "done", max(now, int(time.time())), retry=retry)
+
+    async def _owns(self, task: Task, now: int) -> bool:
+        try:
+            row = await (
+                self.database.prepare(
+                    "SELECT 1 FROM model_tasks WHERE bot_id = ? AND chat_id = ? AND message_id = ? "
+                    "AND generation = ? AND phase = 'delete' AND lease_until > ? AND stop_at > ? AND expires_at > ?"
+                )
+                .bind(self.bot_id, task.chat_id, task.message_id, task.generation, now, now, now)
+                .first()
+            )
+        except Exception as error:
+            raise EvidenceError from error
+        return row is not None
+
+    async def _target(self, task: Task) -> dict[str, object] | None:
+        payload = json.loads(task.input_json or "{}")
+        target = payload.get("target")
+        if isinstance(target, dict):
+            return target
+        # Pending tasks created before sender snapshots can recover identity from the index.
+        try:
+            row = await (
+                self.database.prepare(
+                    "SELECT sender_id FROM recent_messages WHERE bot_id = ? AND chat_id = ? AND message_id = ?"
+                )
+                .bind(self.bot_id, task.chat_id, task.message_id)
+                .first()
+            )
+        except Exception as error:
+            raise EvidenceError from error
+        if row is None:
+            return None
+        return {
+            "chat": {"id": task.chat_id, "type": "supergroup"},
+            "message_id": task.message_id,
+            "from": {"id": int(row.sender_id), "is_bot": False},
+        }

@@ -13,7 +13,7 @@ async function tick(now) {
 }
 
 for (const key of keys) {
-  test(`user: Given only ${key}, When Jev returns a threshold score, Then only the current message disappears`, async () => {
+  test(`user: Given only ${key}, When Jev returns a threshold score, Then the sender is muted and only the current message disappears`, async () => {
     await setModelKeys(configured([key]));
     model.probability = 0.95;
     telegram.send(message());
@@ -22,7 +22,7 @@ for (const key of keys) {
     assert.equal(telegram.has(81), false);
     assert.equal(telegram.has(80), true);
     assert.equal(telegram.canJoin(22), true);
-    assert.equal(telegram.canSend(22), true);
+    assert.equal(telegram.canSend(22), false);
   });
 }
 

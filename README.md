@@ -12,7 +12,7 @@ Start in a test group. Bans can delete message history, and unbanning cannot res
 2. In BotFather, disable Group Privacy Mode. To receive messages from other bots, also enable [Bot-to-Bot Communication Mode](https://core.telegram.org/api/bots/bot-to-bot).
 3. Add the bot to your group as an administrator with permission to delete messages and ban users. For a channel's comments, use its linked discussion group.
 
-Bans and mutes require a supergroup, which includes channel discussion groups. Basic groups support message deletion only.
+Use a supergroup, such as a channel's linked discussion group, for all moderation features. Telegram does not support permanent mutes in basic groups.
 
 ## 2. Prepare the deployment tools
 
@@ -63,7 +63,7 @@ curl --silent --show-error --fail-with-body \
 
 Find each message under `result` and copy its `message.from.id`. For anonymous administrators, send a message mentioning the bot from the group's anonymous identity and copy `message.sender_chat.id` instead. If the result is empty, send a fresh message and run the command again. Do not publish this output; it contains member information.
 
-Save these settings as Worker secrets. Each `secret put` command prompts for its value:
+Save these settings as Worker secrets. Each `secret put` command prompts for its value. If Wrangler asks to create the Worker, confirm:
 
 ```bash
 mise exec -- uv run pywrangler secret put BOT_USERNAME
@@ -104,28 +104,32 @@ Confirm that the response contains `"ok":true` and `"result":true`. Use this tok
 
 ## Report spam and manage sources
 
-To report a message, choose **Reply**, type `@`, select your moderation bot from Telegram's suggestions, and send. Check the reply target before sending.
+### Report a message
 
-| Action | Result in a supergroup |
-| --- | --- |
-| A listed ordinary member reports | Save evidence; leave both messages visible. |
-| A listed administrator or sender-chat identity reports | Delete the target, ban its non-admin sender, and clear eligible indexed history. Remove the report after cleanup succeeds. |
-| A user posts through a blocked source bot | Delete the current message and permanently mute its non-admin sender, retaining other history and membership. Ban the source bot and clear its eligible indexed messages. |
-| An account on the account blacklist posts | Ban it unless already banned and clear eligible indexed messages. |
+Using an identity listed in `REPORTER_IDS`, choose **Reply** on the spam message, type `@`, select your moderation bot, and send.
 
-Group owners and administrators are exempt from mutes and bans. Source and account matches also leave their messages intact; an authorized administrator report can still delete a targeted message.
+In a supergroup, a report from an administrator or an authorized group/channel identity deletes the target message, bans its sender, and clears eligible indexed history. The bot removes the report after cleanup succeeds. A listed ordinary member's report saves evidence without deleting messages or restricting anyone.
 
-When user A posts through source bot B, only B belongs in `blacklisted_sources`. Source filtering does not add A to either blacklist. A confirmed ban of B also records B in `blacklisted_users`, using the same ban and indexed-history cleanup as account matches.
-
-History cleanup covers messages received by the bot in the same group, up to the triggering message or before the report, and less than 48 hours old. The bot cannot search unread history. Telegram may remove additional history when banning an account. After an administrator-authorized report ban is confirmed, the actual sender enters `blacklisted_users`, shared across groups using the same bot. Reporting a message does not add its source bot to the source list.
+Confirmed bans add the sender to the account blacklist. When that account posts in another supergroup using this bot, the bot bans it there and clears eligible indexed messages.
 
 ### Add a source
 
-Send `/bs @example_bot` using a listed reporting identity, in a private chat or group. In a group, use `/bs@your_moderation_bot @example_bot` to address this bot explicitly. Replace the example usernames. The bot saves the resolved ID in `blacklisted_sources` and replies with that ID.
+Send `/bs @example_bot` using a listed reporting identity, in private or in a group. Replace `example_bot` with the source bot's username. In groups, `/bs@your_moderation_bot @example_bot` addresses this moderation bot explicitly.
 
-The command adds a source without changing membership, clearing history, or adding an account-blacklist entry. In groups, the bot deletes the command after replying, including when the username cannot be resolved. It keeps private-chat commands and result replies. Future messages whose inline bot (`via_bot.id`) or forwarded bot matches the source list trigger the source-filtering policy above.
+The bot saves the resolved account ID in the source list and replies with that ID. It removes the group command after replying, including when lookup fails; private-chat commands and result replies remain. Registration itself does not ban the account or delete its history. Check the returned ID: Telegram cannot resolve every username, and the command does not check whether the account is a bot.
 
-Username resolution depends on Telegram. Some accounts cannot be resolved; an unsuccessful lookup adds nothing. The command does not require the target to be a bot. Source matching applies only to Telegram's explicit inline-bot or forwarded-bot information; adding an ordinary user or group ID does not block their direct messages. Copied text and hidden forwarding origins do not match this filter.
+When someone sends an inline message through a listed source bot, or forwards a message with that bot as the visible origin:
+
+- The sender loses only that message and is permanently muted. Their other messages remain, and they are not added to a blacklist.
+- The source bot is banned, added to the account blacklist, and its eligible indexed messages are cleared.
+
+Copied text, hidden forwarding origins, and messages sent directly by an ordinary account do not match the source list.
+
+### Administrator protection and history limits
+
+Group owners and administrators are exempt from mutes and bans, including when the source bot is an administrator. Source and account matches leave their messages intact. An authorized administrator report can still delete a targeted administrator message.
+
+History cleanup covers indexed messages received in the same group, up to the triggering message or before the report, and less than 48 hours old. The bot cannot search unread history. Telegram may remove additional history when banning an account.
 
 ### Inspect lists and remove a false positive
 
@@ -136,7 +140,7 @@ SELECT source_id FROM blacklisted_sources ORDER BY source_id;
 SELECT bot_id, user_id FROM blacklisted_users ORDER BY bot_id, user_id;
 ```
 
-To remove an entry, copy its IDs from the results and replace the examples below. Run only the statement for the list being corrected:
+`blacklisted_sources` contains registered source IDs; `blacklisted_users` contains banned account IDs for each moderation bot. Copy the IDs to remove and replace the examples below. A source bot can appear in both lists; remove it from both to stop both kinds of filtering:
 
 ```sql
 DELETE FROM blacklisted_sources WHERE source_id = 987654321;
@@ -164,9 +168,9 @@ For Vercel, run:
 mise exec -- uv run pywrangler secret put AI_GATEWAY_API_KEY
 ```
 
-Jev checks eligible new user messages after the other moderation rules. A spam score of at least 0.95 deletes only that message, without muting, banning, or adding a blacklist entry. The score is an estimate, not an accuracy guarantee. Edited messages, service events, bot senders, and messages sent as a group or channel skip this check.
+Jev checks new user messages after the other moderation rules. A sufficiently high spam score deletes only that message, without muting, banning, or adding a blacklist entry. The threshold is `SPAM_THRESHOLD` in [model.py](src/anti_fwd_spam/model.py); a score is not an accuracy guarantee. Edited messages, service events, bot senders, and messages sent as a group or channel skip this check.
 
-Temporary failures leave the message visible and schedule retries after 1, 2 and 5 minutes. Keep the scheduled trigger enabled; a backlog can delay retries. Each attempt can incur charges and can send the same content to another configured provider.
+Temporary failures leave the message visible while scheduled retries run. Keep the scheduled trigger enabled. Each attempt can incur charges and can send the same content to another configured provider.
 
 To disable checks and pause pending model tasks, delete every configured model secret. For a Vercel-only setup:
 
@@ -201,6 +205,6 @@ In a fresh terminal, re-enter `BOT_TOKEN` using the command in step 4. Run `unse
 
 ## Data storage
 
-D1 stores report JSON, including the reported message, and source-command records with their resolved IDs for 3 days. Temporary processing records also expire after 3 days. The bot indexes message IDs and timestamps for recent-history cleanup without storing message text in that index. Model tasks temporarily retain the content submitted for classification. The bot does not download media files.
+D1 retains report and source-moderation JSON, resolved command IDs, and temporary processing records for 3 days. The recent-message index stores IDs and timestamps, not message text. Model tasks temporarily retain submitted content. The bot does not download media files.
 
 Source and account blacklists remain until manually removed. Scheduled cleanup removes expired records; outages or exhausted quotas can delay it. Cloudflare backups have separate [retention rules](https://developers.cloudflare.com/d1/reference/time-travel/). Keep member information private when viewing or exporting the database.

@@ -578,15 +578,15 @@ test('user receives administrator protection on retry: Given a failed ban, When 
 test('user chooses the reported bot: Given username entities and UTF-16 offsets, When a reply or edited caption mentions this bot, Then only an exact username records a report', async () => {
   telegram.members.set(11, { status: 'member' });
   const candidates = [
-    [{ text: '😀 @NIUQU_ICN_BOT', entities: [{ type: 'mention', offset: 3, length: 14 }] }, true],
-    [{ caption: '@niuqu_icn_bot', caption_entities: [{ type: 'mention', offset: 0, length: 14 }] }, true],
-    [{ entities: [{ type: 'text_mention', user: { id: 999, username: 'NIUQU_ICN_BOT' } }] }, true],
+    [{ text: '😀 @TEST_GATE_BOT', entities: [{ type: 'mention', offset: 3, length: 14 }] }, true],
+    [{ caption: '@test_gate_bot', caption_entities: [{ type: 'mention', offset: 0, length: 14 }] }, true],
+    [{ entities: [{ type: 'text_mention', user: { id: 999, username: 'TEST_GATE_BOT' } }] }, true],
     [{ entities: [{ type: 'text_mention', user: { id: 123, username: 'other_bot' } }] }, false],
     [{ entities: [{ type: 'text_mention', user: { id: 123, first_name: username } }] }, false],
-    [{ text: '@niuqu_icn_bot_extra', entities: [{ type: 'mention', offset: 0, length: 20 }] }, false],
-    [{ text: '@niuqu_icn_bot' }, false],
-    [{ text: '😀 @niuqu_icn_bot', entities: [{ type: 'mention', offset: 2, length: 14 }] }, false],
-    [{ text: '@niuqu_icn_bot', entities: [{ type: 'mention', offset: 0, length: 99 }] }, false],
+    [{ text: '@test_gate_bot_extra', entities: [{ type: 'mention', offset: 0, length: 20 }] }, false],
+    [{ text: '@test_gate_bot' }, false],
+    [{ text: '😀 @test_gate_bot', entities: [{ type: 'mention', offset: 2, length: 14 }] }, false],
+    [{ text: '@test_gate_bot', entities: [{ type: 'mention', offset: 0, length: 99 }] }, false],
   ];
   for (const [index, [fields, expected]] of candidates.entries()) {
     const update = report();

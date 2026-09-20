@@ -73,7 +73,7 @@ test('user: Given an unlisted administrator or a forged anonymous compatibility 
 test('user: Given an authorized sender chat, When ban addresses this bot, Then the source is saved regardless of destination group', async () => {
   telegram.accounts.set('@example_bot', { id: 778, type: 'private', username: 'example_bot' });
   telegram.groups.set(-10099, new Map([[778, { status: 'kicked' }]]));
-  const update = command('/ban@niuqu_icn_bot example_bot');
+  const update = command('/ban@test_gate_bot example_bot');
   update.message.sender_chat = chat;
   update.message.chat = { ...chat, id: -10099 };
   assert.equal((await dispatch(update)).status, 200);

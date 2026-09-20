@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 
 export const chat = { id: -10012, type: 'supergroup', title: 'Test discussion' };
 export const token = '123:test-token';
-export const username = 'niuqu_icn_bot';
+export const username = 'test_gate_bot';
 const messageDate = Math.floor(Date.now() / 1000) - 60;
 
 export function message(id = 81, sender = 22) {
@@ -16,7 +16,7 @@ export function report(target = message()) {
   return {
     update_id: 71,
     message: {
-      ...message(82, 11), reply_to_message: target, text: '😀 @niuqu_icn_bot',
+      ...message(82, 11), reply_to_message: target, text: '😀 @test_gate_bot',
       entities: [{ type: 'mention', offset: 3, length: 14 }],
     },
   };

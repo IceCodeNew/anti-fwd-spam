@@ -31,7 +31,7 @@ mise exec -- uv run pywrangler login
 
 ### 配置消息来源和数据库
 
-将 [`wrangler.jsonc`](wrangler.jsonc) 中的 `vars.BOT_USERNAME` 设为管理 bot 的用户名，不含 `@`。改名后也要更新此处。来源 ID 保存在 D1 的 `blacklisted_sources` 表中。
+来源 ID 保存在 D1 的 `blacklisted_sources` 表中。
 
 创建举报数据库：
 
@@ -48,6 +48,12 @@ mise exec -- uv run pywrangler d1 migrations apply anti-fwd-spam-reports --remot
 已有部署时，继续使用原数据库 ID，跳过数据库创建命令。部署代码前先执行迁移。新数据库的来源名单为空，使用 `/ban` 添加来源。添加的条目不会因部署或证据过期而丢失。
 
 ### 保存凭据并发布
+
+将管理 bot 的用户名保存为运行时 secret，不含 `@`。改名后，用同一命令更新：
+
+```bash
+mise exec -- uv run pywrangler secret put BOT_USERNAME
+```
 
 输入 BotFather 提供的 token。终端不会显示输入内容：
 

@@ -31,7 +31,7 @@ To avoid paid usage, keep the Cloudflare Free plan and monitor usage in the dash
 
 ### Configure source bots and the database
 
-Set `vars.BOT_USERNAME` in [`wrangler.jsonc`](wrangler.jsonc) to your moderation bot's username without `@`. Update it if you rename the bot. Source IDs are stored in D1's `blacklisted_sources` table.
+Source IDs are stored in D1's `blacklisted_sources` table.
 
 Create the report database:
 
@@ -48,6 +48,12 @@ mise exec -- uv run pywrangler d1 migrations apply anti-fwd-spam-reports --remot
 For an existing deployment, keep its database ID and skip database creation. Apply migrations before deploying the code. A new database starts with an empty source list; use `/ban` to add sources. Additions survive deployments and evidence expiry.
 
 ### Save credentials and deploy
+
+Save the moderation bot's username without `@` as a runtime secret. Update it with the same command if you rename the bot:
+
+```bash
+mise exec -- uv run pywrangler secret put BOT_USERNAME
+```
 
 Enter the token from BotFather. The terminal hides your input:
 

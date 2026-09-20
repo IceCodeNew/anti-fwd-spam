@@ -4,9 +4,6 @@
   "main": "src/entry.py",
   "compatibility_date": "2026-08-26",
   "compatibility_flags": ["python_workers"],
-  "vars": {
-    "BOT_USERNAME": "niuqu_icn_bot"
-  },
   "d1_databases": [
     {
       "binding": "REPORTS",

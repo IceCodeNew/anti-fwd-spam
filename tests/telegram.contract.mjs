@@ -25,7 +25,8 @@ test('user checks API compatibility: Given live Bot API documentation, When requ
       const spec = fields.get(field);
       assert.ok(spec, `${method}.${field} is not in the Bot API`);
       const valid = spec.type === 'Array of Integer' ? Array.isArray(value) && value.every(Number.isSafeInteger)
-        : spec.type.includes('Integer') ? Number.isSafeInteger(value)
+        : spec.type.includes('Integer') ? Number.isSafeInteger(value) || (spec.type.includes('String') && typeof value === 'string')
+        : spec.type === 'String' ? typeof value === 'string'
         : spec.type === 'Boolean' ? typeof value === 'boolean' : typeof value === 'object';
       assert.ok(valid, `${method}.${field} expects ${spec.type}`);
     }
@@ -40,6 +41,12 @@ test('user checks API compatibility: Given live Bot API documentation, When requ
   assert.match(text(section('ChatMemberBanned')), /If 0, then the user is banned forever/);
   assert.match(text(section('ChatMemberRestricted')), /If 0, then the user is restricted forever/);
   assert.match(text(section('getChatMember')), /Returns a ChatMember object/);
+  telegram.accounts.set('@botfather', { id: 93372553, username: 'BotFather', type: 'private' });
+  assert.equal((await call('getChat', { chat_id: '@BotFather' })).result.id, 93372553);
+  const reply = await call('sendMessage', { chat_id: chat.id, text: 'Source ID: 93372553',
+    reply_parameters: { message_id: 81, allow_sending_without_reply: true } });
+  assert.equal(reply.result.text, 'Source ID: 93372553');
+  assert.equal(reply.result.reply_to_message.message_id, 81);
   // Discussion commenters can have Left status without joining the group.
   telegram.members.set(25, { status: 'left' });
   assert.deepEqual(await call('banChatMember', {
@@ -93,4 +100,17 @@ test('user checks API compatibility: Given live Bot API documentation, When requ
     }
   }
   assert.deepEqual(telegram.violations, []);
+});
+
+test('user: Given live Telegram access, When a known username is resolved, Then the fake matches the real numeric identity without sending messages', { skip: !process.env.BOT_TOKEN }, async () => {
+  const response = await fetch(`https://api.telegram.org/bot${process.env.BOT_TOKEN}/getChat`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ chat_id: '@BotFather' }),
+    signal: AbortSignal.timeout(20_000),
+  });
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.ok, true);
+  assert.equal(payload.result.id, 93372553);
+  assert.equal(payload.result.username, 'BotFather');
+  assert.equal(payload.result.type, 'private');
 });

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-DEFAULT_BLACKLIST_BOT_IDS = "273234066"
 MAX_TELEGRAM_ID = (1 << 52) - 1
 MAX_CONFIG_LENGTH = 4_096
 MAX_ID_ENTRIES = 500
@@ -23,7 +22,6 @@ class Config:
 
     bot_token: str
     webhook_secret: str
-    bot_ids: frozenset[int]
     reporter_ids: frozenset[int] = frozenset()
 
     @classmethod
@@ -32,7 +30,6 @@ class Config:
         *,
         bot_token: object,
         webhook_secret: object,
-        bot_ids: object = DEFAULT_BLACKLIST_BOT_IDS,
         reporter_ids: object = "",
     ) -> Config:
         """Validate raw environment values and construct a configuration."""
@@ -60,26 +57,24 @@ class Config:
             message = "TELEGRAM_WEBHOOK_SECRET contains unsupported characters"
             raise ConfigError(message)
 
-        parsed_bot_ids = _parse_ids("BLACKLIST_BOT_IDS", bot_ids)
-        if not parsed_bot_ids:
-            message = "at least one blacklisted bot ID is required"
-            raise ConfigError(message)
         return cls(
             token,
             secret,
-            parsed_bot_ids,
             _parse_ids("REPORTER_IDS", reporter_ids, allow_negative=True),
         )
 
 
-def _message_matches(message: dict[str, object], config: Config) -> bool:
+def _message_sources(message: dict[str, object]) -> frozenset[int]:
+    sources: set[int] = set()
     via_bot = message.get("via_bot")
-    if via_bot is not None and _bot_id(via_bot, require_bot=True) in config.bot_ids:
-        return True
+    if via_bot is not None:
+        identifier = _bot_id(via_bot, require_bot=True)
+        if identifier is not None:
+            sources.add(identifier)
 
     origin = message.get("forward_origin")
     if origin is None:
-        return False
+        return frozenset(sources)
     if not isinstance(origin, dict):
         error_detail = "message.forward_origin is invalid"
         raise TypeError(error_detail)
@@ -87,13 +82,15 @@ def _message_matches(message: dict[str, object], config: Config) -> bool:
     if not isinstance(origin_type, str) or origin_type not in SUPPORTED_FORWARD_ORIGINS:
         error_detail = "message.forward_origin is invalid"
         raise ValueError(error_detail)
-    if origin_type != "user":
-        return False
-    return _bot_id(origin.get("sender_user"), require_bot=False) in config.bot_ids
+    if origin_type == "user":
+        identifier = _bot_id(origin.get("sender_user"), require_bot=False)
+        if identifier is not None:
+            sources.add(identifier)
+    return frozenset(sources)
 
 
-def matches_update(update: object, config: Config) -> bool:
-    """Validate consumed fields and match explicit bot provenance in groups."""
+def source_ids(update: object) -> frozenset[int]:
+    """Validate consumed fields and extract explicit bot provenance in groups."""
     if not isinstance(update, dict):
         message = "update must be an object"
         raise TypeError(message)
@@ -104,7 +101,7 @@ def matches_update(update: object, config: Config) -> bool:
         message = "update must contain at most one supported message"
         raise ValueError(message)
     if not has_message and not has_edited_message:
-        return False
+        return frozenset()
 
     raw_message = update.get("message" if has_message else "edited_message")
     if not isinstance(raw_message, dict):
@@ -119,11 +116,11 @@ def matches_update(update: object, config: Config) -> bool:
         message = "message.chat.type is invalid"
         raise ValueError(message)
     if chat_type not in {"group", "supergroup"}:
-        return False
+        return frozenset()
 
     _telegram_id(chat.get("id"), allow_negative=True)
     _telegram_id(raw_message.get("message_id"), allow_negative=False)
-    return _message_matches(raw_message, config)
+    return _message_sources(raw_message)
 
 
 def _required_string(name: str, value: object, *, maximum: int) -> str:

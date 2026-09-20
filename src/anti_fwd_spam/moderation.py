@@ -10,7 +10,8 @@ from typing import TYPE_CHECKING, Any
 
 from .evidence import DELETE_BATCH_SIZE, MESSAGE_WINDOW_SECONDS, EvidenceError, ReportStore
 from .model import MODEL_CONTENT_FIELDS, model_input
-from .policy import matches_update
+from .policy import MAX_TELEGRAM_ID, source_ids
+from .sources import ban_argument, resolve_source
 from .tasks import ModelTasks
 from .telegram import DeleteOutcome, Fetch, TelegramError, call_method, delete_message
 
@@ -148,9 +149,24 @@ class Moderator:
         try:
             raw_json = body.decode("utf-8")
             update = json.loads(raw_json)
-            automatic = matches_update(update, self.config)
+            sources = source_ids(update)
         except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError):
             return AppResponse(400, "invalid update")
+        message = update.get("message", update.get("edited_message"))
+        if isinstance(message, dict) and (argument := ban_argument(message, self.bot_username)) is not None:
+            if "message" not in update or not reporter_allowed(message, self.config):
+                return AppResponse(200, "command ignored")
+            try:
+                response = await self.ban_command(update, message, raw_json, argument)
+            except EvidenceError:
+                response = AppResponse(503, "command storage unavailable; retry pending")
+            except TelegramError as error:
+                response = AppResponse(503 if error.retryable else 200, "command failed")
+            return response
+        try:
+            automatic = bool(sources) and await self.store.has_source(sources)
+        except EvidenceError:
+            return AppResponse(503, "source list unavailable; retry pending")
         return await self.process_update(update, raw_json, automatic=automatic)
 
     # Distinct route outcomes keep storage failures separate from Telegram failures.
@@ -193,6 +209,54 @@ class Moderator:
             return await self.check_model(message) if "message" in update else AppResponse(200, "ignored")
         except EvidenceError:
             return AppResponse(503, "model task storage unavailable; retry pending")
+
+    async def ban_command(
+        self,
+        update: dict[str, object],
+        message: dict[str, object],
+        raw_json: str,
+        username: str,
+    ) -> AppResponse:
+        """Save a resolved source and resume the shared account ban and history cleanup."""
+        chat, message_id, update_id = message.get("chat"), message.get("message_id"), update.get("update_id")
+        if (
+            not isinstance(chat, dict)
+            or type(chat.get("id")) is not int
+            or not 0 < abs(chat["id"]) <= MAX_TELEGRAM_ID
+            or type(message_id) is not int
+            or not 0 < message_id <= MAX_TELEGRAM_ID
+            or type(update_id) is not int
+            or update_id < 0
+        ):
+            return AppResponse(400, "invalid command")
+        bot_id = int(self.config.bot_token.split(":", 1)[0])
+        identifier = await self.store.command_source(bot_id, update_id)
+        if identifier is None:
+            identifier = await resolve_source(self.fetcher, self.config.bot_token, username)
+        response = AppResponse(200, "command handled")
+        reply = "Could not resolve the account. Use /ban username or /ban @username with one valid Telegram username."
+        if identifier is not None:
+            await self.store.save(bot_id, update_id, raw_json, message, int(time.time()))
+            await self.store.pin_command_source(bot_id, update_id, identifier)
+            # Concurrent deliveries must use the first resolution stored for this update.
+            identifier = await self.store.command_source(bot_id, update_id)
+            if identifier is None:
+                raise EvidenceError
+            await self.store.add_source(identifier)
+            outcome = "No group ban attempted: send the command in the target supergroup."
+            if chat.get("type") == "supergroup" and identifier > 0:
+                response = await self.moderate_account(update, message, raw_json, bot_id, identifier)
+                outcome = response.body
+            reply = f"Source saved in D1: @{username}\nID: {identifier}\n{outcome}"
+        await self.call(
+            "sendMessage",
+            {
+                "chat_id": chat["id"],
+                "text": reply,
+                "reply_parameters": {"message_id": message_id, "allow_sending_without_reply": True},
+            },
+        )
+        return response
 
     async def check_model(self, message: dict[str, object], *, edited: bool = False) -> AppResponse:
         """Persist one inference task or cancel the old version on an edit."""
@@ -257,6 +321,7 @@ class Moderator:
         try:
             bot_id = int(self.config.bot_token.split(":", 1)[0])
             if await self.store.is_blacklisted(bot_id, identifier):
+                await self.index_message(message)
                 return await self.moderate_account(update, message, raw_json, bot_id, identifier)
         except EvidenceError:
             return AppResponse(503, "account moderation storage unavailable; retry pending")
@@ -280,7 +345,6 @@ class Moderator:
             or update_id < 0
         ):
             return AppResponse(400, "invalid account update")
-        await self.index_message(message)
         saved = await self.store.save(bot_id, update_id, raw_json, message, int(time.time()))
         if saved.status is not None:
             return AppResponse(saved.status, saved.body)
@@ -293,6 +357,7 @@ class Moderator:
             if response is None:
                 response = AppResponse(200, "account moderation skipped; protected administrator")
         if response.sender_banned:
+            await self.store.blacklist_user(bot_id, identifier, int(time.time()))
             response = await self.remove_recent_history(bot_id, chat["id"], identifier, message_id + 1, response)
         await self.store.finish(bot_id, update_id, response.status, response.body)
         return response

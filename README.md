@@ -31,12 +31,7 @@ To avoid paid usage, keep the Cloudflare Free plan and monitor usage in the dash
 
 ### Configure source bots and the database
 
-Edit `vars` in [`wrangler.jsonc`](wrangler.jsonc):
-
-| Setting | Value |
-| --- | --- |
-| `BLACKLIST_BOT_IDS` | Comma-separated numeric IDs of source bots to block. Do not use group IDs, ordinary user IDs, or usernames. |
-| `BOT_USERNAME` | Your moderation bot's username without `@`. Update this setting if you rename the bot. |
+Set `vars.BOT_USERNAME` in [`wrangler.jsonc`](wrangler.jsonc) to your moderation bot's username without `@`. Update it if you rename the bot. Source IDs are stored in D1's `blacklisted_sources` table.
 
 Create the report database:
 
@@ -50,7 +45,7 @@ Replace the repository's `database_id` in `wrangler.jsonc` with the ID returned 
 mise exec -- uv run pywrangler d1 migrations apply anti-fwd-spam-reports --remote
 ```
 
-For an existing deployment, keep its database ID and skip database creation.
+For an existing deployment, keep its database ID and skip database creation. Apply migrations before deploying the code. A new database starts with an empty source list; use `/ban` to add sources. Additions survive deployments and evidence expiry.
 
 ### Save credentials and deploy
 
@@ -108,6 +103,22 @@ After a saved ban confirmation, retries after a temporary deletion failure conti
 Source-bot matches delete only the matching message and permanently mute the sender, preserving other history and group membership. For target owners, administrators, or senders acting as a group or channel, the bot only deletes the target message; it does not mute or ban them.
 
 Source-bot filtering requires Telegram's explicit inline-bot or forwarded-bot provenance. Report copied text or forwarded messages with hidden origins manually, or enable the optional model check below.
+
+## Add a source by username
+
+Using an identity listed in `REPORTER_IDS`, send `/ban example_bot` or `/ban @example_bot`. In groups, `/ban@your_moderation_bot example_bot` explicitly addresses your bot. The bot replies to the command with the resolved numeric ID and processing outcome. It accepts resolvable account usernames without checking whether the account is a bot.
+
+In a supergroup, the command also bans the resolved user account and clears its indexed history through the command message, within Telegram's 48-hour deletion window. Owners and administrators remain protected. Already-banned accounts stay banned; the command does not unban or apply a mute that could replace their ban. Confirmed bans also enter the account blacklist. An uncertain ban result requires a membership check before submitting a new command.
+
+In a private chat or basic group, the command only adds the source ID. A resolved group or channel ID is stored as a source but is not passed to the user-ban API. Existing provenance rules remain unchanged: storing an ordinary user or chat ID does not make their direct messages match the source filter.
+
+The source list does not expire. To inspect it, run:
+
+```bash
+mise exec -- uv run pywrangler d1 execute anti-fwd-spam-reports --remote --command 'SELECT source_id FROM blacklisted_sources ORDER BY source_id;'
+```
+
+Command evidence and the resolved ID are retained for 3 days. Redelivery uses the saved ID even if the username changes. Edited commands and unauthorized commands do not add entries. Telegram may deliver duplicate replies when a reply's delivery cannot be confirmed.
 
 ## Enable model-based spam detection
 

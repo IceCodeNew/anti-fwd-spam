@@ -141,6 +141,57 @@ class ReportStore:
         """Bind the request's D1 database."""
         self.database = database
 
+    async def command_source(self, bot_id: int, update_id: int) -> int | None:
+        """Keep retries bound to the originally resolved account after username changes."""
+        try:
+            row = await (
+                self.database.prepare("SELECT command_source_id FROM reports WHERE bot_id = ? AND update_id = ?")
+                .bind(bot_id, update_id)
+                .first()
+            )
+            return int(row.command_source_id) if row is not None and row.command_source_id is not None else None
+        except Exception as error:
+            raise EvidenceError from error
+
+    async def pin_command_source(self, bot_id: int, update_id: int, source_id: int) -> None:
+        """Save the first resolution before any source or membership changes."""
+        try:
+            await (
+                self.database.prepare(
+                    "UPDATE reports SET command_source_id = ? WHERE bot_id = ? AND update_id = ? "
+                    "AND command_source_id IS NULL",
+                )
+                .bind(source_id, bot_id, update_id)
+                .run()
+            )
+        except Exception as error:
+            raise EvidenceError from error
+
+    async def add_source(self, source_id: int) -> None:
+        """Persist a source once, including concurrent or redelivered commands."""
+        try:
+            await (
+                self.database.prepare("INSERT INTO blacklisted_sources (source_id) VALUES (?) ON CONFLICT DO NOTHING")
+                .bind(source_id)
+                .run()
+            )
+        except Exception as error:
+            raise EvidenceError from error
+
+    async def has_source(self, source_ids: frozenset[int]) -> bool:
+        """Look up only the message's explicit source IDs using the primary key."""
+        try:
+            row = await (
+                self.database.prepare(
+                    "SELECT 1 FROM blacklisted_sources WHERE source_id IN (SELECT value FROM json_each(?)) LIMIT 1",
+                )
+                .bind(json.dumps(sorted(source_ids)))
+                .first()
+            )
+        except Exception as error:
+            raise EvidenceError from error
+        return row is not None
+
     async def blacklist_user(self, bot_id: int, user_id: int, now: int) -> None:
         """Retain confirmed administrator-reported accounts independently of expiring evidence."""
         try:

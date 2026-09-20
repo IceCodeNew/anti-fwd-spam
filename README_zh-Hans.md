@@ -31,12 +31,7 @@ mise exec -- uv run pywrangler login
 
 ### 配置消息来源和数据库
 
-打开 [`wrangler.jsonc`](wrangler.jsonc)，修改 `vars` 中的设置：
-
-| 设置 | 填写方式 |
-| --- | --- |
-| `BLACKLIST_BOT_IDS` | 需要拦截的来源 bot 的数字 ID，以英文逗号分隔。不要填写群 ID、普通成员 ID 或用户名。 |
-| `BOT_USERNAME` | 第一步创建的管理 bot 的用户名，不含 `@`。改名后也要更新此处。 |
+将 [`wrangler.jsonc`](wrangler.jsonc) 中的 `vars.BOT_USERNAME` 设为管理 bot 的用户名，不含 `@`。改名后也要更新此处。来源 ID 保存在 D1 的 `blacklisted_sources` 表中。
 
 创建举报数据库：
 
@@ -50,7 +45,7 @@ mise exec -- uv run pywrangler d1 create anti-fwd-spam-reports
 mise exec -- uv run pywrangler d1 migrations apply anti-fwd-spam-reports --remote
 ```
 
-已有部署时，继续使用原数据库 ID，跳过数据库创建命令。
+已有部署时，继续使用原数据库 ID，跳过数据库创建命令。部署代码前先执行迁移。新数据库的来源名单为空，使用 `/ban` 添加来源。添加的条目不会因部署或证据过期而丢失。
 
 ### 保存凭据并发布
 
@@ -108,6 +103,22 @@ bot 保存封禁成功的记录后，遇到临时删除失败时，会在重试�
 匹配来源 bot 时，bot 只删除匹配到的消息，并永久禁言发送者，保留其历史消息和群成员身份。目标发送者为群主、管理员，或以群组、频道身份发言时，bot 只删除目标消息，不执行禁言或封禁。
 
 来源 bot 拦截只适用于 Telegram 保留了指定 bot 来源的内联消息或转发消息。复制粘贴的内容、隐藏来源的转发可以手动举报，或启用下方的可选模型检查。
+
+## 通过用户名添加来源
+
+使用 `REPORTER_IDS` 中的身份发送 `/ban example_bot` 或 `/ban @example_bot`。在群内可以使用 `/ban@管理bot用户名 example_bot` 指定接收命令的 bot。bot 会回复解析出的数字 ID 和处理结果，不要求目标账号必须是 bot。
+
+在超级群中，命令还会封禁解析出的用户账号，并清理截至命令消息时已索引、发送时间距今不足 48 小时的历史消息。群主和管理员仍受保护。已封禁的账号保持封禁，命令不会解封，也不会通过禁言替换封禁状态。确认封禁成功后，bot 还会将账号写入账号黑名单。封禁结果不确定时，管理员应先检查成员状态，再决定是否发送新命令。
+
+在私聊或普通群中，命令只添加来源 ID。解析结果为群组或频道 ID 时，bot 会保存来源，但不会将它传给用户封禁接口。现有来源匹配规则不变：添加普通用户或聊天 ID 不会使其直接发送的消息命中来源过滤。
+
+来源名单不会过期。使用以下命令查看：
+
+```bash
+mise exec -- uv run pywrangler d1 execute anti-fwd-spam-reports --remote --command 'SELECT source_id FROM blacklisted_sources ORDER BY source_id;'
+```
+
+bot 将命令证据和解析出的 ID 保留 3 天。用户名变更后，同一命令重投时仍使用保存的 ID。编辑命令或使用未授权身份不会添加条目。回复的投递结果无法确认时，Telegram 重投可能导致重复回复。
 
 ## 启用模型垃圾消息检测
 

@@ -53,7 +53,8 @@ before(async () => {
       }
       if (request.url.endsWith(`/bot${token}/getChat`)) {
         assert.equal(request.method, 'POST');
-        const { chat_id } = await request.json();
+        const { chat_id } = await request.clone().json();
+        if (typeof chat_id === 'string') return telegram.fetch(request);
         assert.ok(Number.isSafeInteger(chat_id) && chat_id > 0);
         if (model.profile instanceof Response) return model.profile.clone();
         return Response.json({ ok: true, result: { id: chat_id, type: 'private', ...model.profile } });
@@ -79,6 +80,8 @@ beforeEach(async () => {
   await database.prepare('DELETE FROM automatic_mutes').run();
   await database.prepare('DELETE FROM blacklisted_users').run();
   await database.prepare('DELETE FROM model_tasks').run();
+  await database.prepare('DELETE FROM blacklisted_sources').run();
+  await database.prepare('INSERT INTO blacklisted_sources (source_id) VALUES (273234066)').run();
 });
 afterEach(() => { assert.deepEqual(telegram.violations, []); });
 

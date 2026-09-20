@@ -13,7 +13,7 @@ from workers import Request, Response, WorkerEntrypoint, fetch
 from anti_fwd_spam.evidence import ReportStore
 from anti_fwd_spam.model import MODEL_PROVIDERS, ModelConfig
 from anti_fwd_spam.moderation import AppResponse, Moderator
-from anti_fwd_spam.policy import DEFAULT_BLACKLIST_BOT_IDS, Config, ConfigError
+from anti_fwd_spam.policy import Config, ConfigError
 from anti_fwd_spam.tasks import ModelTasks
 
 MAX_UPDATE_BYTES = 1_048_576
@@ -85,14 +85,9 @@ class Default(WorkerEntrypoint):
     def _get_config(self) -> Config:
         bot_token = _environment_string(self.env, "BOT_TOKEN")
         webhook_secret = _environment_string(self.env, "TELEGRAM_WEBHOOK_SECRET")
-        bot_ids = _environment_string(self.env, "BLACKLIST_BOT_IDS", default=DEFAULT_BLACKLIST_BOT_IDS)
-        if bot_ids is None:
-            message = "BLACKLIST_BOT_IDS must be a string"
-            raise ConfigError(message)
         return Config.from_values(
             bot_token=bot_token,
             webhook_secret=webhook_secret,
-            bot_ids=bot_ids,
             reporter_ids=_environment_string(self.env, "REPORTER_IDS", default=""),
         )
 

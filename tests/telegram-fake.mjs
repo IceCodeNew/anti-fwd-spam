@@ -29,6 +29,8 @@ export class Telegram {
   members = new Map();
   groups = new Map();
   faults = new Map();
+  accounts = new Map();
+  replies = [];
   violations = [];
   now = Math.floor(Date.now() / 1000);
 
@@ -37,6 +39,8 @@ export class Telegram {
     this.members = new Map([[11, { status: 'administrator' }], [22, { status: 'member' }]]);
     this.groups.clear();
     this.faults.clear();
+    this.accounts.clear();
+    this.replies = [];
     this.violations = [];
     this.now = Math.floor(Date.now() / 1000);
   }
@@ -61,9 +65,28 @@ export class Telegram {
       assert.equal(request.headers.get('content-type'), 'application/json');
       assert.ok(url.pathname.startsWith(`/bot${token}/`));
       const method = url.pathname.slice(`/bot${token}/`.length);
-      assert.ok(['deleteMessage', 'deleteMessages', 'getChatMember', 'restrictChatMember', 'banChatMember'].includes(method));
+      assert.ok(['deleteMessage', 'deleteMessages', 'getChatMember', 'restrictChatMember', 'banChatMember', 'getChat', 'sendMessage'].includes(method));
       const params = await request.json();
+      if (method === 'getChat') {
+        assert.match(params.chat_id, /^@[A-Za-z0-9_]{1,32}$/);
+        const fault = this.faults.get(method);
+        if (fault) return fault();
+        const account = this.accounts.get(params.chat_id.toLowerCase());
+        return account ? Response.json({ ok: true, result: account })
+          : Response.json({ ok: false, error_code: 400, description: 'Bad Request: chat not found' }, { status: 400 });
+      }
       assert.ok(Number.isSafeInteger(params.chat_id));
+      if (method === 'sendMessage') {
+        assert.equal(typeof params.text, 'string');
+        assert.ok(params.text.length > 0 && params.text.length <= 4096);
+        assert.ok(Number.isSafeInteger(params.reply_parameters.message_id));
+        const fault = this.faults.get(method);
+        if (fault) return fault();
+        const reply = { message_id: 1000 + this.replies.length, chat: { id: params.chat_id }, text: params.text,
+          reply_to_message: { message_id: params.reply_parameters.message_id } };
+        this.replies.push(reply);
+        return Response.json({ ok: true, result: reply });
+      }
       if (method === 'deleteMessages') {
         assert.ok(Array.isArray(params.message_ids));
         assert.ok(params.message_ids.length >= 1 && params.message_ids.length <= 100);

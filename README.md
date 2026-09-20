@@ -47,6 +47,15 @@ mise exec -- uv run pywrangler d1 migrations apply anti-fwd-spam-reports --remot
 
 For an existing deployment, keep its database ID and skip database creation. Apply migrations before deploying the code. A new database starts with an empty source list; use `/ban` to add sources. Additions survive deployments and evidence expiry.
 
+If upgrading from `BLACKLIST_BOT_IDS`, copy its configured IDs before replacing the old configuration. After applying migrations and before deploying, import each ID into D1. Replace the example ID below with an existing source ID and repeat for the remaining IDs:
+
+```bash
+mise exec -- uv run pywrangler d1 execute anti-fwd-spam-reports --remote --command 'INSERT OR IGNORE INTO blacklisted_sources (source_id) VALUES (123456789);'
+mise exec -- uv run pywrangler d1 execute anti-fwd-spam-reports --remote --command 'SELECT source_id FROM blacklisted_sources ORDER BY source_id;'
+```
+
+Confirm that the query includes every old ID before deploying. The Worker no longer reads `BLACKLIST_BOT_IDS`.
+
 ### Save credentials and deploy
 
 Save the moderation bot's username without `@` as a runtime secret. Update it with the same command if you rename the bot:
@@ -113,6 +122,8 @@ Source-bot filtering requires Telegram's explicit inline-bot or forwarded-bot pr
 ## Add a source by username
 
 Using an identity listed in `REPORTER_IDS`, send `/ban example_bot` or `/ban @example_bot`. In groups, `/ban@your_moderation_bot example_bot` explicitly addresses your bot. The bot replies to the command with the resolved numeric ID and processing outcome. It accepts resolvable account usernames without checking whether the account is a bot.
+
+Username lookup depends on Telegram's `getChat` response. Do not assume that an arbitrary ordinary user's username can be resolved. If Telegram permanently rejects the lookup, the bot reports that it could not resolve the username and leaves the source list unchanged.
 
 In a supergroup, the command also bans the resolved user account and clears its indexed history through the command message, within Telegram's 48-hour deletion window. Owners and administrators remain protected. Already-banned accounts stay banned; the command does not unban or apply a mute that could replace their ban. Confirmed bans also enter the account blacklist. An uncertain ban result requires a membership check before submitting a new command.
 

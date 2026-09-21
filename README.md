@@ -114,11 +114,15 @@ In a supergroup, a report from an administrator or an authorized group/channel i
 
 Confirmed bans add the sender to the account blacklist. When that account posts in another supergroup using this bot, the bot bans it there and clears eligible indexed messages.
 
+For an inline message sent by A through bot B, this reply report targets A only. It does not register or punish B.
+
 ### Add a source
 
 Send `/bs @example_bot` using a listed reporting identity, in private or in a group. Replace `example_bot` with the source bot's username. In groups, `/bs@your_moderation_bot @example_bot` addresses this moderation bot explicitly.
 
-The bot saves the resolved account ID in the source list and replies with that ID. It removes the group command after replying, including when lookup fails; private-chat commands and result replies remain. Registration itself does not ban the account or delete its history. Check the returned ID: Telegram cannot resolve every username, and the command does not check whether the account is a bot.
+The bot saves the resolved account ID in the source list and replies with that ID. It removes the group command after replying, including when lookup fails; private-chat commands and result replies remain. This named command does not ban the account or delete its history. Check the returned ID: Telegram cannot resolve every username, and the command does not check whether the account is a bot.
+
+To report both an inline message's sender A and its source bot B, reply to that message with `/bs` (or `/bs@your_moderation_bot`), without a username. The bot reads B's ID from the message and registers it as a source. For an authorized administrator report, it bans A and B and clears each account's eligible indexed history, protecting administrators. A listed ordinary member can register B but cannot trigger these punishments. The bot removes the group command after processing; temporary failures leave it pending retry.
 
 When someone sends an inline message through a listed source bot, or forwards a message with that bot as the visible origin:
 

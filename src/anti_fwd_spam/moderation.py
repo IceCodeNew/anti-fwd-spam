@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import time
+from dataclasses import replace
 from http import HTTPStatus
 from typing import TYPE_CHECKING
 
@@ -12,7 +13,7 @@ from .evidence import MESSAGE_WINDOW_SECONDS, EvidenceError, ReportStore
 from .model import MODEL_CONTENT_FIELDS, model_input
 from .policy import MAX_TELEGRAM_ID, matches_spam_pattern, source_ids
 from .reporting import Reporting, ReportingPlugin
-from .sources import resolve_source, source_argument
+from .sources import replied_source, resolve_source, source_argument
 from .tasks import ModelTasks
 from .telegram import DeleteOutcome, Fetch, call_method, delete_message
 
@@ -55,6 +56,36 @@ def mentions_bot(message: dict[str, object], bot_username: str) -> bool:
             if username is not None and username.casefold() == bot_username.casefold():
                 return True
     return False
+
+
+def reported_target(update: dict[str, object], message: dict[str, object]) -> BanTarget | None:
+    """Validate a group-local reply before recording sources or punishing accounts."""
+    target = message.get("reply_to_message")
+    if not isinstance(target, dict):
+        return None
+    chat, target_chat = message.get("chat"), target.get("chat")
+    target_id, message_id, update_id = target.get("message_id"), message.get("message_id"), update.get("update_id")
+    if (
+        not isinstance(chat, dict)
+        or chat.get("type") not in {"group", "supergroup"}
+        or type(chat.get("id")) is not int
+        or chat["id"] >= 0
+        or not isinstance(target_chat, dict)
+        or target_chat.get("id") != chat["id"]
+        or target_chat.get("type") != chat["type"]
+        or type(target_id) is not int
+        or target_id <= 0
+        or type(message_id) is not int
+        or type(update_id) is not int
+        or update_id < 0
+    ):
+        return None
+    return BanTarget(
+        chat["id"],
+        user_id(target, include_bots=True) if chat["type"] == "supergroup" else None,
+        message_id,
+        target_id,
+    )
 
 
 class Moderator:
@@ -168,6 +199,8 @@ class Moderator:
         username = source_argument(message, self.bot_username)
         if "message" not in update or username is None:
             return AppResponse(200, "command ignored")
+        target = message.get("reply_to_message")
+        reply_report = not username and isinstance(target, dict)
         chat, message_id, update_id = message.get("chat"), message.get("message_id"), update.get("update_id")
         if (
             not isinstance(chat, dict)
@@ -177,22 +210,16 @@ class Moderator:
             or not 0 < message_id <= MAX_TELEGRAM_ID
             or type(update_id) is not int
             or update_id < 0
+            or (reply_report and reported_target(update, message) is None)
         ):
             return AppResponse(400, "invalid command")
-        bot_id = self.actions.bot_id
-        identifier = await self.store.command_source(bot_id, update_id)
-        if identifier is None:
-            identifier = await resolve_source(self.fetcher, self.config.bot_token, username)
-        reply = "Could not resolve the account. Use /bs username or /bs @username with one valid Telegram username."
+        source = replied_source(message) if reply_report else username
+        evidence = target if reply_report and isinstance(target, dict) else message
+        identifier = await self._register_source(update_id, raw_json, evidence, source)
+        reply = "Could not resolve the account. Use /bs @username, or reply to an inline bot message with /bs."
         if identifier is not None:
-            await self.store.save((bot_id, update_id), raw_json, message, int(time.time()))
-            await self.store.pin_command_source(bot_id, update_id, identifier)
-            # Concurrent deliveries must use the first resolution stored for this update.
-            identifier = await self.store.command_source(bot_id, update_id)
-            if identifier is None:
-                raise EvidenceError
-            await self.store.add_source(identifier)
-            reply = f"Source saved in D1: @{username}\nID: {identifier}"
+            label = f": @{username}" if username else ""
+            reply = f"Source saved in D1{label}\nID: {identifier}"
         await call_method(
             self.fetcher,
             self.config.bot_token,
@@ -203,6 +230,10 @@ class Moderator:
                 "reply_parameters": {"message_id": message_id, "allow_sending_without_reply": True},
             },
         )
+        if reply_report and identifier is not None:
+            response = await self.report(update, message, raw_json, source_id=identifier)
+            if response.status != HTTPStatus.OK:
+                return response
         if chat.get("type") in {"group", "supergroup"}:
             outcome = await delete_message(self.fetcher, self.config.bot_token, chat["id"], message_id)
             if outcome is DeleteOutcome.RETRYABLE_FAILURE:
@@ -210,6 +241,27 @@ class Moderator:
             if outcome is DeleteOutcome.PERMANENT_FAILURE:
                 return AppResponse(200, "command handled; command cleanup rejected; check deletion permissions")
         return AppResponse(200, "command handled")
+
+    async def _register_source(
+        self, update_id: int, raw_json: str, evidence: dict[str, object], source: str | int | None
+    ) -> int | None:
+        """Pin the resolved source before registration so retries cannot switch accounts."""
+        bot_id = self.actions.bot_id
+        identifier = await self.store.command_source(bot_id, update_id)
+        if identifier is None:
+            identifier = (
+                await resolve_source(self.fetcher, self.config.bot_token, source) if isinstance(source, str) else source
+            )
+        if identifier is None:
+            return None
+        await self.store.save((bot_id, update_id), raw_json, evidence, int(time.time()))
+        await self.store.pin_command_source(bot_id, update_id, identifier)
+        # Concurrent deliveries must use the first resolution stored for this update.
+        identifier = await self.store.command_source(bot_id, update_id)
+        if identifier is None:
+            raise EvidenceError
+        await self.store.add_source(identifier)
+        return identifier
 
     async def check_content(self, message: dict[str, object], *, edited: bool = False) -> AppResponse:
         """Apply local patterns before inference, or cancel pending inference on edits."""
@@ -305,34 +357,35 @@ class Moderator:
             subject_id=subject_id,
         )
 
-    async def report(self, update: dict[str, object], message: dict[str, object], raw_json: str) -> AppResponse:
-        """Validate the target of an accepted report and select history cleanup."""
-        target = message["reply_to_message"]
-        if not isinstance(target, dict):
+    async def report(
+        self,
+        update: dict[str, object],
+        message: dict[str, object],
+        raw_json: str,
+        *,
+        source_id: int | None = None,
+    ) -> AppResponse:
+        """Moderate reported accounts with independent authority checks and retry progress."""
+        target = reported_target(update, message)
+        chat = message.get("chat")
+        if target is None or not isinstance(chat, dict):
             return AppResponse(400, "invalid report target")
-        chat, target_chat = message.get("chat"), target.get("chat")
-        target_id, message_id, update_id = target.get("message_id"), message.get("message_id"), update.get("update_id")
-        if (
-            not isinstance(chat, dict)
-            or type(chat.get("id")) is not int
-            or chat["id"] >= 0
-            or not isinstance(target_chat, dict)
-            or target_chat.get("id") != chat["id"]
-            or target_chat.get("type") != chat["type"]
-            or type(target_id) is not int
-            or target_id <= 0
-            or type(message_id) is not int
-            or type(update_id) is not int
-            or update_id < 0
-        ):
-            return AppResponse(400, "invalid report target")
-        return await self.actions.delete_history_and_ban(
-            BanTarget(
-                chat["id"],
-                user_id(target, include_bots=True) if chat["type"] == "supergroup" else None,
-                message_id,
-                target_id,
-            ),
-            update,
-            raw_json,
-        )
+        subjects = [(target, 0)]
+        if source_id is not None and source_id != target.user_id:
+            identifier = source_id if chat["type"] == "supergroup" else None
+            subjects.append((replace(target, user_id=identifier), source_id))
+        response = AppResponse(200, "report recorded")
+        for subject, progress_id in subjects:
+            try:
+                outcome = await self.actions.delete_history_and_ban(
+                    subject,
+                    update,
+                    raw_json,
+                    subject_id=progress_id,
+                    remove_report=source_id is None,
+                )
+            except EvidenceError:
+                outcome = AppResponse(503, "report storage unavailable; retry pending")
+            if outcome.status != HTTPStatus.OK or response.status == HTTPStatus.OK:
+                response = outcome
+        return response

@@ -29,7 +29,9 @@ Telegram sends updates to `POST /webhook`. The Worker verifies `TELEGRAM_WEBHOOK
                                            │        /bs handler                    Reply handler
                                            │        Save source ID                 Record evidence
                                            │        Reply with ID                  Check group authority
-                                           │        Clean group command            Apply action 2 if allowed
+                                           │        Bare reply: check authority     Apply action 2 if allowed
+                                           │          + action 2 on A and B
+                                           │        Clean group command
                                            │
                                            └── No report ──▶ Local rules ──▶ Jev
 ```
@@ -99,12 +101,25 @@ Both actions in [actions.py](../src/anti_fwd_spam/actions.py) own membership che
 | Input or result | Persistent effect |
 | --- | --- |
 | Authorized `/bs @example_bot` | Resolve B and add B to `blacklisted_sources`; acknowledge the ID. No immediate ban or history cleanup. |
-| Authorized reply report | Save evidence. If permitted and the sender is successfully banned, add the actual sender to `blacklisted_users`, not `via_bot.id`. |
+| Authorized reply report | Apply Action 2 to the actual sender A. A's use of B does not authorize any action against B. Confirmed bans add A to `blacklisted_users`. |
+| Authorized reply with bare `/bs` | Read B from the target's `via_bot.id`, add B to `blacklisted_sources`, and apply Action 2 separately to A and B. Confirmed bans add each account to `blacklisted_users`. No username lookup is needed. |
 | Message from listed source B | Apply Action 1 to A and Action 2 to B. A is not added to either blacklist by this source match. |
 | Message from an account in `blacklisted_users` | Apply Action 2 to that account in the receiving supergroup. |
 | Regex or Jev spam match | Apply Action 1; neither blacklist changes. |
 
 `blacklisted_sources` is a source-ID set. `blacklisted_users` is scoped by moderation bot ID. A source can also be present in the account blacklist after a confirmed ban. Temporary evidence, indexed messages, and operation progress have separate retention; see [Data storage](../README.md#data-storage).
+
+### Inline messages: choose which account to report
+
+For a message sent by A through bot B, automatic source matching establishes a blocked source but does not establish A's intent. An ordinary reply report targets A alone. Replying with `/bs` explicitly reports both accounts.
+
+```diagram
+Listed source B ──▶ Action 1 on A + Action 2 on B
+Reply + mention ──▶ Action 2 on A only
+Reply + /bs     ──▶ Register B + Action 2 on A + Action 2 on B
+```
+
+The bare reply command works in groups and accepts `/bs@moderation_bot` too. Missing or invalid `via_bot` produces a usage reply without adding a source or punishing either account. Explicit `/bs @username` registers the named source only. Both command forms require `REPORTER_IDS`; the combined report also uses the existing group-authority checks for punishment. Administrator protection and retry progress apply separately to A and B. The command handler acknowledges the source and removes the group command after moderation finishes; retryable failures leave cleanup pending.
 
 ## Edits and retries
 

@@ -28,7 +28,21 @@ def source_argument(message: dict[str, object], bot_username: str) -> str | None
         for entity in entities
     ):
         return None
-    return parts[1].strip().removeprefix("@") if len(parts) > 1 else ""
+    if len(parts) == 1:
+        return ""
+    argument = parts[1].strip()
+    # Only a bare command returns empty; an isolated @ remains an invalid argument.
+    return argument.removeprefix("@") or argument
+
+
+def replied_source(message: dict[str, object]) -> int | None:
+    """Read only the inline bot attached to the replied-to message."""
+    target = message.get("reply_to_message")
+    via_bot = target.get("via_bot") if isinstance(target, dict) else None
+    if not isinstance(via_bot, dict) or via_bot.get("is_bot") is not True:
+        return None
+    identifier = via_bot.get("id")
+    return identifier if type(identifier) is int and 0 < identifier <= MAX_TELEGRAM_ID else None
 
 
 async def resolve_source(fetcher: Fetch, token: str, username: str) -> int | None:

@@ -1,0 +1,139 @@
+# Message processing and reporting
+
+This document defines the bot's functional contract: accepted inputs, authorization, routing, and moderation outcomes. Changes to these behaviors must be intentional and reflected here and in behavior tests. For deployment and everyday commands, use the [README](../README.md).
+
+## Inputs and reporting authorization
+
+Telegram sends updates to `POST /webhook`. The Worker verifies `TELEGRAM_WEBHOOK_SECRET` before parsing the update. The scheduled trigger is a separate entrypoint for cleanup and model retries.
+
+```diagram
+┌──────────────────────────────┐
+│ Authenticated Telegram update│
+└──────────────┬───────────────┘
+               │
+               ├── /bs in private or group chat ──▶ Command plugins ──┐
+               │                                                      │
+               └── Group message ──▶ Blacklist checks                 │
+                                           │ no match                 │
+                                           ▼                          │
+                                     Index message                    │
+                                           │                          ▼
+                                           ├── Reply + bot mention ──▶ REPORTER_IDS
+                                           │   (reply plugins)        │
+                                           │                          ├── Denied: stop
+                                           │                          │
+                                           │                          └── Allowed
+                                           │                              │
+                                           │              ┌───────────────┴──────────────┐
+                                           │              ▼                              ▼
+                                           │        /bs handler                    Reply handler
+                                           │        Save source ID                 Record evidence
+                                           │        Reply with ID                  Check group authority
+                                           │        Clean group command            Apply action 2 if allowed
+                                           │
+                                           └── No report ──▶ Local rules ──▶ Jev
+```
+
+Commands are checked before automatic moderation. A recognized command ends routing, including a denied command or an edited `/bs`. Reply reports are checked after blacklist handling and indexing. A denied reply report stops before local rules and Jev; it does not create report evidence. Private messages other than recognized commands are ignored.
+
+`Reporting.dispatch` in [reporting.py](../src/anti_fwd_spam/reporting.py) owns authorization for both plugin groups:
+
+- With `sender_chat`, use that sending identity alone. A listed compatibility `from.id` cannot authorize an unlisted group or channel.
+- Otherwise, use a genuine non-bot `from.id`. Match the numeric ID against `REPORTER_IDS` on every delivery, including retries.
+
+An empty allowlist authorizes nobody. Being a group owner or administrator does not bypass it. Allowlist membership and authority to punish are separate: a listed ordinary member can register sources with `/bs`, but their reply report only records evidence. A listed administrator or listed sender-chat identity can trigger reply-report moderation.
+
+## Blacklists and content checks connect to two actions
+
+The following map describes new supergroup messages after command handling. A is the actual sender; B is a listed source bot. Account and source matches can both apply to one message.
+
+```diagram
+┌─────────────────────────────┐      ┌───────────────────────────────┐
+│ New supergroup message      │─────▶│ Sender in blacklisted_users?  │── yes ──▶ Action 2 on A
+└──────────────┬──────────────┘      └───────────────────────────────┘
+               │
+               │                    ┌───────────────────────────────┐
+               ├───────────────────▶│ Source in blacklisted_sources?│── yes ──┬─▶ Action 1 on A *
+               │                    └───────────────────────────────┘         └─▶ Action 2 on B
+               │
+               │ neither blacklist matches
+               ▼
+       Index eligible message
+               │
+               ├── Reply report ──▶ REPORTER_IDS + group authority ──▶ Action 2 on reported sender
+               │
+               │ no report
+               ▼
+       Text/caption regex ── match ──────────────────────────────────▶ Action 1 on A
+               │ no match
+               ▼
+       Jev classification ── score reaches threshold ────────────────▶ Action 1 on A
+               │
+               └── Below threshold / no model configured ──▶ Leave message unchanged
+
+* If A already matches the account blacklist, reuse A's Action 2 result.
+```
+
+Source matching uses `via_bot.id` and visible bot origins in `forward_origin.sender_user`. It does not inspect copied text or hidden forwarding origins. All matched sources are handled independently. See `source_ids` in [policy.py](../src/anti_fwd_spam/policy.py).
+
+The local regexes search anywhere in the current text or caption. Jev evaluates the nickname, available biography, and message content only when local rules did not match. Exact patterns and model settings belong to `SPAM_PATTERNS` in [policy.py](../src/anti_fwd_spam/policy.py) and `SPAM_THRESHOLD` / `MODEL_PROVIDERS` in [model.py](../src/anti_fwd_spam/model.py).
+
+### Action 1: delete the current message and permanently mute
+
+`Actions.delete_and_mute` deletes the triggering message and permanently mutes a human sender in a supergroup. It preserves earlier messages and does not add either identity to a blacklist. Bots are not muted. Owners, administrators, and messages sent as the destination group's anonymous identity are protected before deletion.
+
+Local rules, Jev, and source filtering share this action. Ordinary groups support deletion but not permanent muting.
+
+### Action 2: ban and clean indexed history
+
+`Actions.delete_history_and_ban` bans the account, prevents rejoining, and removes its eligible indexed messages in the affected group. Automatic matches include the triggering message only if it belongs to that account and was indexed. A reply report also supplies an explicit target message to delete. Source B's cleanup therefore does not select A's message as B's own history.
+
+Confirmed bans add the target to `blacklisted_users`. Owners and administrators cannot be banned; an authorized reply report can still delete the explicitly reported administrator message. History selection and Telegram's own deletion behavior are described under [Administrator protection and history limits](../README.md#administrator-protection-and-history-limits).
+
+Reply reports select a human account for banning only in supergroups. Reports targeting a bot or a sender-chat identity, and reports in basic groups, can delete the explicit target but do not select an account to ban. Automatic account-blacklist checks also run only on new supergroup messages.
+
+Both actions in [actions.py](../src/anti_fwd_spam/actions.py) own membership checks, duplicate-operation handling, and retry outcomes. They never unban to repeat a ban. Durable progress prevents a redelivered update from blindly repeating restrictions after a manual unban or unmute; uncertain outcomes can require manual inspection.
+
+## What is stored
+
+| Input or result | Persistent effect |
+| --- | --- |
+| Authorized `/bs @example_bot` | Resolve B and add B to `blacklisted_sources`; acknowledge the ID. No immediate ban or history cleanup. |
+| Authorized reply report | Save evidence. If permitted and the sender is successfully banned, add the actual sender to `blacklisted_users`, not `via_bot.id`. |
+| Message from listed source B | Apply Action 1 to A and Action 2 to B. A is not added to either blacklist by this source match. |
+| Message from an account in `blacklisted_users` | Apply Action 2 to that account in the receiving supergroup. |
+| Regex or Jev spam match | Apply Action 1; neither blacklist changes. |
+
+`blacklisted_sources` is a source-ID set. `blacklisted_users` is scoped by moderation bot ID. A source can also be present in the account blacklist after a confirmed ban. Temporary evidence, indexed messages, and operation progress have separate retention; see [Data storage](../README.md#data-storage).
+
+## Edits and retries
+
+Edited group messages cancel pending model work within the message window. They can still undergo source filtering and reply-report handling, but skip automatic account-blacklist checks, local regexes, and fresh Jev classification. Edited `/bs` commands are ignored.
+
+```diagram
+┌───────────────────────────┐
+│ Retryable webhook failure │──▶ HTTP 503 ──▶ Telegram redelivery
+└───────────────────────────┘                      │
+                                                   └─▶ Same routing + reporter authorization
+┌───────────────────────────┐
+│ Pending D1 model task     │◀── Retryable classification or moderation failure
+└─────────────┬─────────────┘
+              │ due
+              ▼
+┌───────────────────────────┐
+│ Scheduled trigger         │──▶ Resume one claimed task ──▶ Jev or pending Action 1
+│ Expire temporary records  │
+└───────────────────────────┘
+```
+
+Webhook and scheduled retries are distinct. Removing model keys pauses model-task execution. Model failures do not count as spam. See `ModelTasks.run` in [tasks.py](../src/anti_fwd_spam/tasks.py) for task progress and `Default.scheduled` in [entry.py](../src/entry.py) for the scheduled entrypoint.
+
+## Add a reporting entrypoint
+
+A reporting plugin is an in-process `ReportingPlugin` with a diagnostic name, a side-effect-free `matches(message)` function, and an async `handle(update, message, raw_json)` function. `Reporting.dispatch` runs only the first matching plugin. It checks authorization before invoking the handler and maps storage and Telegram errors to retry responses.
+
+Register the plugin in `Moderator.command_plugins` for commands handled before filtering, or `Moderator.reply_plugins` for group reports handled after blacklist checks. Both collections are bound in `Moderator.__init__` in [moderation.py](../src/anti_fwd_spam/moderation.py). Matchers must not resolve usernames, write records, or moderate messages. Those operations belong in the authorized handler. Call handlers through the dispatcher, never from a separate route.
+
+The handler validates its target and delegates punishment to the shared actions. Reply-report authority checks remain part of Action 2; passing `REPORTER_IDS` is not permission to bypass them. Plugins are trusted repository code, not sandboxed third-party modules.
+
+For a new entrypoint, cover authorized and denied identities, sender-chat impersonation, and authorization revoked before retry. [test_reporting.py](../tests/test_reporting.py) exercises an additional plugin through the shared gate; [report-authorization.test.mjs](../tests/report-authorization.test.mjs) and [sources.test.mjs](../tests/sources.test.mjs) exercise the shipped entrypoints through the Worker and isolated D1.

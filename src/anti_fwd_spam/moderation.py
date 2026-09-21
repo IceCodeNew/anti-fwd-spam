@@ -11,22 +11,14 @@ from .actions import Actions, AppResponse, BanTarget, user_id
 from .evidence import MESSAGE_WINDOW_SECONDS, EvidenceError, ReportStore
 from .model import MODEL_CONTENT_FIELDS, model_input
 from .policy import MAX_TELEGRAM_ID, matches_spam_pattern, source_ids
+from .reporting import Reporting, ReportingPlugin
 from .sources import resolve_source, source_argument
 from .tasks import ModelTasks
-from .telegram import DeleteOutcome, Fetch, TelegramError, call_method, delete_message
+from .telegram import DeleteOutcome, Fetch, call_method, delete_message
 
 if TYPE_CHECKING:
     from .model import ModelConfig
     from .policy import Config
-
-
-def reporter_allowed(message: dict[str, object], config: Config) -> bool:
-    """Match the sender's identity against its configured allowlist."""
-    sender_chat = message.get("sender_chat")
-    if isinstance(sender_chat, dict):
-        identifier = sender_chat.get("id")
-        return type(identifier) is int and identifier in config.reporter_ids
-    return user_id(message) in config.reporter_ids
 
 
 def mention_username(text: object, entity: dict[str, object]) -> str | None:
@@ -81,6 +73,23 @@ class Moderator:
         self.bot_username = bot_username
         self.models = models
         self.actions = Actions(fetcher, config.bot_token, store)
+        self.reporting = Reporting(config.reporter_ids)
+        self.command_plugins = (
+            ReportingPlugin(
+                "command",
+                lambda message: source_argument(message, self.bot_username) is not None,
+                self.source_command,
+            ),
+        )
+        self.reply_plugins = (
+            ReportingPlugin(
+                "report",
+                lambda message: (
+                    isinstance(message.get("reply_to_message"), dict) and mentions_bot(message, self.bot_username)
+                ),
+                self.report,
+            ),
+        )
 
     async def process(self, content_type: str | None, body: bytes) -> AppResponse:
         """Parse an authenticated update and apply its moderation policy."""
@@ -92,16 +101,8 @@ class Moderator:
             sources = source_ids(update)
         except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError):
             return AppResponse(400, "invalid update")
-        message = update.get("message", update.get("edited_message"))
-        if isinstance(message, dict) and (argument := source_argument(message, self.bot_username)) is not None:
-            if "message" not in update or not reporter_allowed(message, self.config):
-                return AppResponse(200, "command ignored")
-            try:
-                response = await self.source_command(update, message, raw_json, argument)
-            except EvidenceError:
-                response = AppResponse(503, "command storage unavailable; retry pending")
-            except TelegramError as error:
-                response = AppResponse(503 if error.retryable else 200, "command failed")
+        response = await self.reporting.dispatch(self.command_plugins, update, raw_json)
+        if response is not None:
             return response
         try:
             matches = await self.store.matching_sources(sources) if sources else ()
@@ -131,16 +132,9 @@ class Moderator:
             await self.index_message(message)
         except EvidenceError:
             return AppResponse(503, "message index unavailable; retry pending")
-        target = message.get("reply_to_message")
-        if isinstance(target, dict) and mentions_bot(message, self.bot_username):
-            try:
-                return (
-                    await self.report(update, message, target, raw_json)
-                    if reporter_allowed(message, self.config)
-                    else AppResponse(200, "report ignored; reporter not allowed")
-                )
-            except EvidenceError:
-                return AppResponse(503, "report storage unavailable; retry pending")
+        response = await self.reporting.dispatch(self.reply_plugins, update, raw_json)
+        if response is not None:
+            return response
         try:
             return await self.check_content(message) if "message" in update else AppResponse(200, "ignored")
         except EvidenceError:
@@ -169,10 +163,11 @@ class Moderator:
                 response = source_response
         return response
 
-    async def source_command(
-        self, update: dict[str, object], message: dict[str, object], raw_json: str, username: str
-    ) -> AppResponse:
+    async def source_command(self, update: dict[str, object], message: dict[str, object], raw_json: str) -> AppResponse:
         """Save a resolved source, reply, and remove the command from group chats."""
+        username = source_argument(message, self.bot_username)
+        if "message" not in update or username is None:
+            return AppResponse(200, "command ignored")
         chat, message_id, update_id = message.get("chat"), message.get("message_id"), update.get("update_id")
         if (
             not isinstance(chat, dict)
@@ -310,10 +305,11 @@ class Moderator:
             subject_id=subject_id,
         )
 
-    async def report(
-        self, update: dict[str, object], message: dict[str, object], target: dict[str, object], raw_json: str
-    ) -> AppResponse:
+    async def report(self, update: dict[str, object], message: dict[str, object], raw_json: str) -> AppResponse:
         """Validate the target of an accepted report and select history cleanup."""
+        target = message["reply_to_message"]
+        if not isinstance(target, dict):
+            return AppResponse(400, "invalid report target")
         chat, target_chat = message.get("chat"), target.get("chat")
         target_id, message_id, update_id = target.get("message_id"), message.get("message_id"), update.get("update_id")
         if (

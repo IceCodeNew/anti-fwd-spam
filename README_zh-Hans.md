@@ -6,6 +6,8 @@
 
 请先在测试群中使用。封禁可能删除历史消息，解除封禁无法恢复已删除的内容。
 
+功能流程图、黑名单处理顺序和举报插件约定见[消息处理与举报](docs/behavior.md)（英文）。
+
 ## 1. 创建 Telegram bot
 
 1. 向 [@BotFather](https://t.me/BotFather) 发送 `/newbot`，按提示创建 bot，保存 token 和用户名。

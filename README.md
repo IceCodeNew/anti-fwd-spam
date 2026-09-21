@@ -6,6 +6,8 @@ A Telegram moderation bot hosted on Cloudflare Workers, with blocklists and repo
 
 Start in a test group. Bans can delete message history, and unbanning cannot restore deleted messages.
 
+See [Message processing and reporting](docs/behavior.md) for flow diagrams, blacklist routing, and the reporting-plugin contract.
+
 ## 1. Create a Telegram bot
 
 1. Send `/newbot` to [@BotFather](https://t.me/BotFather) and follow the prompts. Save the bot token and username.

@@ -133,6 +133,21 @@ test('user: Given a temporarily rejected deletion, When Telegram redelivers the 
   assert.equal(telegram.canSend(22), false);
 });
 
+test('user: Given successful pattern deletion but rate-limited muting, When Telegram redelivers after recovery, Then the absent message stays absent and its sender is muted', async () => {
+  const target = { ...message(), text: 'prefix 💰💰💰💰 suffix' };
+  telegram.send(target);
+  telegram.faults.set('restrictChatMember', () => Response.json({ ok: false, error_code: 429 }, { status: 429 }));
+  assert.equal((await dispatch({ update_id: 1, message: target })).status, 503);
+  assert.equal(telegram.has(81), false);
+  assert.equal(telegram.canSend(22), true);
+  telegram.faults.clear();
+  assert.equal((await dispatch({ update_id: 1, message: target })).status, 200);
+  assert.equal(telegram.has(81), false);
+  assert.equal(telegram.canSend(22), false);
+  assert.equal(telegram.members.get(22).until_date, 0);
+  assert.equal(telegram.canJoin(22), true);
+});
+
 test('user: Given a manual unmute after a pattern match, When Telegram redelivers that update, Then the manual unmute remains', async () => {
   const target = { ...message(), text: campaign };
   telegram.send(target);

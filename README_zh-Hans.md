@@ -151,7 +151,7 @@ DELETE FROM blacklisted_users WHERE bot_id = 123456789 AND user_id = 987654321;
 
 ## 自动文本过滤
 
-bot 在 Jev 之前用本地规则检查群内新消息，包括其他 bot 的消息，无需配置 API key。规则匹配正文或媒体说明中的完整 campaign 标记消息，以及重复钱袋或红圆 emoji 刷屏。具体匹配式见 [policy.py](src/anti_fwd_spam/policy.py) 中的 `SPAM_PATTERNS`。被回复的消息内容和单个敏感词不触发这些规则。
+bot 在 Jev 之前用本地规则检查群内新消息，包括其他 bot 的消息，无需配置 API key。规则在正文或媒体说明的任意位置搜索 campaign 标记，以及连续相同的钱袋或红圆 emoji，允许 emoji 之间有空白。前后文字或其他 emoji 不影响匹配。具体匹配式见 [policy.py](src/anti_fwd_spam/policy.py) 中的 `SPAM_PATTERNS`。被回复的消息内容和单个敏感词不触发这些规则。
 
 命中后，bot 删除当前消息，在超级群中永久禁言真人发送者，保留历史消息和两套黑名单。bot 发送者不禁言。群主和管理员受保护，私聊和编辑消息不参与此检查。
 

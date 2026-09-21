@@ -8,7 +8,10 @@ model.enabled = true;
 const campaign = '@safdhifobot campaign_001 g1789957985962f8909ecd';
 const flood = ('💰'.repeat(23) + '\n').repeat(8) + '💰'.repeat(8);
 
-for (const text of [campaign, flood, '@example_bot campaign_2', '💰'.repeat(4), '🔴 '.repeat(4)]) {
+for (const text of [campaign, flood, '@example_bot campaign_2', '💰'.repeat(4), '🔴 '.repeat(4),
+  '🔴说明：💰 \n💰\t💰 💰结束🔴', '💰说明：🔴🔴🔴🔴结束💰',
+  `请警惕这种垃圾消息：${campaign}，不要点击`, '@example_bot campaign_1 this is a discussion',
+  '@example_bot campaign_1a']) {
   for (const field of ['text', 'caption']) {
     test(`user: Given ${field} containing ${text === flood ? 'the screenshot flood' : JSON.stringify(text)}, When Jev would accept it, Then only that message is deleted and its sender muted`, async () => {
       const previous = message(80);
@@ -75,10 +78,9 @@ test('user: Given an anonymous group administrator, When a local pattern matches
 test('user: Given ordinary discussion and short emoji runs, When Jev accepts them, Then local filtering leaves them visible', async () => {
   const examples = [
     '讨论公司福利', '讨论强奸案件', '请举报偷拍和禁忌资源', '网黄是什么？',
-    `请警惕这种垃圾消息：${campaign}`, `示例：${'💰'.repeat(4)}`,
-    '@example_bot campaign_update', '@example_bot campaign_1a',
-    '@example_bot campaign_1 this is a discussion', '💰'.repeat(3), '🔴 '.repeat(3),
-    '💰'.repeat(2) + '🔴'.repeat(2), '普通消息',
+    `示例：${'💰'.repeat(3)}`, '@example_bot campaign_update',
+    '💰'.repeat(3), '🔴 '.repeat(3),
+    '💰'.repeat(2) + '🔴'.repeat(2), '💰💰💰文字💰', '🔴🔴💰🔴🔴', '普通消息',
   ];
   for (const [index, text] of examples.entries()) {
     const target = { ...message(81 + index), text };

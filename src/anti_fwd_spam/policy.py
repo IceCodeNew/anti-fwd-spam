@@ -12,15 +12,15 @@ TOKEN_PART_COUNT = 2
 SUPPORTED_CHAT_TYPES = frozenset({"group", "supergroup", "private", "channel"})
 SUPPORTED_FORWARD_ORIGINS = frozenset({"user", "hidden_user", "chat", "channel"})
 SPAM_PATTERNS = (
-    re.compile(r"@[A-Za-z0-9_]{5,32}\s+campaign_[0-9]+(?:\s+[A-Za-z0-9]+)?"),
+    re.compile(r"@[A-Za-z0-9_]{5,32}\s+campaign_[0-9]+"),
     re.compile(r"([💰🔴])(?:\s*\1){3,}"),
 )
 
 
 def matches_spam_pattern(message: dict[str, object]) -> bool:
-    """Match complete current text or captions, excluding replies and contextual discussion."""
+    """Search current text and captions for spam patterns without inspecting replies."""
     return any(
-        pattern.fullmatch(text.strip()) is not None
+        pattern.search(text) is not None
         for field in ("text", "caption")
         if isinstance(text := message.get(field), str)
         for pattern in SPAM_PATTERNS

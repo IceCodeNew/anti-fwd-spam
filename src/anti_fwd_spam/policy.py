@@ -13,7 +13,7 @@ SUPPORTED_CHAT_TYPES = frozenset({"group", "supergroup", "private", "channel"})
 SUPPORTED_FORWARD_ORIGINS = frozenset({"user", "hidden_user", "chat", "channel"})
 SPAM_PATTERNS = (
     re.compile(r"@[A-Za-z0-9_]{5,32}\s+campaign_[0-9]+(?:\s+[A-Za-z0-9]+)?"),
-    re.compile(r"([💰🔴])(?:\s*\1){9,}"),
+    re.compile(r"([💰🔴])(?:\s*\1){3,}"),
 )
 
 

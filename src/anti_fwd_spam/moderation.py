@@ -15,7 +15,7 @@ from .policy import MAX_TELEGRAM_ID, matches_spam_pattern, source_ids
 from .reporting import Reporting, ReportingPlugin
 from .sources import replied_source, resolve_source, source_argument
 from .tasks import ModelTasks
-from .telegram import DeleteOutcome, Fetch, call_method, delete_message
+from .telegram import DeleteOutcome, Fetch, TelegramError, call_method, delete_message
 
 if TYPE_CHECKING:
     from .model import ModelConfig
@@ -220,27 +220,45 @@ class Moderator:
         if identifier is not None:
             label = f": @{username}" if username else ""
             reply = f"Source saved in D1{label}\nID: {identifier}"
-        await call_method(
-            self.fetcher,
-            self.config.bot_token,
-            "sendMessage",
-            {
-                "chat_id": chat["id"],
-                "text": reply,
-                "reply_parameters": {"message_id": message_id, "allow_sending_without_reply": True},
-            },
-        )
+        response = AppResponse(200, "command handled")
         if reply_report and identifier is not None:
             response = await self.report(update, message, raw_json, source_id=identifier)
             if response.status != HTTPStatus.OK:
                 return response
-        if chat.get("type") in {"group", "supergroup"}:
-            outcome = await delete_message(self.fetcher, self.config.bot_token, chat["id"], message_id)
+        if response.needs_confirmation:
+            reply += "\nBan result is uncertain; check membership before submitting a new report."
+        return await self._finish_source_command(
+            chat["id"], message_id, reply, response, in_group=chat.get("type") in {"group", "supergroup"}
+        )
+
+    async def _finish_source_command(
+        self, chat_id: int, message_id: int, reply: str, response: AppResponse, *, in_group: bool
+    ) -> AppResponse:
+        """Acknowledge the result and retain commands that require manual inspection."""
+        try:
+            await call_method(
+                self.fetcher,
+                self.config.bot_token,
+                "sendMessage",
+                {
+                    "chat_id": chat_id,
+                    "text": reply,
+                    "reply_parameters": {"message_id": message_id, "allow_sending_without_reply": True},
+                },
+            )
+        except TelegramError as error:
+            if error.retryable:
+                raise
+            response = replace(response, body=response.body + "; acknowledgement rejected")
+        if response.needs_confirmation:
+            return response
+        if in_group:
+            outcome = await delete_message(self.fetcher, self.config.bot_token, chat_id, message_id)
             if outcome is DeleteOutcome.RETRYABLE_FAILURE:
                 return AppResponse(503, "command handled; command cleanup pending retry")
             if outcome is DeleteOutcome.PERMANENT_FAILURE:
                 return AppResponse(200, "command handled; command cleanup rejected; check deletion permissions")
-        return AppResponse(200, "command handled")
+        return response
 
     async def _register_source(
         self, update_id: int, raw_json: str, evidence: dict[str, object], source: str | int | None
@@ -375,6 +393,7 @@ class Moderator:
             identifier = source_id if chat["type"] == "supergroup" else None
             subjects.append((replace(target, user_id=identifier), source_id))
         response = AppResponse(200, "report recorded")
+        needs_confirmation = False
         for subject, progress_id in subjects:
             try:
                 outcome = await self.actions.delete_history_and_ban(
@@ -386,6 +405,7 @@ class Moderator:
                 )
             except EvidenceError:
                 outcome = AppResponse(503, "report storage unavailable; retry pending")
+            needs_confirmation |= outcome.needs_confirmation
             if outcome.status != HTTPStatus.OK or response.status == HTTPStatus.OK:
                 response = outcome
-        return response
+        return replace(response, needs_confirmation=needs_confirmation)

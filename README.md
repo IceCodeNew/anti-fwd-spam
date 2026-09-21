@@ -124,6 +124,8 @@ The bot saves the resolved account ID in the source list and replies with that I
 
 To report both an inline message's sender A and its source bot B, reply to that message with `/bs` (or `/bs@your_moderation_bot`), without a username. The bot reads B's ID from the message and registers it as a source. For an authorized administrator report, it bans A and B and clears each account's eligible indexed history, protecting administrators. A listed ordinary member can register B but cannot trigger these punishments. The bot removes the group command after processing; temporary failures leave it pending retry.
 
+If a ban result is uncertain, the bot keeps the command and asks you to check membership before sending a new report. It does not repeat an unconfirmed ban automatically.
+
 When someone sends an inline message through a listed source bot, or forwards a message with that bot as the visible origin:
 
 - The sender loses only that message and is permanently muted. Their other messages remain, and they are not added to a blacklist.

@@ -28,9 +28,9 @@ Telegram sends updates to `POST /webhook`. The Worker verifies `TELEGRAM_WEBHOOK
                                            │              ▼                              ▼
                                            │        /bs handler                    Reply handler
                                            │        Save source ID                 Record evidence
-                                           │        Reply with ID                  Check group authority
-                                           │        Bare reply: check authority     Apply action 2 if allowed
-                                           │          + action 2 on A and B
+                                           │        Bare reply: check authority     Check group authority
+                                           │          + action 2 on A and B         Apply action 2 if allowed
+                                           │        Reply with ID
                                            │        Clean group command
                                            │
                                            └── No report ──▶ Local rules ──▶ Jev
@@ -119,7 +119,9 @@ Reply + mention ──▶ Action 2 on A only
 Reply + /bs     ──▶ Register B + Action 2 on A + Action 2 on B
 ```
 
-The bare reply command works in groups and accepts `/bs@moderation_bot` too. Missing or invalid `via_bot` produces a usage reply without adding a source or punishing either account. Explicit `/bs @username` registers the named source only. Both command forms require `REPORTER_IDS`; the combined report also uses the existing group-authority checks for punishment. Administrator protection and retry progress apply separately to A and B. The command handler acknowledges the source and removes the group command after moderation finishes; retryable failures leave cleanup pending.
+The bare reply command works in groups and accepts `/bs@moderation_bot` too. Missing or invalid `via_bot` produces a usage reply without adding a source or punishing either account. Explicit `/bs @username` registers the named source only. Both command forms require `REPORTER_IDS`; the combined report also uses the existing group-authority checks for punishment. Administrator protection and retry progress apply separately to A and B.
+
+Moderation runs before acknowledgement, so a rejected reply cannot prevent punishment. Retryable failures leave command cleanup pending. If a ban outcome cannot be confirmed, the bot retains the command and asks the reporter to check membership before submitting a new report; it does not blindly repeat the ban. Otherwise, it removes the group command after processing, even if Telegram permanently rejects the acknowledgement.
 
 ## Edits and retries
 

@@ -146,3 +146,26 @@ test('user: Given a reply target from a different group, When a reporter uses bs
   for (const id of [22, 777]) assert.equal(telegram.canJoin(id), true);
   assert.equal(await database.prepare('SELECT source_id FROM blacklisted_sources WHERE source_id=777').first(), null);
 });
+
+test('user: Given a combined report whose acknowledgement is rejected, When processed, Then both accounts are still banned and cleaned and the command disappears', async () => {
+  const update = await inlineReport();
+  telegram.faults.set('sendMessage', () => Response.json({ ok: false, error_code: 403 }, { status: 403 }));
+  assert.equal((await dispatch(update)).status, 200);
+  for (const id of [22, 777]) assert.equal(telegram.canJoin(id), false);
+  for (const id of [70, 71, 81, 82]) assert.equal(telegram.has(id), false);
+  assert.equal(telegram.has(72), true);
+});
+
+for (const uncertainId of [22, 777]) {
+  test(`user: Given an uncertain ban of ${uncertainId}, When the combined report is redelivered, Then the command remains for inspection without another ban attempt`, async () => {
+    const update = await inlineReport();
+    telegram.faults.set(`banChatMember:${uncertainId}`, () => Response.json({ ok: false, error_code: 500 }, { status: 500 }));
+    assert.equal((await dispatch(update)).status, 503);
+    telegram.faults.clear();
+    assert.equal((await dispatch(update)).status, 200);
+    assert.equal(telegram.canJoin(uncertainId), true);
+    assert.equal(telegram.has(82), true);
+    assert.match(telegram.replies.at(-1).text, /check membership/i);
+    assert.match(telegram.replies.at(-1).text, /777/);
+  });
+}

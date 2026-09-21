@@ -60,6 +60,7 @@ class AppResponse:
     body: str
     target_removed: bool = False
     sender_banned: bool = False
+    needs_confirmation: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -157,7 +158,11 @@ class Actions:
             return AppResponse(saved.status, saved.body)
         if saved.ban_claimed and saved.moderation_result is None:
             # Another delivery may still be recording success. Do not finalize its progress.
-            return AppResponse(200, "ban confirmation failed; check membership and submit a new report if needed")
+            return AppResponse(
+                200,
+                "ban confirmation failed; check membership and submit a new report if needed",
+                needs_confirmation=True,
+            )
         try:
             reporter_id = user_id(message)
             authorized = (

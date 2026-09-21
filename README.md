@@ -149,6 +149,12 @@ DELETE FROM blacklisted_users WHERE bot_id = 123456789 AND user_id = 987654321;
 
 Then lift any mute or ban in each affected group's Telegram member settings. Removing a database entry does not lift Telegram restrictions. An account left on the account blacklist will be banned again when it posts.
 
+## Automatic text filtering
+
+Local rules check new group messages before Jev, including messages from bots, without an API key. They search anywhere in text or captions for campaign markers and runs of identical money-bag or red-circle emojis, allowing whitespace between emojis. Surrounding text or other emojis do not prevent a match. The exact patterns are `SPAM_PATTERNS` in [policy.py](src/anti_fwd_spam/policy.py). The contents of replied-to messages and individual sensitive words do not trigger these rules.
+
+A match deletes the current message and permanently mutes a human sender in a supergroup, preserving earlier messages and both blacklists. Bot senders are not muted. Group owners and administrators are protected. Private messages and edits skip this check.
+
 ## Optional: enable Jev spam checks
 
 Model checks send the sender's display name, available biography, and message text or caption with formatting and selected media descriptions to an external provider. No media is downloaded or inspected. Review the provider's privacy terms and pricing before enabling this feature.

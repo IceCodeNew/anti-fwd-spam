@@ -1,7 +1,8 @@
-"""Validate configuration and match Telegram bot provenance."""
+"""Validate configuration and match Telegram provenance and spam patterns."""
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 MAX_TELEGRAM_ID = (1 << 52) - 1
@@ -10,6 +11,20 @@ MAX_ID_ENTRIES = 500
 TOKEN_PART_COUNT = 2
 SUPPORTED_CHAT_TYPES = frozenset({"group", "supergroup", "private", "channel"})
 SUPPORTED_FORWARD_ORIGINS = frozenset({"user", "hidden_user", "chat", "channel"})
+SPAM_PATTERNS = (
+    re.compile(r"@[A-Za-z0-9_]{5,32}\s+campaign_[0-9]+"),
+    re.compile(r"([💰🔴])(?:\s*\1){3,}"),
+)
+
+
+def matches_spam_pattern(message: dict[str, object]) -> bool:
+    """Search current text and captions for spam patterns without inspecting replies."""
+    return any(
+        pattern.search(text) is not None
+        for field in ("text", "caption")
+        if isinstance(text := message.get(field), str)
+        for pattern in SPAM_PATTERNS
+    )
 
 
 class ConfigError(ValueError):

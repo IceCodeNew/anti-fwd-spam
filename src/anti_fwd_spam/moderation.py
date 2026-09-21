@@ -1,4 +1,4 @@
-"""Route provenance matches, authorized reports and model checks to moderation actions."""
+"""Route provenance matches, authorized reports and content checks to moderation actions."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 from .actions import Actions, AppResponse, BanTarget, user_id
 from .evidence import MESSAGE_WINDOW_SECONDS, EvidenceError, ReportStore
 from .model import MODEL_CONTENT_FIELDS, model_input
-from .policy import MAX_TELEGRAM_ID, source_ids
+from .policy import MAX_TELEGRAM_ID, matches_spam_pattern, source_ids
 from .sources import resolve_source, source_argument
 from .tasks import ModelTasks
 from .telegram import DeleteOutcome, Fetch, TelegramError, call_method, delete_message
@@ -113,13 +113,13 @@ class Moderator:
     async def process_update(  # noqa: PLR0911
         self, update: dict[str, object], raw_json: str, *, sources: tuple[int, ...]
     ) -> AppResponse:
-        """Route a validated update through account, source, report and model policies."""
+        """Route a validated update through account, source, report and content policies."""
         message = update.get("message", update.get("edited_message"))
         if not isinstance(message, dict) or message["chat"]["type"] not in {"group", "supergroup"}:
             return AppResponse(200, "ignored")
         if "edited_message" in update:
             try:
-                await self.check_model(message, edited=True)
+                await self.check_content(message, edited=True)
             except EvidenceError:
                 return AppResponse(503, "model task storage unavailable; retry pending")
         account_response = await self.check_account_blacklist(update, message, raw_json)
@@ -142,7 +142,7 @@ class Moderator:
             except EvidenceError:
                 return AppResponse(503, "report storage unavailable; retry pending")
         try:
-            return await self.check_model(message) if "message" in update else AppResponse(200, "ignored")
+            return await self.check_content(message) if "message" in update else AppResponse(200, "ignored")
         except EvidenceError:
             return AppResponse(503, "model task storage unavailable; retry pending")
 
@@ -216,11 +216,11 @@ class Moderator:
                 return AppResponse(200, "command handled; command cleanup rejected; check deletion permissions")
         return AppResponse(200, "command handled")
 
-    async def check_model(self, message: dict[str, object], *, edited: bool = False) -> AppResponse:
-        """Persist one inference task or cancel the old version on an edit."""
+    async def check_content(self, message: dict[str, object], *, edited: bool = False) -> AppResponse:
+        """Apply local patterns before inference, or cancel pending inference on edits."""
         chat, message_id = message.get("chat"), message.get("message_id")
         if not isinstance(chat, dict) or type(chat.get("id")) is not int or type(message_id) is not int:
-            return AppResponse(400, "invalid model moderation target")
+            return AppResponse(400, "invalid content moderation target")
         sent_at, now = message.get("date"), int(time.time())
         if type(sent_at) is not int or not now - MESSAGE_WINDOW_SECONDS < sent_at <= now:
             return AppResponse(200, "ignored")
@@ -228,6 +228,8 @@ class Moderator:
         if edited:
             await tasks.enqueue(chat["id"], message_id, sent_at, None, now)
             return AppResponse(200, "model task cancelled")
+        if matches_spam_pattern(message):
+            return await self.actions.delete_and_mute(message)
         if not self.models or user_id(message) is None or not MODEL_CONTENT_FIELDS.intersection(message):
             return AppResponse(200, "ignored")
         state = await model_input(self.fetcher, self.config.bot_token, message)

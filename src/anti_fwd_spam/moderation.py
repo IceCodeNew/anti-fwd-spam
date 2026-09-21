@@ -327,7 +327,12 @@ class Moderator:
         ):
             return AppResponse(400, "invalid report target")
         return await self.actions.delete_history_and_ban(
-            BanTarget(chat["id"], user_id(target) if chat["type"] == "supergroup" else None, message_id, target_id),
+            BanTarget(
+                chat["id"],
+                user_id(target, include_bots=True) if chat["type"] == "supergroup" else None,
+                message_id,
+                target_id,
+            ),
             update,
             raw_json,
         )

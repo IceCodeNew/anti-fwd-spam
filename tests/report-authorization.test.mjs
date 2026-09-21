@@ -81,3 +81,32 @@ for (const senderChat of [chat, { ...chat, id: -10099 }, { id: -10088, type: 'ch
     assert.equal((await database.prepare('SELECT COUNT(*) AS count FROM blacklisted_users').first()).count, accepted ? 1 : 0);
   });
 }
+
+for (const status of ['member', 'kicked', 'administrator', 'creator']) {
+  test(`user: Given a reported bot with ${status} membership, When an authorized administrator reports it, Then target deletion and indexed cleanup respect administrator protection`, async () => {
+    await setBindings({ REPORTER_IDS: '11' });
+    const history = message(70);
+    history.from.is_bot = true;
+    telegram.send(history);
+    await dispatch({ message: history });
+    telegram.send(message(71, 11));
+    const target = message();
+    target.from.is_bot = true;
+    telegram.send(target);
+    const update = report(target);
+    telegram.send(update.message);
+    telegram.members.set(22, { status });
+    const protectedAccount = ['administrator', 'creator'].includes(status);
+    assert.equal((await dispatch(update)).status, 200);
+    assert.equal(telegram.has(81), false);
+    assert.equal(telegram.has(82), false);
+    assert.equal(telegram.has(70), protectedAccount);
+    assert.equal(telegram.has(71), true);
+    assert.equal(telegram.canJoin(22), protectedAccount);
+    assert.equal(telegram.canSend(22), protectedAccount);
+    assert.equal((await database.prepare('SELECT COUNT(*) AS count FROM blacklisted_users WHERE user_id=22').first()).count, protectedAccount ? 0 : 1);
+    assert.equal((await dispatch(update)).status, 200);
+    assert.equal(telegram.canJoin(22), protectedAccount);
+    if (protectedAccount) assert.deepEqual(telegram.members.get(22), { status });
+  });
+}

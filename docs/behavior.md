@@ -90,7 +90,7 @@ Local rules, Jev, and source filtering share this action. Ordinary groups suppor
 
 Confirmed bans add the target to `blacklisted_users`. Owners and administrators cannot be banned; an authorized reply report can still delete the explicitly reported administrator message. History selection and Telegram's own deletion behavior are described under [Administrator protection and history limits](../README.md#administrator-protection-and-history-limits).
 
-Reply reports select a human account for banning only in supergroups. Reports targeting a bot or a sender-chat identity, and reports in basic groups, can delete the explicit target but do not select an account to ban. Automatic account-blacklist checks also run only on new supergroup messages.
+Reply reports in supergroups apply the same ban and indexed-history cleanup to human and bot accounts. Group owners and administrators remain protected from bans and history cleanup. Reports targeting a sender-chat identity, and reports in basic groups, can delete the explicit target but do not select a user account to ban. Automatic account-blacklist checks also run only on new supergroup messages.
 
 Both actions in [actions.py](../src/anti_fwd_spam/actions.py) own membership checks, duplicate-operation handling, and retry outcomes. They never unban to repeat a ban. Durable progress prevents a redelivered update from blindly repeating restrictions after a manual unban or unmute; uncertain outcomes can require manual inspection.
 

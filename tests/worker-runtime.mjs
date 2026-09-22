@@ -29,6 +29,7 @@ before(async () => {
         'https://api.typesafe.ai/v1/systemone': ['jev-latest', 'test-typesafe-key'],
         'https://opencode.ai/zen/v1/systemone': ['jev-1.13', 'test-opencode-key'],
         'https://ai-gateway.vercel.sh/v4/ai/evaluation-model': ['typesafe-ai/jev', 'test-gateway-key'],
+        'https://api.commandcode.ai/provider/v1/systemone': ['typesafe/jev', 'test-commandcode-key'],
       };
       if (Object.hasOwn(providers, request.url)) {
         const [modelId, apiKey] = providers[request.url];

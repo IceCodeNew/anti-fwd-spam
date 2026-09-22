@@ -175,6 +175,9 @@ Save an API key under the corresponding Worker secret. With multiple keys, the b
 | [Vercel AI Gateway](https://vercel.com/ai-gateway/models/jev) | `AI_GATEWAY_API_KEY` |
 | [Experiential](https://platform.experientiallabs.ai/models/jev-latest) | `EXPERIENTIAL_API_KEY` |
 | [OpenCode Zen](https://opencode.ai/docs/zen/) | `OPENCODE_API_KEY` |
+| [CommandCode](https://commandcode.ai/docs/provider#decision-models-typesafe-jev) | `CMD_API_KEY` |
+
+The [retry budget](docs/behavior.md#edits-and-retries) is bounded; configuring every provider does not guarantee that each will be tried.
 
 For Vercel, run:
 

@@ -127,6 +127,8 @@ Moderation runs before acknowledgement, so a rejected reply cannot prevent punis
 
 Edited group messages cancel pending model work within the message window. They can still undergo source filtering and reply-report handling, but skip automatic account-blacklist checks, local regexes, and fresh Jev classification. Edited `/bs` commands are ignored.
 
+Model classification starts with the first configured entry in `MODEL_PROVIDERS`. Failed requests can rotate through the configured providers, including CommandCode's System One endpoint. The classification budget is one initial attempt and three retries, delayed by 1, 2, and 5 minutes. With five configured providers, the fifth is outside that budget. A valid non-spam score or an invalid answer stops classification without trying another provider.
+
 ```diagram
 ┌───────────────────────────┐
 │ Retryable webhook failure │──▶ HTTP 503 ──▶ Telegram redelivery

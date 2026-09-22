@@ -24,6 +24,7 @@ MODEL_PROVIDERS = {
     "AI_GATEWAY_API_KEY": (GATEWAY_URL, "typesafe-ai/jev"),
     "EXPERIENTIAL_API_KEY": ("https://api.experientiallabs.ai/v1/systemone", "jev-latest"),
     "OPENCODE_API_KEY": ("https://opencode.ai/zen/v1/systemone", "jev-1.13"),
+    "CMD_API_KEY": ("https://api.commandcode.ai/provider/v1/systemone", "typesafe/jev"),
 }
 
 

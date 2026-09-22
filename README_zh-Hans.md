@@ -175,6 +175,9 @@ bot 在 Jev 之前用本地规则检查群内新消息，包括其他 bot 的消
 | [Vercel AI Gateway](https://vercel.com/ai-gateway/models/jev) | `AI_GATEWAY_API_KEY` |
 | [Experiential](https://platform.experientiallabs.ai/models/jev-latest) | `EXPERIENTIAL_API_KEY` |
 | [OpenCode Zen](https://opencode.ai/docs/zen/) | `OPENCODE_API_KEY` |
+| [CommandCode](https://commandcode.ai/docs/provider#decision-models-typesafe-jev) | `CMD_API_KEY` |
+
+bot 的[重试次数有限](docs/behavior.md#edits-and-retries)，配置全部平台并不保证逐一调用。
 
 使用 Vercel 时执行：
 

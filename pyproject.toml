@@ -9,7 +9,7 @@ dependencies = []
 dev = [
   "ruff==0.16.8",
   "workers-py==1.17.3",
-  "workers-runtime-sdk==1.8.5",
+  "workers-runtime-sdk==1.9.0",
 ]
 
 [[tool.uv.index]]

@@ -60,6 +60,7 @@ class AppResponse:
     body: str
     target_removed: bool = False
     sender_banned: bool = False
+    needs_confirmation: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,13 +130,20 @@ class Actions:
         return response
 
     async def delete_history_and_ban(
-        self, target: BanTarget, update: dict[str, object], raw_json: str, *, subject_id: int = 0
+        self,
+        target: BanTarget,
+        update: dict[str, object],
+        raw_json: str,
+        *,
+        subject_id: int = 0,
+        remove_report: bool = True,
     ) -> AppResponse:
         """Persist and resume a ban, target deletion and indexed history cleanup.
 
         Explicit targets are reports: preserve their evidence and clean up the
         reporter's message after successful moderation. Automatic matches store
         the triggering message and only delete this account's indexed history.
+        Command handlers can own report removal after acknowledging multiple subjects.
         """
         update_id = update.get("update_id")
         message = update.get("message", update.get("edited_message"))
@@ -150,7 +158,11 @@ class Actions:
             return AppResponse(saved.status, saved.body)
         if saved.ban_claimed and saved.moderation_result is None:
             # Another delivery may still be recording success. Do not finalize its progress.
-            return AppResponse(200, "ban confirmation failed; check membership and submit a new report if needed")
+            return AppResponse(
+                200,
+                "ban confirmation failed; check membership and submit a new report if needed",
+                needs_confirmation=True,
+            )
         try:
             reporter_id = user_id(message)
             authorized = (
@@ -167,7 +179,7 @@ class Actions:
             )
         except TelegramError as error:
             response = AppResponse(503 if error.retryable else 200, "report recorded; authority check failed")
-        if target.message_id is not None:
+        if target.message_id is not None and remove_report:
             response = await self._remove_report_message(target.chat_id, target.before_message_id, response)
         await self.store.finish(*key, response.status, response.body, subject_id)
         return response

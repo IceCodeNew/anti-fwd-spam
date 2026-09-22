@@ -172,6 +172,26 @@ test('user: Given a malformed or mismatched lookup response, When a source is re
   }
 });
 
+test('user: Given a pending source acknowledgement, When the reporter loses access before redelivery, Then no reply or command cleanup occurs', async () => {
+  telegram.accounts.set('@example_bot', { id: 777, type: 'private', username: 'example_bot' });
+  const update = command();
+  telegram.send(update.message);
+  telegram.faults.set('sendMessage', () => Response.json({ ok: false, error_code: 429 }, { status: 429 }));
+  assert.equal((await dispatch(update)).status, 503);
+  const saved = await database.prepare('SELECT * FROM reports').first();
+  telegram.faults.clear();
+  await setBindings({ REPORTER_IDS: '' });
+  try {
+    assert.equal((await dispatch(update)).status, 200);
+    assert.deepEqual(telegram.replies, []);
+    assert.equal(telegram.has(300), true);
+    assert.deepEqual(await database.prepare('SELECT * FROM reports').first(), saved);
+    assert.equal((await database.prepare('SELECT source_id FROM blacklisted_sources WHERE source_id=777').first()).source_id, 777);
+  } finally {
+    await setBindings({});
+  }
+});
+
 test('user: Given an active username alias, When an authorized private-chat command resolves it, Then the account ID is saved', async () => {
   telegram.accounts.set('@alias', { id: 781, type: 'private', username: 'primary', active_usernames: ['primary', 'Alias'] });
   const update = command('/bs alias');

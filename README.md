@@ -6,6 +6,8 @@ A Telegram moderation bot hosted on Cloudflare Workers, with blocklists and repo
 
 Start in a test group. Bans can delete message history, and unbanning cannot restore deleted messages.
 
+See [Message processing and reporting](docs/behavior.md) for flow diagrams, blacklist routing, and the reporting-plugin contract.
+
 ## 1. Create a Telegram bot
 
 1. Send `/newbot` to [@BotFather](https://t.me/BotFather) and follow the prompts. Save the bot token and username.
@@ -108,15 +110,21 @@ Confirm that the response contains `"ok":true` and `"result":true`. Use this tok
 
 Using an identity listed in `REPORTER_IDS`, choose **Reply** on the spam message, type `@`, select your moderation bot, and send.
 
-In a supergroup, a report from an administrator or an authorized group/channel identity deletes the target message, bans its sender, and clears eligible indexed history. The bot removes the report after cleanup succeeds. A listed ordinary member's report saves evidence without deleting messages or restricting anyone.
+In a supergroup, a report from an administrator or an authorized group/channel identity deletes the target message, bans its sender, and clears eligible indexed history. Human and bot accounts follow the same policy, with group owners and administrators protected from bans. The bot removes the report after cleanup succeeds. A listed ordinary member's report saves evidence without deleting messages or restricting anyone.
 
 Confirmed bans add the sender to the account blacklist. When that account posts in another supergroup using this bot, the bot bans it there and clears eligible indexed messages.
+
+For an inline message sent by A through bot B, this reply report targets A only. It does not register or punish B.
 
 ### Add a source
 
 Send `/bs @example_bot` using a listed reporting identity, in private or in a group. Replace `example_bot` with the source bot's username. In groups, `/bs@your_moderation_bot @example_bot` addresses this moderation bot explicitly.
 
-The bot saves the resolved account ID in the source list and replies with that ID. It removes the group command after replying, including when lookup fails; private-chat commands and result replies remain. Registration itself does not ban the account or delete its history. Check the returned ID: Telegram cannot resolve every username, and the command does not check whether the account is a bot.
+The bot saves the resolved account ID in the source list and replies with that ID. It removes the group command after replying, including when lookup fails; private-chat commands and result replies remain. This named command does not ban the account or delete its history. Check the returned ID: Telegram cannot resolve every username, and the command does not check whether the account is a bot.
+
+To report both an inline message's sender A and its source bot B, reply to that message with `/bs` (or `/bs@your_moderation_bot`), without a username. The bot reads B's ID from the message and registers it as a source. For an authorized administrator report, it bans A and B and clears each account's eligible indexed history, protecting administrators. A listed ordinary member can register B but cannot trigger these punishments. The bot removes the group command after processing; temporary failures leave it pending retry.
+
+If a ban result is uncertain, the bot keeps the command and asks you to check membership before sending a new report. It does not repeat an unconfirmed ban automatically.
 
 When someone sends an inline message through a listed source bot, or forwards a message with that bot as the visible origin:
 

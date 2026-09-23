@@ -3,8 +3,8 @@ import { test } from 'node:test';
 import { database, dispatch, model, runtime, setBindings as setModelKeys, telegram } from './worker-runtime.mjs';
 import { message } from './telegram-fake.mjs';
 
-const keys = ['TYPESAFE_AI_API_KEY', 'AI_GATEWAY_API_KEY', 'EXPERIENTIAL_API_KEY', 'OPENCODE_API_KEY', 'CMD_API_KEY'];
-const credentials = ['test-typesafe-key', 'test-gateway-key', 'test-model-key', 'test-opencode-key', 'test-commandcode-key'];
+const keys = ['TYPESAFE_AI_API_KEY', 'EXPERIENTIAL_API_KEY', 'OPENCODE_API_KEY', 'CMD_API_KEY', 'AI_GATEWAY_API_KEY'];
+const credentials = ['test-typesafe-key', 'test-model-key', 'test-opencode-key', 'test-commandcode-key', 'test-gateway-key'];
 const configured = names => Object.fromEntries(names.map(name => [name, credentials[keys.indexOf(name)]]));
 const pending = () => database.prepare('SELECT * FROM model_tasks WHERE message_id = 81').first();
 async function tick(now) {
@@ -27,11 +27,11 @@ for (const key of keys) {
 }
 
 for (const status of [503, 403]) {
-  test(`user: Given a TypeSafe HTTP ${status} and working gateway, When the retry becomes due, Then another provider removes the target`, async () => {
+  test(`user: Given a TypeSafe HTTP ${status} and working Experiential, When the retry becomes due, Then another provider removes the target`, async () => {
     await setModelKeys(configured(keys.slice(0, 2)));
     model.response = url => url.includes('api.typesafe.ai')
       ? new Response('unavailable', { status })
-      : Response.json({ answers: { spam: { type: 'boolean', probability: 0.99 } } });
+      : Response.json({ answers: { spam: { type: 'noul', noul: 0.99 } } });
     telegram.send(message());
     await dispatch({ update_id: 1, message: message() });
     assert.equal(telegram.has(81), true);
@@ -46,7 +46,7 @@ for (const status of [503, 403]) {
 
 test('user: Given four configured providers, When the first three reject requests, Then the fourth can classify after 1, 2 and 5 minutes', async () => {
   await setModelKeys(configured(keys.slice(0, 4)));
-  model.response = url => url.includes('opencode.ai')
+  model.response = url => url === 'https://api.commandcode.ai/provider/v1/systemone'
     ? Response.json({ answers: { spam: { type: 'noul', noul: 0.96 } } })
     : new Response('rejected', { status: 401 });
   telegram.send(message());
@@ -87,8 +87,8 @@ for (const status of [503, 401]) {
 
 test('user: Given all five provider keys, When the first four fail, Then the retry budget ends without consulting the fifth provider', async () => {
   await setModelKeys(configured(keys));
-  model.response = url => url === 'https://api.commandcode.ai/provider/v1/systemone'
-    ? Response.json({ answers: { spam: { type: 'noul', noul: 1 } } })
+  model.response = url => url.includes('ai-gateway.vercel.sh')
+    ? Response.json({ answers: { spam: { type: 'boolean', probability: 1 } } })
     : new Response('unavailable', { status: 503 });
   telegram.send(message());
   await dispatch({ update_id: 1, message: message() });
@@ -105,13 +105,13 @@ test('user: Given all five provider keys, When the first four fail, Then the ret
   assert.equal((await pending()).input_json, null);
 });
 
-test('user: Given a valid non-spam or invalid gateway answer, When another provider would delete it, Then no further classification occurs', async () => {
-  await setModelKeys(configured(['AI_GATEWAY_API_KEY', 'EXPERIENTIAL_API_KEY']));
+test('user: Given a valid non-spam or invalid Experiential answer, When another provider would delete it, Then no further classification occurs', async () => {
+  await setModelKeys(configured(['EXPERIENTIAL_API_KEY', 'AI_GATEWAY_API_KEY']));
   let id = 81;
-  for (const answer of [{ type: 'boolean', probability: 0.9499 }, { type: 'boolean', probability: '0.99' },
-    { type: 'noul', noul: 1 }, { type: 'boolean', probability: true }, { type: 'boolean', probability: 1.1 }]) {
-    model.response = url => Response.json({ answers: { spam: url.includes('ai-gateway.vercel.sh')
-      ? answer : { type: 'noul', noul: 1 } } });
+  for (const answer of [{ type: 'noul', noul: 0.9499 }, { type: 'noul', noul: '0.99' },
+    { type: 'boolean', probability: 1 }, { type: 'noul', noul: true }, { type: 'noul', noul: 1.1 }]) {
+    model.response = url => Response.json({ answers: { spam: url.includes('api.experientiallabs.ai')
+      ? answer : { type: 'boolean', probability: 1 } } });
     const target = message(id++);
     telegram.send(target);
     await dispatch({ update_id: id, message: target });

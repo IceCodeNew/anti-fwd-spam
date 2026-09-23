@@ -44,6 +44,22 @@ for (const status of [503, 403]) {
   });
 }
 
+test('user: Given a TypeSafe HTTP 503 and working gateway fallback, When the retry becomes due, Then the gateway removes the target', async () => {
+  await setModelKeys(configured(['TYPESAFE_AI_API_KEY', 'AI_GATEWAY_API_KEY']));
+  model.response = url => url.includes('api.typesafe.ai')
+    ? new Response('unavailable', { status: 503 })
+    : Response.json({ answers: { spam: { type: 'boolean', probability: 0.99 } } });
+  telegram.send(message());
+  await dispatch({ update_id: 1, message: message() });
+  assert.equal(telegram.has(81), true);
+  const saved = await pending();
+  assert.equal(saved.due_at - saved.created_at, 60);
+  await tick(saved.due_at - 1);
+  assert.equal(telegram.has(81), true);
+  await tick(saved.due_at);
+  assert.equal(telegram.has(81), false);
+});
+
 test('user: Given four configured providers, When the first three reject requests, Then the fourth can classify after 1, 2 and 5 minutes', async () => {
   await setModelKeys(configured(keys.slice(0, 4)));
   model.response = url => url === 'https://api.commandcode.ai/provider/v1/systemone'

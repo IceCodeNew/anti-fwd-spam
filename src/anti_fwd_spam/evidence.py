@@ -14,6 +14,9 @@ if TYPE_CHECKING:
 RETENTION_SECONDS = 3 * 24 * 60 * 60
 MESSAGE_WINDOW_SECONDS = 48 * 60 * 60
 DELETE_BATCH_SIZE = 100
+# Ban progress saved before the report finishes; a target-removal result replaces it.
+BANNED = "banned"
+BAN_FAILED = "ban failed"
 
 
 class EvidenceError(Exception):
@@ -262,9 +265,9 @@ class ReportStore:
                 self.database.prepare(
                     "UPDATE reports SET moderation_result = ? "
                     "WHERE bot_id = ? AND update_id = ? AND subject_id = ? "
-                    "AND (moderation_result IS NULL OR moderation_result IN ('banned', 'ban failed'))",
+                    "AND (moderation_result IS NULL OR moderation_result IN (?, ?))",
                 )
-                .bind(body, bot_id, update_id, subject_id)
+                .bind(body, bot_id, update_id, subject_id, BANNED, BAN_FAILED)
                 .run()
             )
 

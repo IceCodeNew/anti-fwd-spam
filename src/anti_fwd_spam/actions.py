@@ -7,7 +7,7 @@ from dataclasses import dataclass, replace
 from http import HTTPStatus
 from typing import TYPE_CHECKING
 
-from .evidence import DELETE_BATCH_SIZE, EvidenceError
+from .evidence import BAN_FAILED, BANNED, DELETE_BATCH_SIZE, EvidenceError
 from .telegram import DeleteOutcome, TelegramError, call_method, delete_message
 
 if TYPE_CHECKING:
@@ -193,13 +193,15 @@ class Actions:
     ) -> AppResponse:
         chat_id, identifier = target.chat_id, target.user_id
         response = await self._resume_ban(chat_id, identifier, report_key, saved, subject_id)
-        # A report deletes its target unless the target is already removed or the ban waits for a retry.
-        ban = response or AppResponse(200, "ban skipped")
-        if target.message_id is not None and ban.status == HTTPStatus.OK and not ban.target_removed:
-            deletion = await self._delete_target(chat_id, target.message_id)
-            response = replace(deletion, body=f"{deletion.body}; {ban.body}", sender_banned=ban.sender_banned)
         if response is None:
-            return AppResponse(200, "account moderation skipped; protected administrator")
+            # No account to ban, or a protected administrator: only an explicit report target remains.
+            if target.message_id is None:
+                return AppResponse(200, "account moderation skipped; protected administrator")
+            response = AppResponse(200, "ban skipped")
+        # A report deletes its target unless the target is already removed or the ban waits for a retry.
+        if target.message_id is not None and response.status == HTTPStatus.OK and not response.target_removed:
+            deletion = await self._delete_target(chat_id, target.message_id)
+            response = replace(deletion, body=f"{deletion.body}; {response.body}", sender_banned=response.sender_banned)
         if response.target_removed:
             await self.store.remember_moderation(*report_key, response.body, subject_id)
         if identifier is not None and response.sender_banned:
@@ -216,18 +218,18 @@ class Actions:
         saved: StoredReport,
         subject_id: int,
     ) -> AppResponse | None:
-        if saved.moderation_result == "banned":
+        if saved.moderation_result == BANNED:
             # The ban succeeded, but the target deletion or report cleanup did not finish.
-            return AppResponse(200, "banned", sender_banned=True)
-        if saved.moderation_result == "ban failed":
+            return AppResponse(200, BANNED, sender_banned=True)
+        if saved.moderation_result == BAN_FAILED:
             # Telegram rejected the ban permanently; only a pending target deletion remains.
-            return AppResponse(200, "ban failed")
+            return AppResponse(200, BAN_FAILED)
         if saved.moderation_result is not None:
             return AppResponse(
                 200,
                 saved.moderation_result,
                 target_removed=True,
-                sender_banned=saved.moderation_result.endswith("; banned"),
+                sender_banned=saved.moderation_result.endswith(f"; {BANNED}"),
             )
         return await self._ban(chat_id, identifier, report_key, subject_id) if identifier is not None else None
 
@@ -297,15 +299,15 @@ class Actions:
                     {"chat_id": chat_id, "user_id": identifier, "until_date": 0},
                 )
                 if result is not True:
-                    return AppResponse(503, "ban failed")
-            await self.store.remember_moderation(*report_key, "banned", subject_id)
+                    return AppResponse(503, BAN_FAILED)
+            await self.store.remember_moderation(*report_key, BANNED, subject_id)
         except TelegramError as error:
             if claimed and error.rejected:
                 await self.store.release_ban(*report_key, subject_id)
             if not error.retryable:
-                await self.store.remember_moderation(*report_key, "ban failed", subject_id)
-            return AppResponse(503 if error.retryable else 200, "ban failed")
-        return AppResponse(200, "banned", sender_banned=True)
+                await self.store.remember_moderation(*report_key, BAN_FAILED, subject_id)
+            return AppResponse(503 if error.retryable else 200, BAN_FAILED)
+        return AppResponse(200, BANNED, sender_banned=True)
 
     async def _mute(
         self,

@@ -1,4 +1,4 @@
-"""Preserve report JSON and searchable message classifications in D1."""
+"""Preserve report JSON, moderation progress and message identifiers in D1."""
 
 from __future__ import annotations
 
@@ -14,116 +14,6 @@ if TYPE_CHECKING:
 RETENTION_SECONDS = 3 * 24 * 60 * 60
 MESSAGE_WINDOW_SECONDS = 48 * 60 * 60
 DELETE_BATCH_SIZE = 100
-CONTENT_FIELDS = frozenset(
-    [
-        "text",
-        "rich_message",
-        "animation",
-        "audio",
-        "document",
-        "live_photo",
-        "paid_media",
-        "photo",
-        "sticker",
-        "story",
-        "video",
-        "video_note",
-        "voice",
-        "checklist",
-        "contact",
-        "dice",
-        "game",
-        "poll",
-        "venue",
-        "location",
-        "new_chat_members",
-        "left_chat_member",
-        "chat_owner_left",
-        "chat_owner_changed",
-        "new_chat_title",
-        "new_chat_photo",
-        "delete_chat_photo",
-        "group_chat_created",
-        "supergroup_chat_created",
-        "channel_chat_created",
-        "message_auto_delete_timer_changed",
-        "migrate_to_chat_id",
-        "migrate_from_chat_id",
-        "pinned_message",
-        "invoice",
-        "successful_payment",
-        "refunded_payment",
-        "users_shared",
-        "chat_shared",
-        "gift",
-        "unique_gift",
-        "gift_upgrade_sent",
-        "connected_website",
-        "write_access_allowed",
-        "passport_data",
-        "proximity_alert_triggered",
-        "boost_added",
-        "chat_background_set",
-        "checklist_tasks_done",
-        "checklist_tasks_added",
-        "community_chat_added",
-        "community_chat_joined",
-        "community_chat_removed",
-        "direct_message_price_changed",
-        "forum_topic_created",
-        "forum_topic_edited",
-        "forum_topic_closed",
-        "forum_topic_reopened",
-        "general_forum_topic_hidden",
-        "general_forum_topic_unhidden",
-        "giveaway_created",
-        "giveaway",
-        "giveaway_winners",
-        "giveaway_completed",
-        "managed_bot_created",
-        "paid_message_price_changed",
-        "poll_option_added",
-        "poll_option_deleted",
-        "suggested_post_approved",
-        "suggested_post_approval_failed",
-        "suggested_post_declined",
-        "suggested_post_paid",
-        "suggested_post_refunded",
-        "video_chat_scheduled",
-        "video_chat_started",
-        "video_chat_ended",
-        "video_chat_participants_invited",
-        "web_app_data",
-    ],
-)
-MEDIA_FIELDS = frozenset(
-    [
-        "animation",
-        "audio",
-        "document",
-        "live_photo",
-        "paid_media",
-        "photo",
-        "sticker",
-        "story",
-        "video",
-        "video_note",
-        "voice",
-    ],
-)
-
-
-def classify_message(message: dict[str, object]) -> dict[str, object]:
-    """Describe simultaneous content fields without discarding unknown evidence."""
-    return {
-        "version": 1,
-        "content_types": sorted(CONTENT_FIELDS.intersection(message)),
-        "present_fields": sorted(message),
-        "via_bot_present": "via_bot" in message,
-        "media_fields": sorted(MEDIA_FIELDS.intersection(message)),
-    }
-
-
 class EvidenceError(Exception):
     """Evidence was not durably saved; moderation must not proceed."""
 
@@ -301,7 +191,6 @@ class ReportStore:
         self,
         report_key: tuple[int, int],
         raw_json: str,
-        target: dict[str, object],
         now: int,
         subject_id: int,
     ) -> StoredReport:
@@ -311,8 +200,8 @@ class ReportStore:
             await (
                 self.database.prepare(
                     "INSERT INTO reports "
-                    "(bot_id, update_id, subject_id, received_at, expires_at, raw_update, classification) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(bot_id, update_id, subject_id) DO NOTHING",
+                    "(bot_id, update_id, subject_id, received_at, expires_at, raw_update) "
+                    "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(bot_id, update_id, subject_id) DO NOTHING",
                 )
                 .bind(
                     bot_id,
@@ -321,7 +210,6 @@ class ReportStore:
                     now,
                     now + RETENTION_SECONDS,
                     raw_json,
-                    json.dumps(classify_message(target), ensure_ascii=False),
                 )
                 .run()
             )

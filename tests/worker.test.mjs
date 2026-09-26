@@ -421,26 +421,6 @@ test('user records a report: Given a regular member and rich media, When they me
   assert.equal(telegram.canSend(22), true);
   const [row] = await evidence();
   assert.deepEqual(JSON.parse(row.raw_update), update);
-  assert.deepEqual(JSON.parse(row.classification), {
-    version: 1, content_types: ['animation', 'document', 'photo', 'rich_message', 'text'],
-    media_fields: ['animation', 'document', 'photo'], via_bot_present: true, present_fields: Object.keys(target).sort(),
-  });
-});
-
-test('user searches non-text evidence: Given media and service-message reports, When recorded, Then their content types remain searchable alongside the original JSON', async () => {
-  telegram.members.set(11, { status: 'member' });
-  const kinds = ['audio', 'live_photo', 'paid_media', 'sticker', 'story', 'video', 'video_note', 'voice',
-    'checklist', 'contact', 'dice', 'game', 'poll', 'venue', 'location', 'gift', 'unique_gift', 'invoice',
-    'successful_payment', 'new_chat_members', 'new_chat_title', 'video_chat_started', 'web_app_data', 'giveaway'];
-  for (const [index, kind] of kinds.entries()) {
-    const target = { ...message(), [kind]: { sample: kind } };
-    delete target.text;
-    const update = { ...report(target), update_id: index };
-    assert.equal((await dispatch(update)).status, 200);
-    const row = (await evidence()).find(row => row.update_id === index);
-    assert.deepEqual(JSON.parse(row.classification).content_types, [kind]);
-    assert.deepEqual(JSON.parse(row.raw_update), update);
-  }
 });
 
 for (const status of ['creator', 'administrator']) {
@@ -747,9 +727,9 @@ test('user expires evidence: Given records immediately before and at expiry, Whe
   await worker.scheduled({ scheduledTime: new Date((row.expires_at - 1) * 1000), cron: '* * * * *' });
   assert.equal((await evidence()).length, 1);
   // Seed already-aged evidence through D1, not wall-clock sleeps or Python patches.
-  await database.prepare(`INSERT INTO reports (bot_id, update_id, received_at, expires_at, raw_update, classification)
+  await database.prepare(`INSERT INTO reports (bot_id, update_id, received_at, expires_at, raw_update)
     WITH RECURSIVE ids(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM ids WHERE n<1001)
-    SELECT 123, 100+n, ?, ?, '{}', '{}' FROM ids`).bind(row.received_at, row.expires_at).run();
+    SELECT 123, 100+n, ?, ?, '{}' FROM ids`).bind(row.received_at, row.expires_at).run();
   await database.prepare('UPDATE reports SET expires_at = ? WHERE update_id = 1101').bind(row.expires_at + 1).run();
 
   await worker.scheduled({ scheduledTime: new Date(row.expires_at * 1000), cron: '* * * * *' });

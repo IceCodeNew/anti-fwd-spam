@@ -149,11 +149,8 @@ class Actions:
         message = update.get("message", update.get("edited_message"))
         if type(update_id) is not int or update_id < 0 or not isinstance(message, dict):
             return AppResponse(400, "invalid moderation update")
-        evidence = message.get("reply_to_message") if target.message_id is not None else message
-        if not isinstance(evidence, dict):
-            return AppResponse(400, "invalid moderation evidence")
         key = (self.bot_id, update_id)
-        saved = await self.store.save(key, raw_json, evidence, int(time.time()), subject_id)
+        saved = await self.store.save(key, raw_json, int(time.time()), subject_id)
         if saved.status is not None:
             return AppResponse(saved.status, saved.body)
         if saved.ban_claimed and saved.moderation_result is None:

@@ -238,8 +238,7 @@ class Moderator:
             return AppResponse(200, "command ignored")
         chat, message_id, update_id = message.get("chat"), message.get("message_id"), update.get("update_id")
         in_group = isinstance(chat, dict) and chat.get("type") in GROUP_CHAT_TYPES
-        reported = reply_target(message) if in_group and not username else None
-        reply_report = reported is not None
+        reply_report = in_group and not username and reply_target(message) is not None
         if (
             not isinstance(chat, dict)
             or type(chat.get("id")) is not int
@@ -252,8 +251,7 @@ class Moderator:
         ):
             return AppResponse(400, "invalid command")
         source = replied_source(message) if reply_report else username
-        evidence = reported if reported is not None else message
-        identifier = await self._register_source(update_id, raw_json, evidence, source)
+        identifier = await self._register_source(update_id, raw_json, source)
         reply = "Could not resolve the account. Use /bs @username, or reply to an inline bot message with /bs."
         if identifier is not None:
             label = f": @{username}" if username else ""
@@ -297,7 +295,7 @@ class Moderator:
         return response
 
     async def _register_source(
-        self, update_id: int, raw_json: str, evidence: dict[str, object], source: str | int | None
+        self, update_id: int, raw_json: str, source: str | int | None
     ) -> int | None:
         """Pin the resolved source before registration so retries cannot switch accounts."""
         bot_id = self.actions.bot_id
@@ -308,7 +306,7 @@ class Moderator:
             )
         if identifier is None:
             return None
-        await self.store.save((bot_id, update_id), raw_json, evidence, int(time.time()), 0)
+        await self.store.save((bot_id, update_id), raw_json, int(time.time()), 0)
         await self.store.pin_command_source(bot_id, update_id, identifier)
         # Concurrent deliveries must use the first resolution stored for this update.
         identifier = await self.store.command_source(bot_id, update_id)

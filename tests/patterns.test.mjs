@@ -11,7 +11,7 @@ const flood = ('💰'.repeat(23) + '\n').repeat(8) + '💰'.repeat(8);
 for (const text of [campaign, flood, '@example_bot campaign_2', '💰'.repeat(4), '🔴 '.repeat(4),
   '🔴说明：💰 \n💰\t💰 💰结束🔴', '💰说明：🔴🔴🔴🔴结束💰',
   `请警惕这种垃圾消息：${campaign}，不要点击`, '@example_bot campaign_1 this is a discussion',
-  '@example_bot campaign_1a']) {
+  '@example_bot campaign_1a', '有收款码的来，每天赚 5000，私聊']) {
   for (const field of ['text', 'caption']) {
     test(`user: Given ${field} containing ${text === flood ? 'the screenshot flood' : JSON.stringify(text)}, When Jev would accept it, Then only that message is deleted and its sender muted`, async () => {
       const previous = message(80);
@@ -35,6 +35,33 @@ for (const text of [campaign, flood, '@example_bot campaign_2', '💰'.repeat(4)
     });
   }
 }
+
+for (const [name, contact] of [
+  ['the screenshot contact card', { first_name: '有收款码一天赚一万', phone_number: '6285198277256', user_id: 8247255987 }],
+  ['a contact name split across first and last name', { first_name: '有收款码', last_name: '日入3000+', phone_number: '6285198277256' }],
+]) {
+  test(`user: Given ${name}, When Jev would accept it, Then only that message is deleted and its sender muted`, async () => {
+    const target = message();
+    delete target.text;
+    target.contact = contact;
+    telegram.send(target);
+    assert.equal((await dispatch({ update_id: 1, message: target })).status, 200);
+    assert.equal(telegram.has(81), false);
+    assert.equal(telegram.canSend(22), false);
+    assert.equal(telegram.members.get(22).until_date, 0);
+  });
+}
+
+test('user: Given an ordinary contact card, When Jev accepts it, Then it stays visible and Jev receives the name without the phone number', async () => {
+  const target = message();
+  delete target.text;
+  target.contact = { first_name: '王小明', phone_number: '8613800000000' };
+  telegram.send(target);
+  assert.equal((await dispatch({ update_id: 1, message: target })).status, 200);
+  assert.equal(telegram.has(81), true);
+  assert.equal(telegram.canSend(22), true);
+  assert.deepEqual(model.state.message.contact, { first_name: '王小明' });
+});
 
 test('user: Given no model key, When a screenshot pattern arrives, Then local filtering still deletes it and mutes its sender', async () => {
   await setBindings({ EXPERIENTIAL_API_KEY: undefined });
@@ -80,6 +107,7 @@ test('user: Given ordinary discussion and short emoji runs, When Jev accepts the
     `示例：${'💰'.repeat(3)}`, '@example_bot campaign_update',
     '💰'.repeat(3), '🔴 '.repeat(3),
     '💰'.repeat(2) + '🔴'.repeat(2), '💰💰💰文字💰', '🔴🔴💰🔴🔴', '普通消息',
+    '收款码在哪里设置？', '收款码今天收了一万块的货款', '收款码今天收入1000多', '收款码今天赚了100块',
   ];
   for (const [index, text] of examples.entries()) {
     const target = { ...message(81 + index), text };

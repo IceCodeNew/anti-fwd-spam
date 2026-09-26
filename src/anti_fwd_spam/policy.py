@@ -16,17 +16,26 @@ SUPPORTED_FORWARD_ORIGINS = frozenset({"user", "hidden_user", "chat", "channel"}
 SPAM_PATTERNS = (
     re.compile(r"@[A-Za-z0-9_]{5,32}\s+campaign_[0-9]+"),
     re.compile(r"([💰🔴])(?:\s*\1){3,}"),
+    re.compile(r"收款码.{0,12}?(?:[天日].{0,2}?[赚挣]|日入).{0,6}?(?:[0-9]{4,}|[千万wW])"),
 )
 
 
 def matches_spam_pattern(message: dict[str, object]) -> bool:
-    """Search current text and captions for spam patterns without inspecting replies."""
-    return any(
-        pattern.search(text) is not None
-        for field in ("text", "caption")
-        if isinstance(text := message.get(field), str)
-        for pattern in SPAM_PATTERNS
-    )
+    """Search current text, captions, and shared contact names without inspecting replies."""
+    return any(pattern.search(text) is not None for text in _pattern_texts(message) for pattern in SPAM_PATTERNS)
+
+
+def display_name(account: dict[str, object]) -> str:
+    """Join the first and last name of a Telegram user or shared contact."""
+    return " ".join(name for field in ("first_name", "last_name") if isinstance(name := account.get(field), str))
+
+
+def _pattern_texts(message: dict[str, object]) -> list[str]:
+    texts = [text for field in ("text", "caption") if isinstance(text := message.get(field), str)]
+    contact = message.get("contact")
+    if isinstance(contact, dict):
+        texts.append(display_name(contact))
+    return texts
 
 
 def reply_target(message: dict[str, object]) -> dict[str, object] | None:

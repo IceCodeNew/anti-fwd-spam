@@ -161,13 +161,13 @@ Then lift any mute or ban in each affected group's Telegram member settings. Rem
 
 ## Automatic text filtering
 
-Local rules check new and edited group messages before Jev, including messages from bots, without an API key. They search anywhere in text or captions for campaign markers and runs of identical money-bag or red-circle emojis, allowing whitespace between emojis. Surrounding text or other emojis do not prevent a match. The exact patterns are `SPAM_PATTERNS` in [policy.py](src/anti_fwd_spam/policy.py). The contents of replied-to messages and individual sensitive words do not trigger these rules.
+Local rules check new and edited group messages before Jev, including messages from bots, without an API key. They search anywhere in text, captions, or a shared contact card's name for campaign markers, payment-QR-code income offers, and runs of identical money-bag or red-circle emojis, allowing whitespace between emojis. Surrounding text or other emojis do not prevent a match. The exact patterns are `SPAM_PATTERNS` in [policy.py](src/anti_fwd_spam/policy.py). The contents of replied-to messages and individual sensitive words do not trigger these rules.
 
 A match deletes the current message and permanently mutes a human sender in a supergroup, preserving earlier messages and both blacklists. Bot senders are not muted. Group owners and administrators are protected. Private messages skip this check.
 
 ## Optional: enable Jev spam checks
 
-Model checks send the sender's display name, available biography, and message text or caption with formatting and selected media descriptions to an external provider. No media is downloaded or inspected. Review the provider's privacy terms and pricing before enabling this feature.
+Model checks send the sender's display name, available biography, and message text or caption with formatting, shared contact names, and selected media descriptions to an external provider. No media is downloaded or inspected. Review the provider's privacy terms and pricing before enabling this feature.
 
 Save an API key under the corresponding Worker secret. With multiple keys, the bot starts with the first configured provider below and can switch providers on failures:
 

@@ -14,6 +14,8 @@ if TYPE_CHECKING:
 RETENTION_SECONDS = 3 * 24 * 60 * 60
 MESSAGE_WINDOW_SECONDS = 48 * 60 * 60
 DELETE_BATCH_SIZE = 100
+
+
 class EvidenceError(Exception):
     """Evidence was not durably saved; moderation must not proceed."""
 

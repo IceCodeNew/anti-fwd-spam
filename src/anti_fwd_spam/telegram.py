@@ -57,11 +57,15 @@ class Fetch(Protocol):
 class TelegramError(Exception):
     """A Bot API failure, without credentials or remote response contents."""
 
-    def __init__(self, *, retryable: bool, rejected: bool = False) -> None:
+    def __init__(
+        self, *, retryable: bool, rejected: bool = False, code: int | None = None, description: str = ""
+    ) -> None:
         """Distinguish explicit rejection from an uncertain remote outcome."""
         super().__init__("Telegram request failed")
         self.retryable = retryable
         self.rejected = rejected
+        self.code = code
+        self.description = description
 
 
 async def _request(
@@ -90,7 +94,7 @@ async def _request(
 
 
 async def call_method(fetcher: Fetch, token: str, method: str, parameters: dict[str, object]) -> object:
-    """Call a Bot API method and validate its success envelope."""
+    """Call a Bot API method, validate its success envelope and classify failures."""
     status, body = await _request(fetcher, token, method, parameters)
     payload = _decode_response(body)
     code = payload.get("error_code") if payload else None
@@ -101,69 +105,43 @@ async def call_method(fetcher: Fetch, token: str, method: str, parameters: dict[
         and type(code) is int
         and HTTPStatus.BAD_REQUEST <= code < HTTPStatus.INTERNAL_SERVER_ERROR
     )
-    if status == HTTPStatus.TOO_MANY_REQUESTS or status >= HTTPStatus.INTERNAL_SERVER_ERROR:
+    if _temporary(status):
         raise TelegramError(retryable=True, rejected=rejected)
     if payload is None or not isinstance(payload.get("ok"), bool):
+        # An unreadable 4xx body still means that Telegram refused the request.
+        refused = HTTPStatus.BAD_REQUEST <= status < HTTPStatus.INTERNAL_SERVER_ERROR
+        raise TelegramError(retryable=not refused, rejected=refused)
+    if payload["ok"] is True:
+        if HTTPStatus.OK <= status < HTTPStatus.MULTIPLE_CHOICES and "result" in payload:
+            return payload["result"]
         raise TelegramError(retryable=True)
-    if HTTPStatus.OK <= status < HTTPStatus.MULTIPLE_CHOICES and payload["ok"] is True and "result" in payload:
-        return payload["result"]
-    retryable = (
-        type(code) is not int or code == HTTPStatus.TOO_MANY_REQUESTS or code >= HTTPStatus.INTERNAL_SERVER_ERROR
+    description = payload.get("description")
+    raise TelegramError(
+        retryable=type(code) is not int or _temporary(code),
+        rejected=rejected,
+        code=code if type(code) is int else None,
+        description=description if isinstance(description, str) else "",
     )
-    raise TelegramError(retryable=retryable, rejected=rejected)
 
 
-async def delete_message(
-    fetcher: Fetch,
-    token: str,
-    chat_id: int,
-    message_id: int,
-) -> DeleteOutcome:
-    """Await one bounded deleteMessage call and classify its outcome."""
+async def delete_message(fetcher: Fetch, token: str, chat_id: int, message_id: int) -> DeleteOutcome:
+    """Delete one message and classify the outcome that moderation can act on."""
     try:
-        status, response_body = await _request(
-            fetcher,
-            token,
-            "deleteMessage",
-            {"chat_id": chat_id, "message_id": message_id},
-        )
-    except TelegramError:
-        return DeleteOutcome.RETRYABLE_FAILURE
-
-    return _classify_deletion(status, response_body)
+        result = await call_method(fetcher, token, "deleteMessage", {"chat_id": chat_id, "message_id": message_id})
+    except TelegramError as error:
+        if error.retryable:
+            return DeleteOutcome.RETRYABLE_FAILURE
+        if error.code == HTTPStatus.BAD_REQUEST and "message to delete not found" in error.description.casefold():
+            return DeleteOutcome.ALREADY_ABSENT
+        return DeleteOutcome.PERMANENT_FAILURE
+    return DeleteOutcome.DELETED if result is True else DeleteOutcome.RETRYABLE_FAILURE
 
 
-def _classify_deletion(status: int, body: bytes) -> DeleteOutcome:
-    """Classify Telegram's HTTP status and JSON result without false success."""
-    if (
+def _temporary(status: int) -> bool:
+    return (
         status in {HTTPStatus.REQUEST_TIMEOUT, HTTPStatus.TOO_MANY_REQUESTS}
         or status >= HTTPStatus.INTERNAL_SERVER_ERROR
-    ):
-        return DeleteOutcome.RETRYABLE_FAILURE
-
-    typed_payload = _decode_response(body)
-    if typed_payload is None or not isinstance(typed_payload.get("ok"), bool):
-        malformed_rejection = HTTPStatus.BAD_REQUEST <= status < HTTPStatus.INTERNAL_SERVER_ERROR
-        return DeleteOutcome.PERMANENT_FAILURE if malformed_rejection else DeleteOutcome.RETRYABLE_FAILURE
-    if typed_payload["ok"] is True:
-        deleted = HTTPStatus.OK <= status < HTTPStatus.MULTIPLE_CHOICES and typed_payload.get("result") is True
-        return DeleteOutcome.DELETED if deleted else DeleteOutcome.RETRYABLE_FAILURE
-
-    error_code = typed_payload.get("error_code")
-    if type(error_code) is not int:
-        return DeleteOutcome.RETRYABLE_FAILURE
-    description = typed_payload.get("description")
-    if (
-        error_code == HTTPStatus.BAD_REQUEST
-        and isinstance(description, str)
-        and "message to delete not found" in description.casefold()
-    ):
-        return DeleteOutcome.ALREADY_ABSENT
-    retryable = (
-        error_code in {HTTPStatus.REQUEST_TIMEOUT, HTTPStatus.TOO_MANY_REQUESTS}
-        or error_code >= HTTPStatus.INTERNAL_SERVER_ERROR
     )
-    return DeleteOutcome.RETRYABLE_FAILURE if retryable else DeleteOutcome.PERMANENT_FAILURE
 
 
 def _decode_response(body: bytes) -> dict[str, object] | None:

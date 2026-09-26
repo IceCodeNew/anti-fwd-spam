@@ -294,9 +294,7 @@ class Moderator:
                 return AppResponse(200, "command handled; command cleanup rejected; check deletion permissions")
         return response
 
-    async def _register_source(
-        self, update_id: int, raw_json: str, source: str | int | None
-    ) -> int | None:
+    async def _register_source(self, update_id: int, raw_json: str, source: str | int | None) -> int | None:
         """Pin the resolved source before registration so retries cannot switch accounts."""
         bot_id = self.actions.bot_id
         identifier = await self.store.command_source(bot_id, update_id)

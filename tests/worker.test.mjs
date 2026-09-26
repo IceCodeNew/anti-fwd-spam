@@ -551,13 +551,14 @@ test('user retains evidence during failure: Given unavailable report storage, Wh
   }
 });
 
-for (const stage of ['getChatMember:11', 'getChatMember:22', 'banChatMember']) {
-  test(`user recovers from ${stage}: Given a temporary Telegram failure, When delivery is retried, Then evidence is retained and moderation finishes`, async () => {
+for (const [stage, status] of [['getChatMember:11', 429], ['getChatMember:22', 429], ['banChatMember', 429],
+  ['banChatMember', 408]]) {
+  test(`user recovers from ${stage} HTTP ${status}: Given a temporary Telegram failure, When delivery is retried, Then evidence is retained and moderation finishes`, async () => {
     const update = report();
     telegram.send(message(80));
     telegram.send(update.message.reply_to_message);
     telegram.send(update.message);
-    telegram.faults.set(stage, () => Response.json({ ok: false, error_code: 429, parameters: { retry_after: 1 } }, { status: 429 }));
+    telegram.faults.set(stage, () => Response.json({ ok: false, error_code: status, parameters: { retry_after: 1 } }, { status }));
 
     assert.equal((await dispatch(update)).status, 503);
     const [pending] = await evidence();

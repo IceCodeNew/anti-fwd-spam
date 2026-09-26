@@ -132,6 +132,16 @@ test('user: Given a private message, When its text matches a local pattern, Then
   assert.equal(telegram.has(81, 22), true);
 });
 
+test('user: Given a forbidden deletion whose description mentions a missing message, When a local pattern matches, Then the message stays and its sender is not muted', async () => {
+  const target = { ...message(), text: campaign };
+  telegram.send(target);
+  telegram.faults.set('deleteMessage', () => Response.json(
+    { ok: false, error_code: 403, description: 'Forbidden: message to delete not found' }, { status: 403 }));
+  assert.equal((await dispatch({ update_id: 1, message: target })).status, 200);
+  assert.equal(telegram.has(81), true);
+  assert.equal(telegram.canSend(22), true);
+});
+
 test('user: Given a temporarily rejected deletion, When Telegram redelivers the matching message, Then deletion and permanent mute finish', async () => {
   const target = { ...message(), text: campaign };
   telegram.send(target);

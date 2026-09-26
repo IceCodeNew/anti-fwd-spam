@@ -9,6 +9,7 @@ import logging
 from http import HTTPMethod, HTTPStatus
 from typing import TYPE_CHECKING
 
+from .policy import display_name
 from .telegram import TelegramError, call_method
 
 if TYPE_CHECKING:
@@ -98,6 +99,7 @@ def message_content(message: dict[str, object]) -> dict[str, object]:
         ("audio", ("title", "performer", "file_name")),
         ("document", ("file_name", "mime_type")),
         ("invoice", ("title", "description")),
+        ("contact", ("first_name", "last_name")),
     ):
         value = message.get(field)
         if isinstance(value, dict):
@@ -147,9 +149,7 @@ async def model_input(fetcher: Fetch, token: str, message: dict[str, object]) ->
     except TelegramError:
         logging.getLogger(__name__).warning("Biography lookup failed; classifying with unknown biography")
     return {
-        "nickname": " ".join(
-            sender[field] for field in ("first_name", "last_name") if isinstance(sender.get(field), str)
-        ),
+        "nickname": display_name(sender),
         "bio": bio,
         "message": message_content(message),
     }

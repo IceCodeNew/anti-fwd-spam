@@ -69,7 +69,7 @@ The following map describes new supergroup messages after command handling. A is
                │
                │ no report
                ▼
-       Text/caption regex ── match ──────────────────────────────────▶ Action 1 on A
+       Text/caption/contact-name regex ── match ─────────────────────▶ Action 1 on A
                │ no match
                ▼
        Jev classification ── score reaches threshold ────────────────▶ Action 1 on A
@@ -81,7 +81,7 @@ The following map describes new supergroup messages after command handling. A is
 
 Source matching uses `via_bot.id` and visible bot origins in `forward_origin.sender_user`. It does not inspect copied text or hidden forwarding origins. All matched sources are handled independently. See `parse_update` in [policy.py](../src/anti_fwd_spam/policy.py).
 
-The local regexes search anywhere in the current text or caption. Jev evaluates the nickname, available biography, and message content of new messages only when local rules did not match. Exact patterns and model settings belong to `SPAM_PATTERNS` in [policy.py](../src/anti_fwd_spam/policy.py) and `SPAM_THRESHOLD` / `MODEL_PROVIDERS` in [model.py](../src/anti_fwd_spam/model.py).
+The local regexes search anywhere in the current text, caption, or shared contact card's name. Jev evaluates the nickname, available biography, and message content of new messages only when local rules did not match. Exact patterns and model settings belong to `SPAM_PATTERNS` in [policy.py](../src/anti_fwd_spam/policy.py) and `SPAM_THRESHOLD` / `MODEL_PROVIDERS` in [model.py](../src/anti_fwd_spam/model.py).
 
 ### Action 1: delete the current message and permanently mute
 

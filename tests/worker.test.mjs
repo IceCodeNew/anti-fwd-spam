@@ -681,6 +681,8 @@ test('user rejects malformed updates: Given invalid identifiers or cross-chat re
     { message: { ...target, forward_origin: { type: [] } } },
     report({ ...target, chat: { ...chat, id: -999 } }),
     report({ ...target, message_id: false }),
+    { update_id: -1, message: target },
+    { update_id: 1, message: { ...target, chat: { id: 22, type: 'private' }, message_id: 0 } },
   ];
   telegram.send(target);
   for (const update of invalid) assert.equal((await dispatch(update)).status, 400, JSON.stringify(update));

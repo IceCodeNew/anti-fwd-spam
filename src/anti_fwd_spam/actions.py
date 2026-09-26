@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
     from .evidence import ReportStore, StoredReport
+    from .policy import TelegramUpdate
     from .telegram import Fetch
 
 ADMIN_STATUSES = frozenset({"creator", "administrator"})
@@ -132,8 +133,7 @@ class Actions:
     async def delete_history_and_ban(
         self,
         target: BanTarget,
-        update: dict[str, object],
-        raw_json: str,
+        update: TelegramUpdate,
         *,
         subject_id: int,
         remove_report: bool = True,
@@ -145,12 +145,10 @@ class Actions:
         the triggering message and only delete this account's indexed history.
         Command handlers can own report removal after acknowledging multiple subjects.
         """
-        update_id = update.get("update_id")
-        message = update.get("message", update.get("edited_message"))
-        if type(update_id) is not int or update_id < 0 or not isinstance(message, dict):
+        if update.update_id is None:
             return AppResponse(400, "invalid moderation update")
-        key = (self.bot_id, update_id)
-        saved = await self.store.save(key, raw_json, int(time.time()), subject_id)
+        key = (self.bot_id, update.update_id)
+        saved = await self.store.save(key, update.raw_json, int(time.time()), subject_id)
         if saved.status is not None:
             return AppResponse(saved.status, saved.body)
         if saved.ban_claimed and saved.moderation_result is None:
@@ -161,7 +159,7 @@ class Actions:
                 needs_confirmation=True,
             )
         try:
-            reporter_id = user_id(message)
+            reporter_id = user_id(update.message)
             authorized = (
                 target.message_id is None
                 or saved.moderation_result is not None

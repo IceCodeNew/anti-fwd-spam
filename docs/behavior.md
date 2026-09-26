@@ -4,7 +4,7 @@ This document defines the bot's functional contract: accepted inputs, authorizat
 
 ## Inputs and reporting authorization
 
-Telegram sends updates to `POST /webhook`. The Worker verifies `TELEGRAM_WEBHOOK_SECRET` before parsing the update. The scheduled trigger is a separate entrypoint for cleanup and model retries.
+Telegram sends updates to `POST /webhook`. The Worker verifies `TELEGRAM_WEBHOOK_SECRET` before parsing the update. `parse_update` in [policy.py](../src/anti_fwd_spam/policy.py) then validates every field that routing uses, one time, and returns a `TelegramUpdate`. An update with a malformed message gets HTTP 400 and no moderation. The scheduled trigger is a separate entrypoint for cleanup and model retries.
 
 ```diagram
 ┌──────────────────────────────┐
@@ -79,7 +79,7 @@ The following map describes new supergroup messages after command handling. A is
 * If A already matches the account blacklist, reuse A's Action 2 result.
 ```
 
-Source matching uses `via_bot.id` and visible bot origins in `forward_origin.sender_user`. It does not inspect copied text or hidden forwarding origins. All matched sources are handled independently. See `source_ids` in [policy.py](../src/anti_fwd_spam/policy.py).
+Source matching uses `via_bot.id` and visible bot origins in `forward_origin.sender_user`. It does not inspect copied text or hidden forwarding origins. All matched sources are handled independently. See `parse_update` in [policy.py](../src/anti_fwd_spam/policy.py).
 
 The local regexes search anywhere in the current text or caption. Jev evaluates the nickname, available biography, and message content of new messages only when local rules did not match. Exact patterns and model settings belong to `SPAM_PATTERNS` in [policy.py](../src/anti_fwd_spam/policy.py) and `SPAM_THRESHOLD` / `MODEL_PROVIDERS` in [model.py](../src/anti_fwd_spam/model.py).
 
@@ -152,7 +152,7 @@ Webhook and scheduled retries are distinct. Each scheduled run claims and comple
 
 ## Add a reporting entrypoint
 
-A reporting plugin is an in-process `ReportingPlugin` with a diagnostic name, a side-effect-free `matches(message)` function, and an async `handle(update, message, raw_json)` function. `Reporting.dispatch` runs only the first matching plugin. It checks authorization before invoking the handler and maps storage and Telegram errors to retry responses.
+A reporting plugin is an in-process `ReportingPlugin` with a diagnostic name, a side-effect-free `matches(update)` function, and an async `handle(update)` function. Both functions receive the validated `TelegramUpdate`, which also holds the message and the raw JSON. `Reporting.dispatch` runs only the first matching plugin. It checks authorization before invoking the handler and maps storage and Telegram errors to retry responses.
 
 Register the plugin in `Moderator.command_plugins` for commands handled before filtering, or `Moderator.reply_plugins` for group reports handled after blacklist checks. Both collections are bound in `Moderator.__init__` in [moderation.py](../src/anti_fwd_spam/moderation.py). Matchers must not resolve usernames, write records, or moderate messages. Those operations belong in the authorized handler. Call handlers through the dispatcher, never from a separate route.
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
-from .policy import MAX_TELEGRAM_ID, SUPPORTED_CHAT_TYPES
+from .policy import MAX_TELEGRAM_ID, SUPPORTED_CHAT_TYPES, reply_target
 from .telegram import TelegramError, call_method
 
 if TYPE_CHECKING:
@@ -37,8 +37,8 @@ def source_argument(message: dict[str, object], bot_username: str) -> str | None
 
 def replied_source(message: dict[str, object]) -> int | None:
     """Read only the inline bot attached to the replied-to message."""
-    target = message.get("reply_to_message")
-    via_bot = target.get("via_bot") if isinstance(target, dict) else None
+    target = reply_target(message)
+    via_bot = target.get("via_bot") if target is not None else None
     if not isinstance(via_bot, dict) or via_bot.get("is_bot") is not True:
         return None
     identifier = via_bot.get("id")

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 
@@ -26,6 +27,12 @@ def matches_spam_pattern(message: dict[str, object]) -> bool:
         if isinstance(text := message.get(field), str)
         for pattern in SPAM_PATTERNS
     )
+
+
+def reply_target(message: dict[str, object]) -> dict[str, object] | None:
+    """Return an explicit reply, not the topic root that Telegram attaches to forum topic messages."""
+    target = message.get("reply_to_message")
+    return target if isinstance(target, dict) and "forum_topic_created" not in target else None
 
 
 class ConfigError(ValueError):
@@ -105,21 +112,39 @@ def _message_sources(message: dict[str, object]) -> frozenset[int]:
     return frozenset(sources)
 
 
-def source_ids(update: object) -> frozenset[int]:
-    """Validate consumed fields and extract explicit bot provenance in groups."""
+@dataclass(frozen=True, slots=True)
+class TelegramUpdate:
+    """A validated message update with its raw JSON and explicit bot provenance."""
+
+    raw_json: str
+    update_id: int | None
+    message: dict[str, object]
+    chat_id: int
+    chat_type: str
+    message_id: int
+    sent_at: int | None
+    edited: bool
+    sources: frozenset[int]
+
+    @property
+    def in_group(self) -> bool:
+        """Return True for basic groups and supergroups."""
+        return self.chat_type in GROUP_CHAT_TYPES
+
+
+def parse_update(raw_json: str) -> TelegramUpdate | None:
+    """Validate every field that routing consumes; return None for updates without a message."""
+    update = json.loads(raw_json)
     if not isinstance(update, dict):
         message = "update must be an object"
         raise TypeError(message)
-
-    has_message = "message" in update
-    has_edited_message = "edited_message" in update
-    if has_message and has_edited_message:
+    if "message" in update and "edited_message" in update:
         message = "update must contain at most one supported message"
         raise ValueError(message)
-    if not has_message and not has_edited_message:
-        return frozenset()
-
-    raw_message = update.get("message" if has_message else "edited_message")
+    edited = "edited_message" in update
+    if not edited and "message" not in update:
+        return None
+    raw_message = update["edited_message" if edited else "message"]
     if not isinstance(raw_message, dict):
         message = "message must be an object"
         raise TypeError(message)
@@ -131,17 +156,26 @@ def source_ids(update: object) -> frozenset[int]:
     if not isinstance(chat_type, str) or chat_type not in SUPPORTED_CHAT_TYPES:
         message = "message.chat.type is invalid"
         raise ValueError(message)
-    if chat_type not in GROUP_CHAT_TYPES:
-        return frozenset()
-
-    _telegram_id(chat.get("id"), allow_negative=True)
-    _telegram_id(raw_message.get("message_id"), allow_negative=False)
-    sources = _message_sources(raw_message)
     update_id = update.get("update_id")
-    if sources and (type(update_id) is not int or update_id < 0):
+    if update_id is not None and (type(update_id) is not int or update_id < 0):
         message = "update.update_id is invalid"
         raise ValueError(message)
-    return sources
+    sources = _message_sources(raw_message) if chat_type in GROUP_CHAT_TYPES else frozenset()
+    if sources and update_id is None:
+        message = "update.update_id is required for a source match"
+        raise ValueError(message)
+    sent_at = raw_message.get("date")
+    return TelegramUpdate(
+        raw_json=raw_json,
+        update_id=update_id,
+        message=raw_message,
+        chat_id=_telegram_id(chat.get("id"), allow_negative=True),
+        chat_type=chat_type,
+        message_id=_telegram_id(raw_message.get("message_id"), allow_negative=False),
+        sent_at=sent_at if type(sent_at) is int else None,
+        edited=edited,
+        sources=sources,
+    )
 
 
 def _required_string(name: str, value: object, *, maximum: int) -> str:

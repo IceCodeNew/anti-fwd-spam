@@ -10,6 +10,9 @@ export const telegram = new Telegram();
 export const model = { enabled: false, probability: 0, profile: null, state: null, response: null };
 export let runtime, database;
 let runtimeOptions;
+let customBindings = false;
+const defaultBindings = () => ({ ...runtimeOptions.bindings,
+  ...(model.enabled ? { EXPERIENTIAL_API_KEY: 'test-model-key' } : {}) });
 const secret = 'test-secret';
 export const headers = { 'content-type': 'application/json', 'x-telegram-bot-api-secret-token': secret };
 
@@ -63,8 +66,7 @@ before(async () => {
       return telegram.fetch(request);
     },
   };
-  runtime = new Miniflare(convertV4MiniflareOptions({ ...runtimeOptions, bindings: { ...runtimeOptions.bindings,
-    ...(model.enabled ? { EXPERIENTIAL_API_KEY: 'test-model-key' } : {}) } }));
+  runtime = new Miniflare(convertV4MiniflareOptions({ ...runtimeOptions, bindings: defaultBindings() }));
   database = await runtime.getD1Database('REPORTS');
   for (const file of (await readdir('migrations')).filter(path => path.endsWith('.sql')).sort()) {
     for (const sql of (await readFile(`migrations/${file}`, 'utf8')).split(';').filter(sql => sql.trim())) {
@@ -74,6 +76,12 @@ before(async () => {
 });
 after(async () => { await runtime?.dispose(); });
 beforeEach(async () => {
+  if (customBindings) {
+    // Each scenario starts from the file's default configuration.
+    await runtime.setOptions(convertV4MiniflareOptions({ ...runtimeOptions, bindings: defaultBindings() }));
+    database = await runtime.getD1Database('REPORTS');
+    customBindings = false;
+  }
   telegram.reset();
   Object.assign(model, { probability: 0, profile: null, state: null, response: null });
   await database.prepare('DELETE FROM reports').run();
@@ -87,7 +95,8 @@ beforeEach(async () => {
 afterEach(() => { assert.deepEqual(telegram.violations, []); });
 
 export async function setBindings(bindings) {
-  const configured = Object.fromEntries(Object.entries({ ...runtimeOptions.bindings, ...bindings })
+  customBindings = true;
+  const configured = Object.fromEntries(Object.entries({ ...defaultBindings(), ...bindings })
     .filter(([, value]) => value !== undefined));
   await runtime.setOptions(convertV4MiniflareOptions({ ...runtimeOptions, bindings: configured }));
   database = await runtime.getD1Database('REPORTS');

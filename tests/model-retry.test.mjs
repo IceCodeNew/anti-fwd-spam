@@ -113,28 +113,35 @@ test('user: Given a sender promoted while model deletion is pending, When Telegr
   assert.equal(telegram.canSend(22), true);
 });
 
-test('user: Given a spam decision awaiting a permission check, When the message is edited, Then the cancelled task neither deletes nor mutes', async () => {
-  const started = Promise.withResolvers();
-  const release = Promise.withResolvers();
+test('user: Given deleted spam, When the task ownership check fails once before muting, Then the scheduled retry mutes its sender', async () => {
   model.probability = 1;
   telegram.send(message());
   telegram.faults.set('getChatMember:22', async () => {
-    started.resolve();
-    await release.promise;
+    if (!telegram.has(81)) await database.prepare('ALTER TABLE model_tasks RENAME TO unavailable_tasks').run();
     return Response.json({ ok: true, result: { status: 'member', user: message().from } });
   });
-  const delivery = dispatch({ update_id: 1, message: message() });
-  await started.promise;
   try {
-    const edited = { ...message(), text: 'Ordinary conversation' };
-    telegram.send(edited);
-    await dispatch({ update_id: 2, edited_message: edited });
+    assert.equal((await dispatch({ update_id: 1, message: message() })).status, 503);
   } finally {
-    release.resolve();
+    await database.prepare('ALTER TABLE unavailable_tasks RENAME TO model_tasks').run();
   }
-  await delivery;
-  assert.equal(telegram.has(81), true);
+  telegram.faults.clear();
+  assert.equal(telegram.has(81), false);
   assert.equal(telegram.canSend(22), true);
+  await tick((await task()).due_at);
+  assert.equal(telegram.canSend(22), false);
+  assert.equal(telegram.canJoin(22), true);
+});
+
+test('user: Given a disconnected model service, When the retry becomes due, Then the recovered model removes the spam', async () => {
+  model.response = () => { throw new TypeError('network connection lost'); };
+  telegram.send(message());
+  assert.equal((await dispatch({ update_id: 1, message: message() })).status, 200);
+  assert.equal(telegram.has(81), true);
+  model.response = null;
+  model.probability = 1;
+  await tick((await task()).due_at);
+  assert.equal(telegram.has(81), false);
 });
 
 test('user: Given model moderation cancelled before muting, When a later edit matches a blocked source, Then source filtering can still mute the sender', async () => {
@@ -160,6 +167,7 @@ test('user: Given model moderation cancelled before muting, When a later edit ma
     release.resolve();
   }
   await delivery;
+  assert.equal(telegram.has(81), true);
   assert.equal(telegram.canSend(22), true);
   const sourced = { ...message(), via_bot: { id: 273234066, is_bot: true, first_name: 'Source' } };
   telegram.send(sourced);
@@ -342,9 +350,10 @@ test('user: Given a temporary failure then a spam decision, When overlapping cro
   assert.equal((await task()).input_json, null);
 });
 
-test('user: Given two due messages, When one cron runs, Then only one message is processed', async () => {
+test('user: Given four due messages, When one cron runs, Then three messages are processed and the fourth waits for the next run', async () => {
+  const ids = [81, 82, 83, 84];
   model.response = new Response('unavailable', { status: 503 });
-  for (const id of [81, 82]) {
+  for (const id of ids) {
     telegram.send(message(id));
     await dispatch({ update_id: id, message: message(id) });
   }
@@ -352,10 +361,9 @@ test('user: Given two due messages, When one cron runs, Then only one message is
   model.response = null;
   model.probability = 1;
   await tick(due);
-  assert.equal([telegram.has(81), telegram.has(82)].filter(Boolean).length, 1);
+  assert.equal(ids.filter(id => telegram.has(id)).length, 1);
   await tick(due + 60);
-  assert.equal(telegram.has(81), false);
-  assert.equal(telegram.has(82), false);
+  assert.equal(ids.filter(id => telegram.has(id)).length, 0);
 });
 
 test('user: Given a reclaimed task, When an earlier worker returns a stale spam answer, Then it cannot override the current decision', async () => {

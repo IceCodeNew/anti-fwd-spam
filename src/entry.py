@@ -17,6 +17,7 @@ from anti_fwd_spam.policy import Config, ConfigError
 from anti_fwd_spam.tasks import ModelTasks
 
 MAX_UPDATE_BYTES = 1_048_576
+SCHEDULED_TASKS_PER_RUN = 3
 
 
 def _environment_string(env: object, name: str, *, default: str | None = None) -> str | None:
@@ -30,7 +31,7 @@ def _environment_string(env: object, name: str, *, default: str | None = None) -
 class Default(WorkerEntrypoint):
     """Serve authenticated Telegram webhook requests."""
 
-    async def fetch(self, request: Request) -> Response:  # noqa: C901, PLR0911
+    async def fetch(self, request: Request) -> Response:
         """Validate one request and dispatch it to the pure Python application."""
         try:
             config = self._get_config()
@@ -44,28 +45,9 @@ class Default(WorkerEntrypoint):
             or not all(character.isalnum() or character == "_" for character in bot_username)
         ):
             return _response(AppResponse(500, "invalid BOT_USERNAME configuration"))
-
-        path = urlsplit(request.url).path
-        if path != "/webhook":
-            return _response(AppResponse(404, "not found"))
-        if request.method is not HTTPMethod.POST:
-            return _response(AppResponse(405, "method not allowed"))
-
-        secret = request.headers.get("x-telegram-bot-api-secret-token")
-        if secret is None or not secret.isascii() or not hmac.compare_digest(secret, config.webhook_secret):
-            return _response(AppResponse(401, "unauthorized"))
-
-        declared_length = request.headers.get("content-length")
-        if declared_length is not None:
-            try:
-                parsed_length = int(declared_length)
-                if parsed_length < 0:
-                    return _response(AppResponse(400, "invalid content-length"))
-                if parsed_length > MAX_UPDATE_BYTES:
-                    return _response(AppResponse(413, "update too large"))
-            except ValueError:
-                return _response(AppResponse(400, "invalid content-length"))
-
+        rejection = _reject_request(request, config.webhook_secret)
+        if rejection is not None:
+            return _response(rejection)
         try:
             body = await _read_bounded_body(request, MAX_UPDATE_BYTES)
         except ValueError:
@@ -99,7 +81,7 @@ class Default(WorkerEntrypoint):
         )
 
     async def scheduled(self, controller: object, _env: object, _ctx: object) -> None:
-        """Expire retained evidence and process one due model task."""
+        """Expire retained evidence and complete up to SCHEDULED_TASKS_PER_RUN due model tasks in order."""
         # Cloudflare supplies scheduledTime dynamically on the controller.
         now = int(getattr(controller, "scheduledTime") // 1000)  # noqa: B009
         now = max(now, int(time.time()))
@@ -109,10 +91,39 @@ class Default(WorkerEntrypoint):
         tasks = ModelTasks(store, int(config.bot_token.split(":", 1)[0]))
         await tasks.expire(now)
         models = self._get_models()
-        if models:
+        if not models:
+            return
+        for _ in range(SCHEDULED_TASKS_PER_RUN):
+            # Each lease starts when its task is claimed, not when the run started.
+            now = max(now, int(time.time()))
             task = await tasks.claim(now)
-            if task is not None:
-                await tasks.run(task, fetch, config.bot_token, models, now)
+            if task is None:
+                return
+            await tasks.run(task, fetch, config.bot_token, models, now)
+
+
+def _reject_request(request: Request, webhook_secret: str) -> AppResponse | None:
+    """Reject requests that are not authenticated webhook deliveries of an acceptable size."""
+    if urlsplit(request.url).path != "/webhook":
+        return AppResponse(404, "not found")
+    if request.method is not HTTPMethod.POST:
+        return AppResponse(405, "method not allowed")
+    secret = request.headers.get("x-telegram-bot-api-secret-token")
+    if secret is None or not secret.isascii() or not hmac.compare_digest(secret, webhook_secret):
+        return AppResponse(401, "unauthorized")
+    return _reject_declared_length(request.headers.get("content-length"))
+
+
+def _reject_declared_length(declared_length: str | None) -> AppResponse | None:
+    if declared_length is None:
+        return None
+    try:
+        length = int(declared_length)
+    except ValueError:
+        return AppResponse(400, "invalid content-length")
+    if length < 0:
+        return AppResponse(400, "invalid content-length")
+    return AppResponse(413, "update too large") if length > MAX_UPDATE_BYTES else None
 
 
 async def _read_bounded_body(request: Request, maximum: int) -> bytes:

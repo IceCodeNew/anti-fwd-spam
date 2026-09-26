@@ -135,7 +135,7 @@ class Actions:
         update: dict[str, object],
         raw_json: str,
         *,
-        subject_id: int = 0,
+        subject_id: int,
         remove_report: bool = True,
     ) -> AppResponse:
         """Persist and resume a ban, target deletion and indexed history cleanup.
@@ -190,18 +190,15 @@ class Actions:
         report_key: tuple[int, int],
         saved: StoredReport,
         *,
-        subject_id: int = 0,
+        subject_id: int,
     ) -> AppResponse:
         chat_id, identifier = target.chat_id, target.user_id
         response = await self._resume_ban(chat_id, identifier, report_key, saved, subject_id)
-        if target.message_id is not None and (response is None or response.sender_banned):
-            banned = response is not None and response.sender_banned
+        # A report deletes its target unless the target is already removed or the ban waits for a retry.
+        ban = response or AppResponse(200, "ban skipped")
+        if target.message_id is not None and ban.status == HTTPStatus.OK and not ban.target_removed:
             deletion = await self._delete_target(chat_id, target.message_id)
-            response = replace(
-                deletion,
-                body=deletion.body + ("; banned" if banned else "; ban skipped"),
-                sender_banned=banned,
-            )
+            response = replace(deletion, body=f"{deletion.body}; {ban.body}", sender_banned=ban.sender_banned)
         if response is None:
             return AppResponse(200, "account moderation skipped; protected administrator")
         if response.target_removed:
@@ -226,6 +223,9 @@ class Actions:
         ):
             # Persisted records from older releases inferred removal from a successful ban.
             return AppResponse(200, "banned", sender_banned=True)
+        if saved.moderation_result == "ban failed":
+            # Telegram rejected the ban permanently; only a pending target deletion remains.
+            return AppResponse(200, "ban failed")
         if saved.moderation_result is not None:
             return AppResponse(
                 200,
@@ -306,6 +306,8 @@ class Actions:
         except TelegramError as error:
             if claimed and error.rejected:
                 await self.store.release_ban(*report_key, subject_id)
+            if not error.retryable:
+                await self.store.remember_moderation(*report_key, "ban failed", subject_id)
             return AppResponse(503 if error.retryable else 200, "ban failed")
         return AppResponse(200, "banned", sender_banned=True)
 

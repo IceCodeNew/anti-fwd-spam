@@ -9,7 +9,7 @@ from http import HTTPStatus
 from typing import TYPE_CHECKING
 
 from .actions import Actions
-from .evidence import MESSAGE_WINDOW_SECONDS, RETENTION_SECONDS, EvidenceError
+from .evidence import MESSAGE_WINDOW_SECONDS, RETENTION_SECONDS, storage_errors
 from .model import SPAM_THRESHOLD, ModelRetryError, spam_probability
 
 if TYPE_CHECKING:
@@ -52,7 +52,7 @@ class ModelTasks:
     ) -> bool:
         """Deduplicate deliveries; an edit also leaves a tombstone before any original delivery."""
         phase = "done" if state is None else "classify"
-        try:
+        with storage_errors():
             row = (
                 await self.database.prepare(
                     "INSERT INTO model_tasks "
@@ -74,13 +74,11 @@ class ModelTasks:
                 )
                 .first()
             )
-        except Exception as error:
-            raise EvidenceError from error
         return row is not None
 
     async def claim(self, now: int, target: tuple[int, int] | None = None) -> Task | None:
         """Atomically claim one due stage and charge an attempt before the external request."""
-        try:
+        with storage_errors():
             row = (
                 await self.database.prepare(
                     "UPDATE model_tasks SET attempts = attempts + 1, generation = generation + 1, lease_until = ?, "
@@ -116,8 +114,6 @@ class ModelTasks:
                 int(row.attempts),
                 int(row.generation),
             )
-        except Exception as error:
-            raise EvidenceError from error
 
     async def finish(
         self, task: Task, phase: str, now: int, *, retry: bool = False, target: dict[str, object] | None = None
@@ -126,7 +122,7 @@ class ModelTasks:
         if retry and task.attempts > len(RETRY_DELAYS):
             phase, retry = "done", False
         due = now + RETRY_DELAYS[task.attempts - 1] if retry else now
-        try:
+        with storage_errors():
             row = (
                 await self.database.prepare(
                     "UPDATE model_tasks SET phase = ?, input_json = CASE WHEN ? THEN input_json ELSE ? END, "
@@ -151,8 +147,6 @@ class ModelTasks:
                 )
                 .first()
             )
-        except Exception as error:
-            raise EvidenceError from error
         return row is not None
 
     async def expire(self, now: int) -> None:
@@ -208,7 +202,7 @@ class ModelTasks:
         await self.finish(task, "delete" if retry else "done", max(now, int(time.time())), retry=retry)
 
     async def _owns(self, task: Task, now: int) -> bool:
-        try:
+        with storage_errors():
             row = await (
                 self.database.prepare(
                     "SELECT 1 FROM model_tasks WHERE bot_id = ? AND chat_id = ? AND message_id = ? "
@@ -217,8 +211,6 @@ class ModelTasks:
                 .bind(self.bot_id, task.chat_id, task.message_id, task.generation, now, now, now)
                 .first()
             )
-        except Exception as error:
-            raise EvidenceError from error
         return row is not None
 
     async def _target(self, task: Task) -> dict[str, object] | None:
@@ -227,7 +219,7 @@ class ModelTasks:
         if isinstance(target, dict):
             return target
         # Pending tasks created before sender snapshots can recover identity from the index.
-        try:
+        with storage_errors():
             row = await (
                 self.database.prepare(
                     "SELECT sender_id FROM recent_messages WHERE bot_id = ? AND chat_id = ? AND message_id = ?"
@@ -235,8 +227,6 @@ class ModelTasks:
                 .bind(self.bot_id, task.chat_id, task.message_id)
                 .first()
             )
-        except Exception as error:
-            raise EvidenceError from error
         if row is None:
             return None
         return {

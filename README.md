@@ -112,6 +112,8 @@ Using an identity listed in `REPORTER_IDS`, choose **Reply** on the spam message
 
 In a supergroup, a report from an administrator or an authorized group/channel identity deletes the target message, bans its sender, and clears eligible indexed history. Human and bot accounts follow the same policy, with group owners and administrators protected from bans. The bot removes the report after cleanup succeeds. A listed ordinary member's report saves evidence without deleting messages or restricting anyone.
 
+If Telegram rejects the ban, for example because the bot lacks ban permission, the bot still deletes the target message. In a forum topic, reply to the spam message itself; a mention that replies to nothing does not report the topic's creator. The bot moderates reports and `/bs` commands from unlisted identities like any other message.
+
 Confirmed bans add the sender to the account blacklist. When that account posts in another supergroup using this bot, the bot bans it there and clears eligible indexed messages.
 
 For an inline message sent by A through bot B, this reply report targets A only. It does not register or punish B.
@@ -159,9 +161,9 @@ Then lift any mute or ban in each affected group's Telegram member settings. Rem
 
 ## Automatic text filtering
 
-Local rules check new group messages before Jev, including messages from bots, without an API key. They search anywhere in text or captions for campaign markers and runs of identical money-bag or red-circle emojis, allowing whitespace between emojis. Surrounding text or other emojis do not prevent a match. The exact patterns are `SPAM_PATTERNS` in [policy.py](src/anti_fwd_spam/policy.py). The contents of replied-to messages and individual sensitive words do not trigger these rules.
+Local rules check new and edited group messages before Jev, including messages from bots, without an API key. They search anywhere in text or captions for campaign markers and runs of identical money-bag or red-circle emojis, allowing whitespace between emojis. Surrounding text or other emojis do not prevent a match. The exact patterns are `SPAM_PATTERNS` in [policy.py](src/anti_fwd_spam/policy.py). The contents of replied-to messages and individual sensitive words do not trigger these rules.
 
-A match deletes the current message and permanently mutes a human sender in a supergroup, preserving earlier messages and both blacklists. Bot senders are not muted. Group owners and administrators are protected. Private messages and edits skip this check.
+A match deletes the current message and permanently mutes a human sender in a supergroup, preserving earlier messages and both blacklists. Bot senders are not muted. Group owners and administrators are protected. Private messages skip this check.
 
 ## Optional: enable Jev spam checks
 

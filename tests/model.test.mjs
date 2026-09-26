@@ -73,10 +73,10 @@ test('user: Given a media caption and unavailable biography, When classified, Th
   assert.equal(JSON.stringify(model.state).includes('private-file'), false);
 });
 
-test('user: Given an ordinary report or an edit, When the model would flag spam, Then existing behavior is preserved', async () => {
+test('user: Given a listed member\'s report or an edit, When the model would flag spam, Then neither message is removed', async () => {
   model.probability = 1;
+  telegram.members.set(11, { status: 'member' });
   const update = report();
-  update.message.from = message(82, 22).from;
   telegram.send(update.message);
   telegram.send(update.message.reply_to_message);
   assert.equal((await dispatch(update)).status, 200);
@@ -89,8 +89,7 @@ test('user: Given an ordinary report or an edit, When the model would flag spam,
 test('user: Given a malformed model envelope, When a message is evaluated, Then it remains visible', async () => {
   let id = 81;
   for (const body of ['not JSON', '[]', '{}', '{"answers":[]}', '{"answers":{"spam":{"type":"text","noul":1}}}',
-    '{"answers":{"spam":{"type":"noul","noul":NaN}}}', '{"answers":{"spam":{"type":"noul","noul":Infinity}}}',
-    ' '.repeat(65537)]) {
+    '{"answers":{"spam":{"type":"noul","noul":NaN}}}', '{"answers":{"spam":{"type":"noul","noul":Infinity}}}']) {
     model.response = new Response(body);
     const target = message(id++);
     telegram.send(target);

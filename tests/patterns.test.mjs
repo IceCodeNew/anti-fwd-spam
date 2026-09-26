@@ -17,6 +17,7 @@ for (const text of [campaign, flood, '@example_bot campaign_2', '💰'.repeat(4)
       const previous = message(80);
       telegram.send(previous);
       await dispatch({ update_id: 1, message: previous });
+      model.state = null;
       const target = message();
       delete target.text;
       target[field] = text;
@@ -30,20 +31,17 @@ for (const text of [campaign, flood, '@example_bot campaign_2', '💰'.repeat(4)
       assert.equal((await database.prepare('SELECT COUNT(*) AS n FROM blacklisted_users').first()).n, 0);
       assert.deepEqual((await database.prepare('SELECT source_id FROM blacklisted_sources').all()).results,
         [{ source_id: 273234066 }]);
+      assert.equal(model.state, null);
     });
   }
 }
 
 test('user: Given no model key, When a screenshot pattern arrives, Then local filtering still deletes it and mutes its sender', async () => {
   await setBindings({ EXPERIENTIAL_API_KEY: undefined });
-  try {
-    telegram.send({ ...message(), text: campaign });
-    assert.equal((await dispatch({ update_id: 1, message: { ...message(), text: campaign } })).status, 200);
-    assert.equal(telegram.has(81), false);
-    assert.equal(telegram.canSend(22), false);
-  } finally {
-    await setBindings({ EXPERIENTIAL_API_KEY: 'test-model-key' });
-  }
+  telegram.send({ ...message(), text: campaign });
+  assert.equal((await dispatch({ update_id: 1, message: { ...message(), text: campaign } })).status, 200);
+  assert.equal(telegram.has(81), false);
+  assert.equal(telegram.canSend(22), false);
 });
 
 test('user: Given a bot sending the screenshot flood, When received, Then its current message disappears with earlier messages intact', async () => {
@@ -54,6 +52,7 @@ test('user: Given a bot sending the screenshot flood, When received, Then its cu
   assert.equal(telegram.has(81), false);
   assert.equal(telegram.has(80), true);
   assert.equal(telegram.canJoin(22), true);
+  assert.equal(telegram.canSend(22), true);
 });
 
 for (const status of ['administrator', 'creator', 'kicked']) {
@@ -109,11 +108,24 @@ test('user: Given a reply quoting the screenshot flood, When its own text is ord
   assert.equal(telegram.canSend(22), true);
 });
 
-test('user: Given a private message or an edit, When its text matches a local pattern, Then new group-message filtering leaves it alone', async () => {
+test('user: Given a group message, When it is edited to match a local pattern, Then the edited message is deleted and its sender muted', async () => {
+  model.probability = 1;
+  const ordinary = message(80);
+  telegram.send(ordinary);
+  assert.equal((await dispatch({ update_id: 1, edited_message: ordinary })).status, 200);
+  assert.equal(telegram.has(80), true);
+  assert.equal(model.state, null);
   const target = { ...message(), text: campaign };
   telegram.send(target);
-  assert.equal((await dispatch({ update_id: 1, edited_message: target })).status, 200);
-  assert.equal(telegram.has(81), true);
+  assert.equal((await dispatch({ update_id: 2, edited_message: target })).status, 200);
+  assert.equal(telegram.has(81), false);
+  assert.equal(telegram.has(80), true);
+  assert.equal(telegram.canSend(22), false);
+  assert.equal(telegram.canJoin(22), true);
+});
+
+test('user: Given a private message, When its text matches a local pattern, Then group filtering leaves it alone', async () => {
+  const target = { ...message(), text: campaign };
   const privateMessage = { ...target, chat: { id: 22, type: 'private' } };
   telegram.send(privateMessage);
   assert.equal((await dispatch({ update_id: 2, message: privateMessage })).status, 200);

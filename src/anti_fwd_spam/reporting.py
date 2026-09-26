@@ -32,7 +32,10 @@ class Reporting:
     async def dispatch(
         self, plugins: tuple[ReportingPlugin, ...], update: dict[str, object], raw_json: str
     ) -> AppResponse | None:
-        """Run the first matching plugin after authorization, or leave the update unhandled."""
+        """Run the first matching plugin after authorization.
+
+        Unmatched and unauthorized updates return None, so automatic moderation still applies to them.
+        """
         message = update.get("message", update.get("edited_message"))
         if not isinstance(message, dict):
             return None
@@ -42,7 +45,7 @@ class Reporting:
             sender_chat = message.get("sender_chat")
             identifier = sender_chat.get("id") if isinstance(sender_chat, dict) else user_id(message)
             if type(identifier) is not int or identifier not in self.reporter_ids:
-                return AppResponse(200, f"{plugin.name} ignored; reporter not allowed")
+                return None
             try:
                 return await plugin.handle(update, message, raw_json)
             except EvidenceError:

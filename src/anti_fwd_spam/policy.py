@@ -9,7 +9,8 @@ MAX_TELEGRAM_ID = (1 << 52) - 1
 MAX_CONFIG_LENGTH = 4_096
 MAX_ID_ENTRIES = 500
 TOKEN_PART_COUNT = 2
-SUPPORTED_CHAT_TYPES = frozenset({"group", "supergroup", "private", "channel"})
+GROUP_CHAT_TYPES = frozenset({"group", "supergroup"})
+SUPPORTED_CHAT_TYPES = GROUP_CHAT_TYPES | {"private", "channel"}
 SUPPORTED_FORWARD_ORIGINS = frozenset({"user", "hidden_user", "chat", "channel"})
 SPAM_PATTERNS = (
     re.compile(r"@[A-Za-z0-9_]{5,32}\s+campaign_[0-9]+"),
@@ -37,7 +38,7 @@ class Config:
 
     bot_token: str
     webhook_secret: str
-    reporter_ids: frozenset[int] = frozenset()
+    reporter_ids: frozenset[int]
 
     @classmethod
     def from_values(
@@ -75,7 +76,7 @@ class Config:
         return cls(
             token,
             secret,
-            _parse_ids("REPORTER_IDS", reporter_ids, allow_negative=True),
+            _parse_reporter_ids(reporter_ids),
         )
 
 
@@ -130,7 +131,7 @@ def source_ids(update: object) -> frozenset[int]:
     if not isinstance(chat_type, str) or chat_type not in SUPPORTED_CHAT_TYPES:
         message = "message.chat.type is invalid"
         raise ValueError(message)
-    if chat_type not in {"group", "supergroup"}:
+    if chat_type not in GROUP_CHAT_TYPES:
         return frozenset()
 
     _telegram_id(chat.get("id"), allow_negative=True)
@@ -150,24 +151,24 @@ def _required_string(name: str, value: object, *, maximum: int) -> str:
     return value
 
 
-def _parse_ids(name: str, value: object, *, allow_negative: bool = False) -> frozenset[int]:
+def _parse_reporter_ids(value: object) -> frozenset[int]:
     if not isinstance(value, str) or len(value) > MAX_CONFIG_LENGTH:
-        message = f"{name} must be a string no longer than {MAX_CONFIG_LENGTH} characters"
+        message = f"REPORTER_IDS must be a string no longer than {MAX_CONFIG_LENGTH} characters"
         raise ConfigError(message)
     entries = [entry.strip() for entry in value.split(",") if entry.strip()]
     if len(entries) > MAX_ID_ENTRIES:
-        message = f"{name} supports at most {MAX_ID_ENTRIES} entries"
+        message = f"REPORTER_IDS supports at most {MAX_ID_ENTRIES} entries"
         raise ConfigError(message)
     parsed: set[int] = set()
     for entry in entries:
-        digits = entry.removeprefix("-") if allow_negative else entry
+        digits = entry.removeprefix("-")
         if not digits.isascii() or not digits.isdecimal():
-            message = f"{name} entries must be decimal integers"
+            message = "REPORTER_IDS entries must be decimal integers"
             raise ConfigError(message)
         try:
-            parsed.add(_telegram_id(int(entry), allow_negative=allow_negative))
+            parsed.add(_telegram_id(int(entry), allow_negative=True))
         except ValueError as error:
-            message = f"{name} entry is outside Telegram's range"
+            message = "REPORTER_IDS entry is outside Telegram's range"
             raise ConfigError(message) from error
     return frozenset(parsed)
 

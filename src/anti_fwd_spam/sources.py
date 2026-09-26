@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
-from .policy import MAX_TELEGRAM_ID
+from .policy import MAX_TELEGRAM_ID, SUPPORTED_CHAT_TYPES
 from .telegram import TelegramError, call_method
 
 if TYPE_CHECKING:
@@ -55,7 +55,7 @@ async def resolve_source(fetcher: Fetch, token: str, username: str) -> int | Non
         if error.retryable:
             raise
         return None
-    if not isinstance(account, dict) or account.get("type") not in ("private", "group", "supergroup", "channel"):
+    if not isinstance(account, dict) or account.get("type") not in SUPPORTED_CHAT_TYPES:
         raise TelegramError(retryable=True)
     names = account.get("active_usernames", [])
     if not isinstance(names, list):

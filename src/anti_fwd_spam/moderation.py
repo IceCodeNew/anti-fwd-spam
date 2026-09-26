@@ -4,18 +4,20 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from http import HTTPStatus
 from typing import TYPE_CHECKING
 
 from .actions import Actions, AppResponse, BanTarget, user_id
 from .evidence import MESSAGE_WINDOW_SECONDS, EvidenceError, ReportStore
 from .model import MODEL_CONTENT_FIELDS, model_input
-from .policy import MAX_TELEGRAM_ID, matches_spam_pattern, source_ids
+from .policy import GROUP_CHAT_TYPES, MAX_TELEGRAM_ID, matches_spam_pattern, source_ids
 from .reporting import Reporting, ReportingPlugin
 from .sources import replied_source, resolve_source, source_argument
 from .tasks import ModelTasks
 from .telegram import DeleteOutcome, Fetch, TelegramError, call_method, delete_message
+
+MODEL_TASK_STORAGE_FAILURE = "model task storage unavailable; retry pending"
 
 if TYPE_CHECKING:
     from .model import ModelConfig
@@ -58,16 +60,22 @@ def mentions_bot(message: dict[str, object], bot_username: str) -> bool:
     return False
 
 
+def reply_target(message: dict[str, object]) -> dict[str, object] | None:
+    """Return an explicit reply, not the topic root that Telegram attaches to forum topic messages."""
+    target = message.get("reply_to_message")
+    return target if isinstance(target, dict) and "forum_topic_created" not in target else None
+
+
 def reported_target(update: dict[str, object], message: dict[str, object]) -> BanTarget | None:
     """Validate a group-local reply before recording sources or punishing accounts."""
-    target = message.get("reply_to_message")
-    if not isinstance(target, dict):
+    target = reply_target(message)
+    if target is None:
         return None
     chat, target_chat = message.get("chat"), target.get("chat")
     target_id, message_id, update_id = target.get("message_id"), message.get("message_id"), update.get("update_id")
     if (
         not isinstance(chat, dict)
-        or chat.get("type") not in {"group", "supergroup"}
+        or chat.get("type") not in GROUP_CHAT_TYPES
         or type(chat.get("id")) is not int
         or chat["id"] >= 0
         or not isinstance(target_chat, dict)
@@ -88,6 +96,31 @@ def reported_target(update: dict[str, object], message: dict[str, object]) -> Ba
     )
 
 
+@dataclass(frozen=True, slots=True)
+class ContentTarget:
+    """A group message inside the moderation window."""
+
+    chat_id: int
+    chat_type: str
+    message_id: int
+    sent_at: int
+
+
+def content_target(message: dict[str, object], now: int) -> ContentTarget | None:
+    """Select a message that the bot can still delete and index."""
+    chat, message_id, sent_at = message.get("chat"), message.get("message_id"), message.get("date")
+    if (
+        isinstance(chat, dict)
+        and type(chat.get("id")) is int
+        and isinstance(chat.get("type"), str)
+        and type(message_id) is int
+        and type(sent_at) is int
+        and now - MESSAGE_WINDOW_SECONDS < sent_at <= now
+    ):
+        return ContentTarget(chat["id"], chat["type"], message_id, sent_at)
+    return None
+
+
 class Moderator:
     """Select moderation policies after validating updates and reporter authority."""
 
@@ -97,7 +130,7 @@ class Moderator:
         fetcher: Fetch,
         store: ReportStore,
         bot_username: str,
-        models: tuple[ModelConfig, ...] = (),
+        models: tuple[ModelConfig, ...],
     ) -> None:
         """Bind one request's configuration and capabilities."""
         self.config, self.fetcher, self.store = config, fetcher, store
@@ -115,9 +148,7 @@ class Moderator:
         self.reply_plugins = (
             ReportingPlugin(
                 "report",
-                lambda message: (
-                    isinstance(message.get("reply_to_message"), dict) and mentions_bot(message, self.bot_username)
-                ),
+                lambda message: reply_target(message) is not None and mentions_bot(message, self.bot_username),
                 self.report,
             ),
         )
@@ -141,24 +172,30 @@ class Moderator:
             return AppResponse(503, "source list unavailable; retry pending")
         return await self.process_update(update, raw_json, sources=matches)
 
-    # Distinct route outcomes keep storage failures separate from Telegram failures.
-    async def process_update(  # noqa: PLR0911
+    async def process_update(
         self, update: dict[str, object], raw_json: str, *, sources: tuple[int, ...]
     ) -> AppResponse:
         """Route a validated update through account, source, report and content policies."""
         message = update.get("message", update.get("edited_message"))
-        if not isinstance(message, dict) or message["chat"]["type"] not in {"group", "supergroup"}:
+        if not isinstance(message, dict) or message["chat"]["type"] not in GROUP_CHAT_TYPES:
             return AppResponse(200, "ignored")
-        if "edited_message" in update:
+        edited = "edited_message" in update
+        if edited:
             try:
-                await self.check_content(message, edited=True)
+                await self.cancel_model_task(message)
             except EvidenceError:
-                return AppResponse(503, "model task storage unavailable; retry pending")
-        account_response = await self.check_account_blacklist(update, message, raw_json)
+                return AppResponse(503, MODEL_TASK_STORAGE_FAILURE)
+        account_response = await self.check_account_blacklist(update, message, raw_json, edited=edited)
         if sources:
             return await self.moderate_sources(update, message, raw_json, sources, account_response)
         if account_response is not None:
             return account_response
+        return await self.moderate_unmatched(update, message, raw_json, edited=edited)
+
+    async def moderate_unmatched(
+        self, update: dict[str, object], message: dict[str, object], raw_json: str, *, edited: bool
+    ) -> AppResponse:
+        """Index a message without blacklist matches, then handle a report or check its content."""
         try:
             await self.index_message(message)
         except EvidenceError:
@@ -167,9 +204,9 @@ class Moderator:
         if response is not None:
             return response
         try:
-            return await self.check_content(message) if "message" in update else AppResponse(200, "ignored")
+            return await self.check_content(message, edited=edited)
         except EvidenceError:
-            return AppResponse(503, "model task storage unavailable; retry pending")
+            return AppResponse(503, MODEL_TASK_STORAGE_FAILURE)
 
     async def moderate_sources(
         self,
@@ -199,9 +236,10 @@ class Moderator:
         username = source_argument(message, self.bot_username)
         if "message" not in update or username is None:
             return AppResponse(200, "command ignored")
-        target = message.get("reply_to_message")
-        reply_report = not username and isinstance(target, dict)
         chat, message_id, update_id = message.get("chat"), message.get("message_id"), update.get("update_id")
+        in_group = isinstance(chat, dict) and chat.get("type") in GROUP_CHAT_TYPES
+        reported = reply_target(message) if in_group and not username else None
+        reply_report = reported is not None
         if (
             not isinstance(chat, dict)
             or type(chat.get("id")) is not int
@@ -214,7 +252,7 @@ class Moderator:
         ):
             return AppResponse(400, "invalid command")
         source = replied_source(message) if reply_report else username
-        evidence = target if reply_report and isinstance(target, dict) else message
+        evidence = reported if reported is not None else message
         identifier = await self._register_source(update_id, raw_json, evidence, source)
         reply = "Could not resolve the account. Use /bs @username, or reply to an inline bot message with /bs."
         if identifier is not None:
@@ -227,9 +265,7 @@ class Moderator:
                 return response
         if response.needs_confirmation:
             reply += "\nBan result is uncertain; check membership before submitting a new report."
-        return await self._finish_source_command(
-            chat["id"], message_id, reply, response, in_group=chat.get("type") in {"group", "supergroup"}
-        )
+        return await self._finish_source_command(chat["id"], message_id, reply, response, in_group=in_group)
 
     async def _finish_source_command(
         self, chat_id: int, message_id: int, reply: str, response: AppResponse, *, in_group: bool
@@ -272,7 +308,7 @@ class Moderator:
             )
         if identifier is None:
             return None
-        await self.store.save((bot_id, update_id), raw_json, evidence, int(time.time()))
+        await self.store.save((bot_id, update_id), raw_json, evidence, int(time.time()), 0)
         await self.store.pin_command_source(bot_id, update_id, identifier)
         # Concurrent deliveries must use the first resolution stored for this update.
         identifier = await self.store.command_source(bot_id, update_id)
@@ -281,70 +317,67 @@ class Moderator:
         await self.store.add_source(identifier)
         return identifier
 
-    async def check_content(self, message: dict[str, object], *, edited: bool = False) -> AppResponse:
-        """Apply local patterns before inference, or cancel pending inference on edits."""
-        chat, message_id = message.get("chat"), message.get("message_id")
-        if not isinstance(chat, dict) or type(chat.get("id")) is not int or type(message_id) is not int:
-            return AppResponse(400, "invalid content moderation target")
-        sent_at, now = message.get("date"), int(time.time())
-        if type(sent_at) is not int or not now - MESSAGE_WINDOW_SECONDS < sent_at <= now:
+    async def cancel_model_task(self, message: dict[str, object]) -> None:
+        """Stop pending inference or moderation based on content that an edit replaced."""
+        now = int(time.time())
+        target = content_target(message, now)
+        if target is not None:
+            await ModelTasks(self.store, self.actions.bot_id).enqueue(
+                target.chat_id, target.message_id, target.sent_at, None, now
+            )
+
+    async def check_content(self, message: dict[str, object], *, edited: bool) -> AppResponse:
+        """Apply local patterns to new and edited messages, and classify only new messages."""
+        target = content_target(message, int(time.time()))
+        if target is None:
             return AppResponse(200, "ignored")
-        tasks = ModelTasks(self.store, self.actions.bot_id)
-        if edited:
-            await tasks.enqueue(chat["id"], message_id, sent_at, None, now)
-            return AppResponse(200, "model task cancelled")
         if matches_spam_pattern(message):
             return await self.actions.delete_and_mute(message)
+        if edited:
+            return AppResponse(200, "ignored")
         if not self.models or user_id(message) is None or not MODEL_CONTENT_FIELDS.intersection(message):
             return AppResponse(200, "ignored")
         state = await model_input(self.fetcher, self.config.bot_token, message)
         payload: dict[str, object] = {
             "state": state,
             "target": {
-                "chat": {"id": chat["id"], "type": chat["type"]},
-                "message_id": message_id,
+                "chat": {"id": target.chat_id, "type": target.chat_type},
+                "message_id": target.message_id,
                 "from": {"id": user_id(message), "is_bot": False},
             },
         }
         now = int(time.time())
-        if await tasks.enqueue(chat["id"], message_id, sent_at, payload, now):
-            task = await tasks.claim(now, (chat["id"], message_id))
+        tasks = ModelTasks(self.store, self.actions.bot_id)
+        if await tasks.enqueue(target.chat_id, target.message_id, target.sent_at, payload, now):
+            task = await tasks.claim(now, (target.chat_id, target.message_id))
             if task is not None:
                 await tasks.run(task, self.fetcher, self.config.bot_token, self.models, now)
         return AppResponse(200, "model task recorded")
 
     async def index_message(self, message: dict[str, object]) -> None:
         """Index eligible account messages, including bots, within the deletion window."""
-        identifier, sent_at, now = user_id(message, include_bots=True), message.get("date"), int(time.time())
-        chat, message_id = message.get("chat"), message.get("message_id")
+        target, identifier = content_target(message, int(time.time())), user_id(message, include_bots=True)
         if (
-            isinstance(chat, dict)
-            and chat.get("type") == "supergroup"
-            and type(chat.get("id")) is int
-            and type(message_id) is int
+            target is not None
             and identifier is not None
-            and type(sent_at) is int
-            and now - MESSAGE_WINDOW_SECONDS < sent_at <= now
+            and target.chat_type == "supergroup"
             and not {"supergroup_chat_created", "channel_chat_created", "forum_topic_created"}.intersection(message)
         ):
-            await self.store.remember_message(self.actions.bot_id, chat["id"], message_id, identifier, sent_at)
+            await self.store.remember_message(
+                self.actions.bot_id, target.chat_id, target.message_id, identifier, target.sent_at
+            )
 
     async def check_account_blacklist(
-        self, update: dict[str, object], message: dict[str, object], raw_json: str
+        self, update: dict[str, object], message: dict[str, object], raw_json: str, *, edited: bool
     ) -> AppResponse | None:
         """Ban confirmed accounts and delete indexed messages without single-message fallbacks."""
         identifier, chat = user_id(message, include_bots=True), message.get("chat")
-        if (
-            "message" not in update
-            or identifier is None
-            or not isinstance(chat, dict)
-            or chat.get("type") != "supergroup"
-        ):
+        if edited or identifier is None or not isinstance(chat, dict) or chat.get("type") != "supergroup":
             return None
         try:
             if await self.store.is_blacklisted(self.actions.bot_id, identifier):
                 await self.index_message(message)
-                return await self.moderate_account(update, message, raw_json, identifier)
+                return await self.moderate_account(update, message, raw_json, identifier, subject_id=0)
         except EvidenceError:
             return AppResponse(503, "account moderation storage unavailable; retry pending")
         return None
@@ -356,18 +389,13 @@ class Moderator:
         raw_json: str,
         identifier: int,
         *,
-        subject_id: int = 0,
+        subject_id: int,
     ) -> AppResponse:
         """Route a message-triggered account ban."""
-        chat, message_id, update_id = message.get("chat"), message.get("message_id"), update.get("update_id")
-        if (
-            not isinstance(chat, dict)
-            or type(chat.get("id")) is not int
-            or type(message_id) is not int
-            or type(update_id) is not int
-            or update_id < 0
-        ):
+        chat, message_id = message.get("chat"), message.get("message_id")
+        if not isinstance(chat, dict) or type(chat.get("id")) is not int or type(message_id) is not int:
             return AppResponse(400, "invalid account update")
+        # The action validates update_id before saving evidence.
         return await self.actions.delete_history_and_ban(
             BanTarget(chat["id"], identifier, message_id + 1),
             update,

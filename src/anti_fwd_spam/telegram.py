@@ -130,10 +130,10 @@ async def delete_message(
     except TelegramError:
         return DeleteOutcome.RETRYABLE_FAILURE
 
-    return classify_telegram_response(status, response_body)
+    return _classify_deletion(status, response_body)
 
 
-def classify_telegram_response(status: int, body: bytes) -> DeleteOutcome:
+def _classify_deletion(status: int, body: bytes) -> DeleteOutcome:
     """Classify Telegram's HTTP status and JSON result without false success."""
     if (
         status in {HTTPStatus.REQUEST_TIMEOUT, HTTPStatus.TOO_MANY_REQUESTS}
@@ -143,7 +143,8 @@ def classify_telegram_response(status: int, body: bytes) -> DeleteOutcome:
 
     typed_payload = _decode_response(body)
     if typed_payload is None or not isinstance(typed_payload.get("ok"), bool):
-        return _malformed_response_outcome(status)
+        malformed_rejection = HTTPStatus.BAD_REQUEST <= status < HTTPStatus.INTERNAL_SERVER_ERROR
+        return DeleteOutcome.PERMANENT_FAILURE if malformed_rejection else DeleteOutcome.RETRYABLE_FAILURE
     if typed_payload["ok"] is True:
         deleted = HTTPStatus.OK <= status < HTTPStatus.MULTIPLE_CHOICES and typed_payload.get("result") is True
         return DeleteOutcome.DELETED if deleted else DeleteOutcome.RETRYABLE_FAILURE
@@ -173,11 +174,3 @@ def _decode_response(body: bytes) -> dict[str, object] | None:
     if not isinstance(payload, dict):
         return None
     return payload
-
-
-def _malformed_response_outcome(status: int) -> DeleteOutcome:
-    return (
-        DeleteOutcome.PERMANENT_FAILURE
-        if HTTPStatus.BAD_REQUEST <= status < HTTPStatus.INTERNAL_SERVER_ERROR
-        else DeleteOutcome.RETRYABLE_FAILURE
-    )

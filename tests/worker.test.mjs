@@ -196,6 +196,45 @@ test('user bans reported spam: Given a non-member commenter and a sticker report
   assert.equal(row.expires_at - row.received_at, 259200);
 });
 
+test('user: Given the bot cannot ban the sender and deletion waits for a retry, When the report is redelivered after the reporter loses admin rights, Then the target is deleted without another ban attempt', async () => {
+  const update = report();
+  telegram.send(update.message.reply_to_message);
+  telegram.send(update.message);
+  let banAttempts = 0;
+  telegram.faults.set('banChatMember', () => {
+    banAttempts += 1;
+    return Response.json({
+      ok: false, error_code: 400, description: 'Bad Request: not enough rights to restrict/unrestrict chat member',
+    }, { status: 400 });
+  });
+  telegram.faults.set('deleteMessage:81', () => Response.json({ ok: false, error_code: 429 }, { status: 429 }));
+  assert.equal((await dispatch(update)).status, 503);
+  assert.equal(telegram.has(81), true);
+  telegram.faults.delete('deleteMessage:81');
+  telegram.members.set(11, { status: 'member' });
+  assert.equal((await dispatch(update)).status, 200);
+  assert.equal(telegram.has(81), false);
+  assert.equal(telegram.has(82), false);
+  assert.equal(banAttempts, 1);
+  assert.equal(telegram.canJoin(22), true);
+  assert.equal((await database.prepare('SELECT COUNT(*) AS n FROM blacklisted_users').first()).n, 0);
+});
+
+test('user: Given a forum topic, When an administrator mentions the bot without replying to a message, Then the topic creator is not reported', async () => {
+  const topic = { ...message(60), forum_topic_created: { name: 'topic', icon_color: 1 } };
+  telegram.send(topic);
+  const update = report(topic);
+  update.message.message_thread_id = 60;
+  update.message.is_topic_message = true;
+  telegram.send(update.message);
+  telegram.send(message(80));
+  await dispatch({ update_id: 70, message: message(80) });
+  assert.equal((await dispatch(update)).status, 200);
+  assert.equal(telegram.canJoin(22), true);
+  for (const id of [60, 80, 82]) assert.equal(telegram.has(id), true);
+  assert.equal((await evidence()).length, 0);
+});
+
 test('user reports old spam: Given a target Telegram refuses to delete, When an administrator reports it, Then the sender is banned but the report remains and the outcome does not claim deletion', async () => {
   const target = { ...message(), date: 1 };
   const update = report(target);
@@ -393,7 +432,7 @@ test('user searches non-text evidence: Given media and service-message reports, 
   telegram.members.set(11, { status: 'member' });
   const kinds = ['audio', 'live_photo', 'paid_media', 'sticker', 'story', 'video', 'video_note', 'voice',
     'checklist', 'contact', 'dice', 'game', 'poll', 'venue', 'location', 'gift', 'unique_gift', 'invoice',
-    'successful_payment', 'new_chat_members', 'forum_topic_created', 'video_chat_started', 'web_app_data', 'giveaway'];
+    'successful_payment', 'new_chat_members', 'new_chat_title', 'video_chat_started', 'web_app_data', 'giveaway'];
   for (const [index, kind] of kinds.entries()) {
     const target = { ...message(), [kind]: { sample: kind } };
     delete target.text;
@@ -443,7 +482,7 @@ test('user protects anonymous senders: Given a target sent as a chat, When an ad
   assert.equal(telegram.canSend(22), true);
 });
 
-test('user reports without joining: Given a commenter with left status, When a rule matches their message, Then they are muted without losing history', async () => {
+test('user mutes a non-member commenter: Given a commenter with left status, When a rule matches their message, Then they are muted without losing history', async () => {
   telegram.members.set(22, { status: 'left' });
   telegram.send(message(80));
   const spam = { ...message(), via_bot: { id: 273234066, is_bot: true } };
@@ -677,6 +716,7 @@ test('user authenticates delivery: Given a report, When its route, method, secre
     [{ headers: { ...headers, 'x-telegram-bot-api-secret-token': 'wrong' } }, 401],
     [{ headers: { ...headers, 'x-telegram-bot-api-secret-token': 'é' } }, 401],
     [{ headers: { 'content-type': 'application/json' } }, 401],
+    [{ headers: { ...headers, 'x-telegram-bot-api-secret-token': 'wrong' }, body: '{' }, 401],
     [{ method: 'GET', body: undefined }, 405],
     [{ headers: { ...headers, 'content-type': 'text/plain' } }, 415],
     [{ body: '{' }, 400],

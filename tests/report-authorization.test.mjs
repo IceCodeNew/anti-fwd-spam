@@ -17,12 +17,26 @@ for (const allowed of ['', undefined, '22', '111']) {
     assert.equal(telegram.has(82), true);
     assert.equal(telegram.canJoin(22), true);
     assert.equal(telegram.canSend(22), true);
-    for (const table of ['reports', 'blacklisted_users', 'model_tasks']) {
+    for (const table of ['reports', 'blacklisted_users']) {
       assert.equal((await database.prepare(`SELECT COUNT(*) AS count FROM ${table}`).first()).count, 0);
     }
-    assert.equal(model.state, null);
   });
 }
+
+test('user: Given an unlisted member, When their reply mentioning the bot carries a campaign marker, Then the reply is deleted and they are muted without report evidence', async () => {
+  await setBindings({ REPORTER_IDS: '11' });
+  const update = report(message(80, 11));
+  update.message.from = message(82, 22).from;
+  update.message.text = '😀 @test_gate_bot @safdhifobot campaign_001';
+  telegram.send(update.message);
+  telegram.send(update.message.reply_to_message);
+  assert.equal((await dispatch(update)).status, 200);
+  assert.equal(telegram.has(82), false);
+  assert.equal(telegram.has(80), true);
+  assert.equal(telegram.canSend(22), false);
+  assert.equal(telegram.canJoin(11), true);
+  assert.equal((await database.prepare('SELECT COUNT(*) AS count FROM reports').first()).count, 0);
+});
 
 test('user: Given an allowed account sending anonymously, When its report contains a compatibility user ID, Then the group identity cannot authorize a report', async () => {
   await setBindings({ REPORTER_IDS: '11,1087968824' });

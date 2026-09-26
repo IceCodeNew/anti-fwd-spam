@@ -31,6 +31,16 @@ class Reporting:
         """Bind the runtime reporter allowlist."""
         self.reporter_ids = reporter_ids
 
+    def authorized(self, update: TelegramUpdate) -> bool:
+        """Check the sending identity: a sender chat alone, otherwise a genuine non-bot user."""
+        sender_chat = update.message.get("sender_chat")
+        identifier = sender_chat.get("id") if isinstance(sender_chat, dict) else user_id(update.message)
+        return type(identifier) is int and identifier in self.reporter_ids
+
+    def denied(self, plugins: tuple[ReportingPlugin, ...], update: TelegramUpdate) -> bool:
+        """Return True when a plugin recognizes the update but its sender is not authorized."""
+        return any(plugin.matches(update) for plugin in plugins) and not self.authorized(update)
+
     async def dispatch(self, plugins: tuple[ReportingPlugin, ...], update: TelegramUpdate) -> AppResponse | None:
         """Run the first matching plugin after authorization.
 
@@ -39,9 +49,7 @@ class Reporting:
         plugin = next((plugin for plugin in plugins if plugin.matches(update)), None)
         if plugin is None:
             return None
-        sender_chat = update.message.get("sender_chat")
-        identifier = sender_chat.get("id") if isinstance(sender_chat, dict) else user_id(update.message)
-        if type(identifier) is not int or identifier not in self.reporter_ids:
+        if not self.authorized(update):
             return None
         try:
             return await plugin.handle(update)

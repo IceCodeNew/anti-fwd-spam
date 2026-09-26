@@ -103,7 +103,11 @@ class Actions:
         return result["status"]
 
     async def delete_and_mute(
-        self, message: dict[str, object], *, can_act: Callable[[], Awaitable[bool]] | None = None
+        self,
+        message: dict[str, object],
+        *,
+        can_act: Callable[[], Awaitable[bool]] | None = None,
+        mute: bool = True,
     ) -> AppResponse:
         """Delete one message and permanently mute its sender, preserving administrators and history."""
         chat, message_id = message.get("chat"), message.get("message_id")
@@ -122,7 +126,7 @@ class Actions:
             return AppResponse(200, "moderation cancelled")
         response = await self._delete_target(chat_id, message_id)
         identifier = user_id(message)
-        if not response.target_removed or identifier is None or chat.get("type") != "supergroup":
+        if not mute or not response.target_removed or identifier is None or chat.get("type") != "supergroup":
             return replace(response, body=response.body + "; mute skipped")
         try:
             response = await self._mute(chat_id, message_id, identifier, response.body, can_act)

@@ -37,7 +37,7 @@ Telegram sends updates to `POST /webhook`. The Worker verifies `TELEGRAM_WEBHOOK
                                            └── No report ──▶ Local rules ──▶ Jev
 ```
 
-Commands are checked before automatic moderation. An authorized command ends routing. This also applies to an edited `/bs`, which the handler ignores. Reply reports are checked after blacklist handling and indexing. A denied command or reply report runs no handler and creates no report evidence. Its message then continues through the blacklist checks, local rules, and Jev like any unreported group message. Private messages other than authorized commands are ignored.
+Commands are checked before automatic moderation. An authorized command ends routing. This also applies to an edited `/bs`, which the handler ignores. Reply reports are checked after blacklist handling and indexing. A denied command or reply report runs no handler and creates no report evidence. Its message then continues through the blacklist checks, local rules, and Jev like any unreported group message. If local rules or Jev match a denied report, and the reported message itself matches the local rules, Action 1 deletes the report but does not mute the sender. Thus a member who quotes that spam can continue to send messages. A bot mention or `/bs` alone does not prevent the mute. Private messages other than authorized commands are ignored.
 
 In a forum topic, Telegram attaches the topic's creation message to messages that do not reply to anything. That creation message is never a report target, so a mention or bare `/bs` in a topic reports only when it replies to another message.
 
@@ -87,7 +87,7 @@ The local regexes search anywhere in the current text or caption. Jev evaluates 
 
 `Actions.delete_and_mute` deletes the triggering message and permanently mutes a human sender in a supergroup. It preserves earlier messages and does not add either identity to a blacklist. Bots are not muted. Owners, administrators, and messages sent as the destination group's anonymous identity are protected before deletion.
 
-Local rules, Jev, and source filtering share this action. Ordinary groups support deletion but not permanent muting.
+Local rules, Jev, and source filtering share this action. For a denied command or reply report that replies to a local-rule match, the action deletes the message and skips the mute. Ordinary groups support deletion but not permanent muting.
 
 ### Action 2: ban and clean indexed history
 
@@ -108,7 +108,7 @@ Both actions in [actions.py](../src/anti_fwd_spam/actions.py) own membership che
 | Authorized reply with bare `/bs` | Read B from the target's `via_bot.id`, add B to `blacklisted_sources`, and apply Action 2 separately to A and B. Confirmed bans add each account to `blacklisted_users`. No username lookup is needed. |
 | Message from listed source B | Apply Action 1 to A and Action 2 to B. A is not added to either blacklist by this source match. |
 | Message from an account in `blacklisted_users` | Apply Action 2 to that account in the receiving supergroup. |
-| Regex or Jev spam match | Apply Action 1; neither blacklist changes. |
+| Regex or Jev spam match | Apply Action 1; neither blacklist changes. A denied report on a local-rule match is deleted without a mute. |
 
 `blacklisted_sources` is a source-ID set. `blacklisted_users` is scoped by moderation bot ID. A source can also be present in the account blacklist after a confirmed ban. Temporary evidence, indexed messages, and operation progress have separate retention; see [Data storage](../README.md#data-storage).
 

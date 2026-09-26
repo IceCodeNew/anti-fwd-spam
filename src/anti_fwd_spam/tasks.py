@@ -116,7 +116,7 @@ class ModelTasks:
             )
 
     async def finish(
-        self, task: Task, phase: str, now: int, *, retry: bool = False, target: dict[str, object] | None = None
+        self, task: Task, phase: str, now: int, *, retry: bool = False, action: dict[str, object] | None = None
     ) -> bool:
         """Commit an owned result, clearing content once classification ends."""
         if retry and task.attempts > len(RETRY_DELAYS):
@@ -133,7 +133,7 @@ class ModelTasks:
                 .bind(
                     phase,
                     retry,
-                    json.dumps({"target": target}) if phase == "delete" and target is not None else None,
+                    json.dumps(action) if phase == "delete" and action is not None else None,
                     retry,
                     due,
                     self.bot_id,
@@ -174,6 +174,9 @@ class ModelTasks:
         payload = json.loads(task.input_json or "{}")
         snapshot = payload.get("target")
         target = snapshot if isinstance(snapshot, dict) else None
+        # Tasks saved by the previous release have no mute flag and keep the mute.
+        mute = payload.get("mute") is not False
+        action: dict[str, object] | None = {"target": target, "mute": mute} if target is not None else None
         if task.phase == "classify":
             model = models[(task.attempts - 1) % len(models)]
             try:
@@ -184,7 +187,7 @@ class ModelTasks:
                 return
             now = max(now, int(time.time()))
             phase = "delete" if probability is not None and probability >= SPAM_THRESHOLD else "done"
-            if not await self.finish(task, phase, now, target=target) or phase == "done":
+            if not await self.finish(task, phase, now, action=action) or phase == "done":
                 return
             deletion = await self.claim(now, (task.chat_id, task.message_id))
             if deletion is None:
@@ -196,7 +199,7 @@ class ModelTasks:
             async def can_act() -> bool:
                 return await self._owns(task, max(now, int(time.time())))
 
-            response = await Actions(fetcher, token, self.store).delete_and_mute(target, can_act=can_act)
+            response = await Actions(fetcher, token, self.store).delete_and_mute(target, can_act=can_act, mute=mute)
             retry = response.status == HTTPStatus.SERVICE_UNAVAILABLE
         await self.finish(task, "delete" if retry else "done", max(now, int(time.time())), retry=retry)
 

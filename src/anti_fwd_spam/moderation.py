@@ -261,13 +261,26 @@ class Moderator:
                 update.chat_id, update.message_id, update.sent_at, None, now
             )
 
+    def quotes_reported_spam(self, update: TelegramUpdate) -> bool:
+        """Recognize a denied report on a local-rule match, where quoting that spam is expected."""
+        target = reply_target(update.message)
+        return (
+            target is not None
+            and matches_spam_pattern(target)
+            and self.reporting.denied((*self.command_plugins, *self.reply_plugins), update)
+        )
+
     async def check_content(self, update: TelegramUpdate) -> AppResponse:
-        """Apply local patterns to new and edited messages, and classify only new messages."""
+        """Apply local patterns to new and edited messages, and classify only new messages.
+
+        A denied report on local-rule spam is deleted without a mute, so a member who quotes that spam keeps speaking.
+        """
         message = update.message
         if update.sent_at is None or not recent(update.sent_at, int(time.time())):
             return AppResponse(200, "ignored")
+        mute = not self.quotes_reported_spam(update)
         if matches_spam_pattern(message):
-            return await self.actions.delete_and_mute(message)
+            return await self.actions.delete_and_mute(message, mute=mute)
         if update.edited:
             return AppResponse(200, "ignored")
         if not self.models or user_id(message) is None or not MODEL_CONTENT_FIELDS.intersection(message):
@@ -280,6 +293,7 @@ class Moderator:
                 "message_id": update.message_id,
                 "from": {"id": user_id(message), "is_bot": False},
             },
+            "mute": mute,
         }
         now = int(time.time())
         tasks = ModelTasks(self.store, self.actions.bot_id)

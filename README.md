@@ -112,7 +112,7 @@ Using an identity listed in `REPORTER_IDS`, choose **Reply** on the spam message
 
 In a supergroup, a report from an administrator or an authorized group/channel identity deletes the target message, bans its sender, and clears eligible indexed history. Human and bot accounts follow the same policy, with group owners and administrators protected from bans. The bot removes the report after cleanup succeeds. A listed ordinary member's report saves evidence without deleting messages or restricting anyone.
 
-If Telegram rejects the ban, for example because the bot lacks ban permission, the bot still deletes the target message. In a forum topic, reply to the spam message itself; a mention that replies to nothing does not report the topic's creator. The bot moderates reports and `/bs` commands from unlisted identities like any other message.
+If Telegram rejects the ban, for example because the bot lacks ban permission, the bot still deletes the target message. In a forum topic, reply to the spam message itself; a mention that replies to nothing does not report the topic's creator. The bot moderates reports and `/bs` commands from unlisted identities like any other message. If the local rules or Jev remove such a report, and the reported message matches the local rules, the bot does not mute the sender.
 
 Confirmed bans add the sender to the account blacklist. When that account posts in another supergroup using this bot, the bot bans it there and clears eligible indexed messages.
 

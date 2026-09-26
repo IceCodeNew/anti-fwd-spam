@@ -217,11 +217,8 @@ class Actions:
         saved: StoredReport,
         subject_id: int,
     ) -> AppResponse | None:
-        if saved.moderation_result in {"banned", "deleted; banned"} or (
-            saved.moderation_result == "target removed before upgrade"
-            and (saved.body.startswith("deleted; banned") or saved.body == "deletion pending retry; banned")
-        ):
-            # Persisted records from older releases inferred removal from a successful ban.
+        if saved.moderation_result == "banned":
+            # The ban succeeded, but the target deletion or report cleanup did not finish.
             return AppResponse(200, "banned", sender_banned=True)
         if saved.moderation_result == "ban failed":
             # Telegram rejected the ban permanently; only a pending target deletion remains.
@@ -231,7 +228,7 @@ class Actions:
                 200,
                 saved.moderation_result,
                 target_removed=True,
-                sender_banned=saved.moderation_result == "already absent; banned",
+                sender_banned=saved.moderation_result.endswith("; banned"),
             )
         return await self._ban(chat_id, identifier, report_key, subject_id) if identifier is not None else None
 

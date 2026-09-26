@@ -171,26 +171,25 @@ class ModelTasks:
 
     async def run(self, task: Task, fetcher: Fetch, token: str, models: tuple[ModelConfig, ...], now: int) -> None:
         """Persist inference before moderation, so retries cannot reevaluate a saved score."""
+        payload = json.loads(task.input_json or "{}")
+        snapshot = payload.get("target")
+        target = snapshot if isinstance(snapshot, dict) else None
         if task.phase == "classify":
             model = models[(task.attempts - 1) % len(models)]
-            payload = json.loads(task.input_json or "{}")
             try:
-                probability = await spam_probability(fetcher, model, payload.get("state", payload))
+                probability = await spam_probability(fetcher, model, payload["state"])
             except ModelRetryError as error:
                 retry = error.retryable or task.attempts < len(models)
                 await self.finish(task, "classify" if retry else "done", max(now, int(time.time())), retry=retry)
                 return
             now = max(now, int(time.time()))
             phase = "delete" if probability is not None and probability >= SPAM_THRESHOLD else "done"
-            snapshot = payload.get("target")
-            target = snapshot if isinstance(snapshot, dict) else None
             if not await self.finish(task, phase, now, target=target) or phase == "done":
                 return
             deletion = await self.claim(now, (task.chat_id, task.message_id))
             if deletion is None:
                 return
             task = deletion
-        target = await self._target(task)
         retry = False
         if target is not None:
 
@@ -212,25 +211,3 @@ class ModelTasks:
                 .first()
             )
         return row is not None
-
-    async def _target(self, task: Task) -> dict[str, object] | None:
-        payload = json.loads(task.input_json or "{}")
-        target = payload.get("target")
-        if isinstance(target, dict):
-            return target
-        # Pending tasks created before sender snapshots can recover identity from the index.
-        with storage_errors():
-            row = await (
-                self.database.prepare(
-                    "SELECT sender_id FROM recent_messages WHERE bot_id = ? AND chat_id = ? AND message_id = ?"
-                )
-                .bind(self.bot_id, task.chat_id, task.message_id)
-                .first()
-            )
-        if row is None:
-            return None
-        return {
-            "chat": {"id": task.chat_id, "type": "supergroup"},
-            "message_id": task.message_id,
-            "from": {"id": int(row.sender_id), "is_bot": False},
-        }

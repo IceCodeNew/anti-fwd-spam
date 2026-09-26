@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { readFile } from 'node:fs/promises';
 import { chat, message, report, token, username } from './telegram-fake.mjs';
 import { database, dispatch, headers, model, runtime, telegram } from './worker-runtime.mjs';
 
@@ -930,49 +929,3 @@ for (const failure of ['server error', 'unexpected success payload']) {
     assert.equal(telegram.has(83), false);
   });
 }
-
-test('user upgrades pending reports: Given legacy cleanup and failed-ban records, When migrations run and deliveries resume, Then completed actions stay completed while an unattempted ban can still proceed', async () => {
-  const statements = [database.prepare('DROP TABLE reports'), database.prepare('DROP TABLE blacklisted_sources')];
-  for (const sql of (await readFile('migrations/0001_reports.sql', 'utf8')).split(';').filter(sql => sql.trim())) {
-    statements.push(database.prepare(sql));
-  }
-  const outcomes = ['deleted; banned; report cleanup pending', 'already absent; ban skipped; report cleanup pending',
-    'ban failed', 'report recorded; authority check failed'];
-  for (const [index, outcome] of outcomes.entries()) {
-    statements.push(database.prepare(`INSERT INTO reports
-      (bot_id, update_id, received_at, expires_at, raw_update, classification, response_body)
-      VALUES (123, ?, 100, 259300, ?, '{}', ?)`).bind(index, JSON.stringify({ ...report(), update_id: index }), outcome));
-  }
-  for (const file of ['0002_report_progress.sql', '0009_sources.sql', '0010_report_subjects.sql']) {
-    for (const sql of (await readFile(`migrations/${file}`, 'utf8')).split(';').filter(sql => sql.trim())) {
-      statements.push(database.prepare(sql));
-    }
-  }
-  await database.batch(statements);
-  telegram.send(message(90));
-  telegram.send(message());
-  telegram.send(report().message);
-  telegram.faults.set('deleteMessage:81', () => Response.json({ ok: false, error_code: 429 }, { status: 429 }));
-  for (let attempt = 0; attempt < 2; attempt++) {
-    assert.equal((await dispatch({ ...report(), update_id: 0 })).status, 503);
-    assert.equal(telegram.has(81), true);
-    assert.equal(telegram.has(82), true);
-    assert.equal(telegram.canJoin(22), true);
-  }
-  telegram.faults.clear();
-  for (const update_id of [0, 1, 2]) {
-    assert.equal((await dispatch({ ...report(), update_id })).status, 200);
-    assert.equal(telegram.canJoin(22), true);
-    assert.equal(telegram.has(90), true);
-    assert.equal(telegram.has(81), false);
-    assert.equal(telegram.has(82), false);
-  }
-  telegram.send(message());
-  assert.equal((await dispatch({ ...report(), update_id: 3 })).status, 200);
-  assert.equal(telegram.canJoin(22), false);
-  assert.equal(telegram.has(90), true);
-  for (const row of await evidence()) {
-    assert.deepEqual(JSON.parse(row.raw_update), { ...report(), update_id: row.update_id });
-    assert.equal(row.expires_at, 259300);
-  }
-});

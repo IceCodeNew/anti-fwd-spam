@@ -261,11 +261,11 @@ test('user: Given transient HTTP failures or permanent rejections, When the serv
 test('user: Given a crashed leased inference, When its lease and retry delay expire, Then processing resumes and removes only its target', async () => {
   const now = Math.floor(Date.now() / 1000);
   telegram.send(message());
-  await database.prepare('INSERT INTO recent_messages VALUES (123, -10012, 81, 22, ?)').bind(message().date).run();
+  const target = { chat: { id: -10012, type: 'supergroup' }, message_id: 81, from: { id: 22, is_bot: false } };
   await database.prepare(`INSERT INTO model_tasks
     (bot_id, chat_id, message_id, phase, input_json, attempts, generation, due_at, lease_until, stop_at, created_at, expires_at)
     VALUES (123, -10012, 81, 'classify', ?, 1, 1, ?, ?, ?, ?, ?)`)
-    .bind(JSON.stringify({ nickname: 'User 22', bio: '', message: { text: 'spam' } }),
+    .bind(JSON.stringify({ state: { nickname: 'User 22', bio: '', message: { text: 'spam' } }, target }),
       now + 60, now + 30, message().date + 48 * 3600, now, now + 3 * 86400).run();
   model.probability = 1;
   await tick(now + 29);
@@ -276,51 +276,6 @@ test('user: Given a crashed leased inference, When its lease and retry delay exp
   assert.equal(telegram.has(81), false);
   assert.equal((await task()).input_json, null);
 });
-
-test('user: Given a legacy spam task, When sender recovery storage fails after classification, Then retry preserves the saved spam decision', async () => {
-  const now = Math.floor(Date.now() / 1000);
-  telegram.send(message());
-  await database.prepare('INSERT INTO recent_messages VALUES (123, -10012, 81, 22, ?)').bind(message().date).run();
-  await database.prepare(`INSERT INTO model_tasks
-    (bot_id, chat_id, message_id, phase, input_json, due_at, stop_at, created_at, expires_at)
-    VALUES (123, -10012, 81, 'classify', ?, ?, ?, ?, ?)`)
-    .bind(JSON.stringify({ nickname: 'User 22', bio: '', message: { text: 'spam' } }),
-      now, message().date + 48 * 3600, now, now + 3 * 86400).run();
-  model.response = async () => {
-    await database.prepare('ALTER TABLE recent_messages RENAME TO unavailable_recent_messages').run();
-    return Response.json({ answers: { spam: { type: 'noul', noul: 1 } } });
-  };
-  try {
-    await tick(now);
-    assert.equal(telegram.has(81), true);
-  } finally {
-    await database.prepare('ALTER TABLE unavailable_recent_messages RENAME TO recent_messages').run();
-  }
-  model.response = null;
-  model.probability = 0;
-  await tick((await task()).due_at);
-  assert.equal(telegram.has(81), false);
-  assert.equal(telegram.canSend(22), false);
-});
-
-for (const phase of ['classify', 'delete']) {
-  test(`user: Given a legacy ${phase} task without a sender snapshot or index, When cron runs, Then it preserves the message and administrator`, async () => {
-    const now = Math.floor(Date.now() / 1000);
-    const target = { ...message(), chat: { ...message().chat, type: 'group' } };
-    telegram.send(target);
-    telegram.members.set(22, { status: 'administrator' });
-    model.probability = 1;
-    await database.prepare(`INSERT INTO model_tasks
-      (bot_id, chat_id, message_id, phase, input_json, due_at, stop_at, created_at, expires_at)
-      VALUES (123, -10012, 81, ?, ?, ?, ?, ?, ?)`)
-      .bind(phase, phase === 'classify' ? JSON.stringify({ nickname: 'User 22', bio: '', message: { text: 'spam' } }) : null,
-        now, now + 3600, now, now + 3 * 86400).run();
-    await tick(now);
-    assert.equal(telegram.has(81), true);
-    assert.equal(telegram.members.get(22).status, 'administrator');
-    assert.equal((await task()).input_json, null);
-  });
-}
 
 test('user: Given a pending deletion, When the target is edited, Then cron does not remove the new version', async () => {
   model.probability = 1;

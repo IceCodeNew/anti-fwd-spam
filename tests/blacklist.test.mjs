@@ -138,6 +138,14 @@ test('user excludes automatic mutes from shared bans: Given an inline source mat
   assert.deepEqual((await database.prepare('SELECT user_id FROM blacklisted_users').all()).results, [{ user_id: 273234066 }]);
 });
 
+test('user: Given a blacklisted account, When only an edit of its message arrives, Then the account keeps its membership and message', async () => {
+  await database.exec('INSERT INTO blacklisted_users VALUES (123, 22, 1)');
+  telegram.send(message());
+  assert.equal((await dispatch({ update_id: 1, edited_message: message() })).status, 200);
+  assert.equal(telegram.has(81), true);
+  assert.equal(telegram.canJoin(22), true);
+});
+
 test('user removes false positives: Given an account blacklist entry, When the operator deletes it before a new message, Then the sender and message remain unaffected', async () => {
   await database.exec('INSERT INTO blacklisted_users VALUES (123, 22, 1), (456, 22, 1)');
   await database.exec('DELETE FROM blacklisted_users WHERE bot_id = 123 AND user_id = 22');

@@ -1,127 +1,35 @@
-"""Preserve report JSON and searchable message classifications in D1."""
+"""Preserve report JSON, moderation progress and message identifiers in D1."""
 
 from __future__ import annotations
 
 import json
+from contextlib import contextmanager
 from dataclasses import dataclass
 from http import HTTPStatus
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 RETENTION_SECONDS = 3 * 24 * 60 * 60
 MESSAGE_WINDOW_SECONDS = 48 * 60 * 60
 DELETE_BATCH_SIZE = 100
-CONTENT_FIELDS = frozenset(
-    [
-        "text",
-        "rich_message",
-        "animation",
-        "audio",
-        "document",
-        "live_photo",
-        "paid_media",
-        "photo",
-        "sticker",
-        "story",
-        "video",
-        "video_note",
-        "voice",
-        "checklist",
-        "contact",
-        "dice",
-        "game",
-        "poll",
-        "venue",
-        "location",
-        "new_chat_members",
-        "left_chat_member",
-        "chat_owner_left",
-        "chat_owner_changed",
-        "new_chat_title",
-        "new_chat_photo",
-        "delete_chat_photo",
-        "group_chat_created",
-        "supergroup_chat_created",
-        "channel_chat_created",
-        "message_auto_delete_timer_changed",
-        "migrate_to_chat_id",
-        "migrate_from_chat_id",
-        "pinned_message",
-        "invoice",
-        "successful_payment",
-        "refunded_payment",
-        "users_shared",
-        "chat_shared",
-        "gift",
-        "unique_gift",
-        "gift_upgrade_sent",
-        "connected_website",
-        "write_access_allowed",
-        "passport_data",
-        "proximity_alert_triggered",
-        "boost_added",
-        "chat_background_set",
-        "checklist_tasks_done",
-        "checklist_tasks_added",
-        "community_chat_added",
-        "community_chat_joined",
-        "community_chat_removed",
-        "direct_message_price_changed",
-        "forum_topic_created",
-        "forum_topic_edited",
-        "forum_topic_closed",
-        "forum_topic_reopened",
-        "general_forum_topic_hidden",
-        "general_forum_topic_unhidden",
-        "giveaway_created",
-        "giveaway",
-        "giveaway_winners",
-        "giveaway_completed",
-        "managed_bot_created",
-        "paid_message_price_changed",
-        "poll_option_added",
-        "poll_option_deleted",
-        "suggested_post_approved",
-        "suggested_post_approval_failed",
-        "suggested_post_declined",
-        "suggested_post_paid",
-        "suggested_post_refunded",
-        "video_chat_scheduled",
-        "video_chat_started",
-        "video_chat_ended",
-        "video_chat_participants_invited",
-        "web_app_data",
-    ],
-)
-MEDIA_FIELDS = frozenset(
-    [
-        "animation",
-        "audio",
-        "document",
-        "live_photo",
-        "paid_media",
-        "photo",
-        "sticker",
-        "story",
-        "video",
-        "video_note",
-        "voice",
-    ],
-)
-
-
-def classify_message(message: dict[str, object]) -> dict[str, object]:
-    """Describe simultaneous content fields without discarding unknown evidence."""
-    return {
-        "version": 1,
-        "content_types": sorted(CONTENT_FIELDS.intersection(message)),
-        "present_fields": sorted(message),
-        "via_bot_present": "via_bot" in message,
-        "media_fields": sorted(MEDIA_FIELDS.intersection(message)),
-    }
+# Ban progress saved before the report finishes; a target-removal result replaces it.
+BANNED = "banned"
+BAN_FAILED = "ban failed"
 
 
 class EvidenceError(Exception):
     """Evidence was not durably saved; moderation must not proceed."""
+
+
+@contextmanager
+def storage_errors() -> Iterator[None]:
+    """Raise EvidenceError for all D1 failures. This also applies to JavaScript exceptions."""
+    try:
+        yield
+    except Exception as error:
+        raise EvidenceError from error
 
 
 @dataclass(frozen=True, slots=True)
@@ -137,13 +45,13 @@ class StoredReport:
 class ReportStore:
     """Use the Worker D1 binding without exposing report contents in logs."""
 
-    def __init__(self, database: Any) -> None:  # noqa: ANN401
+    def __init__(self, database: Any) -> None:  # noqa: ANN401 - D1 is an untyped JavaScript proxy.
         """Bind the request's D1 database."""
         self.database = database
 
     async def command_source(self, bot_id: int, update_id: int) -> int | None:
         """Keep retries bound to the originally resolved account after username changes."""
-        try:
+        with storage_errors():
             row = await (
                 self.database.prepare(
                     "SELECT command_source_id FROM reports WHERE bot_id = ? AND update_id = ? AND subject_id = 0",
@@ -152,12 +60,10 @@ class ReportStore:
                 .first()
             )
             return int(row.command_source_id) if row is not None and row.command_source_id is not None else None
-        except Exception as error:
-            raise EvidenceError from error
 
     async def pin_command_source(self, bot_id: int, update_id: int, source_id: int) -> None:
         """Save the first resolution before any source or membership changes."""
-        try:
+        with storage_errors():
             await (
                 self.database.prepare(
                     "UPDATE reports SET command_source_id = ? WHERE bot_id = ? AND update_id = ? "
@@ -166,23 +72,19 @@ class ReportStore:
                 .bind(source_id, bot_id, update_id)
                 .run()
             )
-        except Exception as error:
-            raise EvidenceError from error
 
     async def add_source(self, source_id: int) -> None:
         """Persist a source once, including concurrent or redelivered commands."""
-        try:
+        with storage_errors():
             await (
                 self.database.prepare("INSERT INTO blacklisted_sources (source_id) VALUES (?) ON CONFLICT DO NOTHING")
                 .bind(source_id)
                 .run()
             )
-        except Exception as error:
-            raise EvidenceError from error
 
     async def matching_sources(self, source_ids: frozenset[int]) -> tuple[int, ...]:
         """Look up only the message's explicit source IDs using the primary key."""
-        try:
+        with storage_errors():
             rows = await (
                 self.database.prepare(
                     "SELECT source_id FROM blacklisted_sources "
@@ -191,13 +93,11 @@ class ReportStore:
                 .bind(json.dumps(sorted(source_ids)))
                 .all()
             )
-        except Exception as error:
-            raise EvidenceError from error
         return tuple(int(row.source_id) for row in rows.results)
 
     async def blacklist_user(self, bot_id: int, user_id: int, now: int) -> None:
         """Retain confirmed banned accounts independently of expiring evidence."""
-        try:
+        with storage_errors():
             await (
                 self.database.prepare(
                     "INSERT INTO blacklisted_users (bot_id, user_id, added_at) VALUES (?, ?, ?) "
@@ -206,24 +106,20 @@ class ReportStore:
                 .bind(bot_id, user_id, now)
                 .run()
             )
-        except Exception as error:
-            raise EvidenceError from error
 
     async def is_blacklisted(self, bot_id: int, user_id: int) -> bool:
         """Match a sender against this bot's retained account blacklist."""
-        try:
+        with storage_errors():
             row = await (
                 self.database.prepare("SELECT 1 FROM blacklisted_users WHERE bot_id = ? AND user_id = ?")
                 .bind(bot_id, user_id)
                 .first()
             )
-        except Exception as error:
-            raise EvidenceError from error
         return row is not None
 
     async def claim_mute(self, bot_id: int, chat_id: int, message_id: int, now: int) -> bool:
         """Claim a message once, including edits delivered under a different update ID."""
-        try:
+        with storage_errors():
             row = await (
                 self.database.prepare(
                     "INSERT INTO automatic_mutes (bot_id, chat_id, message_id, expires_at) VALUES (?, ?, ?, ?) "
@@ -232,20 +128,16 @@ class ReportStore:
                 .bind(bot_id, chat_id, message_id, now + RETENTION_SECONDS)
                 .first()
             )
-        except Exception as error:
-            raise EvidenceError from error
         return row is not None
 
     async def release_mute(self, bot_id: int, chat_id: int, message_id: int) -> None:
         """Allow retry when no restriction was sent or Telegram explicitly rejected it temporarily."""
-        try:
+        with storage_errors():
             await (
                 self.database.prepare("DELETE FROM automatic_mutes WHERE bot_id = ? AND chat_id = ? AND message_id = ?")
                 .bind(bot_id, chat_id, message_id)
                 .run()
             )
-        except Exception as error:
-            raise EvidenceError from error
 
     async def remember_message(
         self,
@@ -256,7 +148,7 @@ class ReportStore:
         sent_at: int,
     ) -> None:
         """Index identifiers only; edits and redelivery must not refresh message age."""
-        try:
+        with storage_errors():
             await (
                 self.database.prepare(
                     "INSERT INTO recent_messages (bot_id, chat_id, message_id, sender_id, sent_at) "
@@ -265,8 +157,6 @@ class ReportStore:
                 .bind(bot_id, chat_id, message_id, sender_id, sent_at)
                 .run()
             )
-        except Exception as error:
-            raise EvidenceError from error
 
     async def recent_messages(
         self,
@@ -277,7 +167,7 @@ class ReportStore:
         now: int,
     ) -> list[int]:
         """Select a recent pre-report batch plus one row to detect remaining work."""
-        try:
+        with storage_errors():
             result = await (
                 self.database.prepare(
                     "SELECT message_id FROM recent_messages WHERE bot_id = ? AND chat_id = ? AND sender_id = ? "
@@ -289,12 +179,10 @@ class ReportStore:
                 .all()
             )
             return [int(row.message_id) for row in result.results]
-        except Exception as error:
-            raise EvidenceError from error
 
     async def forget_messages(self, bot_id: int, chat_id: int, message_ids: list[int]) -> None:
         """Remove only the batch Telegram confirmed, leaving failed batches retryable."""
-        try:
+        with storage_errors():
             await (
                 self.database.prepare(
                     "DELETE FROM recent_messages WHERE bot_id = ? AND chat_id = ? "
@@ -303,25 +191,22 @@ class ReportStore:
                 .bind(bot_id, chat_id, json.dumps(message_ids))
                 .run()
             )
-        except Exception as error:
-            raise EvidenceError from error
 
     async def save(
         self,
         report_key: tuple[int, int],
         raw_json: str,
-        target: dict[str, object],
         now: int,
-        subject_id: int = 0,
+        subject_id: int,
     ) -> StoredReport:
         """Insert immutable evidence once and read durable processing progress."""
         bot_id, update_id = report_key
-        try:
+        with storage_errors():
             await (
                 self.database.prepare(
                     "INSERT INTO reports "
-                    "(bot_id, update_id, subject_id, received_at, expires_at, raw_update, classification) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(bot_id, update_id, subject_id) DO NOTHING",
+                    "(bot_id, update_id, subject_id, received_at, expires_at, raw_update) "
+                    "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(bot_id, update_id, subject_id) DO NOTHING",
                 )
                 .bind(
                     bot_id,
@@ -330,7 +215,6 @@ class ReportStore:
                     now,
                     now + RETENTION_SECONDS,
                     raw_json,
-                    json.dumps(classify_message(target), ensure_ascii=False),
                 )
                 .run()
             )
@@ -348,12 +232,10 @@ class ReportStore:
                 str(row.moderation_result) if row.moderation_result is not None else None,
                 bool(row.ban_claimed),
             )
-        except Exception as error:
-            raise EvidenceError from error
 
-    async def claim_ban(self, bot_id: int, update_id: int, subject_id: int = 0) -> bool:
+    async def claim_ban(self, bot_id: int, update_id: int, subject_id: int) -> bool:
         """Allow only one delivery to issue a destructive Telegram request."""
-        try:
+        with storage_errors():
             row = await (
                 self.database.prepare(
                     "UPDATE reports SET ban_claimed = 1 WHERE bot_id = ? AND update_id = ? "
@@ -363,13 +245,11 @@ class ReportStore:
                 .bind(bot_id, update_id, subject_id)
                 .first()
             )
-        except Exception as error:
-            raise EvidenceError from error
         return row is not None
 
-    async def release_ban(self, bot_id: int, update_id: int, subject_id: int = 0) -> None:
+    async def release_ban(self, bot_id: int, update_id: int, subject_id: int) -> None:
         """Permit retries only when Telegram explicitly rejected the ban."""
-        try:
+        with storage_errors():
             await (
                 self.database.prepare(
                     "UPDATE reports SET ban_claimed = 0 WHERE bot_id = ? AND update_id = ? AND subject_id = ?",
@@ -377,27 +257,23 @@ class ReportStore:
                 .bind(bot_id, update_id, subject_id)
                 .run()
             )
-        except Exception as error:
-            raise EvidenceError from error
 
-    async def remember_moderation(self, bot_id: int, update_id: int, body: str, subject_id: int = 0) -> None:
-        """Save 'banned' as incomplete progress or a confirmed target-removal result."""
-        try:
+    async def remember_moderation(self, bot_id: int, update_id: int, body: str, subject_id: int) -> None:
+        """Save a ban outcome as incomplete progress, or save a confirmed target-removal result."""
+        with storage_errors():
             await (
                 self.database.prepare(
                     "UPDATE reports SET moderation_result = ? "
                     "WHERE bot_id = ? AND update_id = ? AND subject_id = ? "
-                    "AND (moderation_result IS NULL OR moderation_result = 'banned')",
+                    "AND (moderation_result IS NULL OR moderation_result IN (?, ?))",
                 )
-                .bind(body, bot_id, update_id, subject_id)
+                .bind(body, bot_id, update_id, subject_id, BANNED, BAN_FAILED)
                 .run()
             )
-        except Exception as error:
-            raise EvidenceError from error
 
-    async def finish(self, bot_id: int, update_id: int, status: int, body: str, subject_id: int = 0) -> None:
+    async def finish(self, bot_id: int, update_id: int, status: int, body: str, subject_id: int) -> None:
         """Record an outcome without overwriting a concurrent completion."""
-        try:
+        with storage_errors():
             await (
                 self.database.prepare(
                     "UPDATE reports SET response_status = ?, response_body = ? "
@@ -406,8 +282,6 @@ class ReportStore:
                 .bind(status if status == HTTPStatus.OK else None, body, bot_id, update_id, subject_id)
                 .run()
             )
-        except Exception as error:
-            raise EvidenceError from error
 
     async def expire(self, now: int) -> None:
         """Delete expired evidence and message identifiers in bounded indexed batches."""

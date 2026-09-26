@@ -107,14 +107,10 @@ test('user: Given a pending combined report, When reporter access is revoked bef
   assert.equal((await dispatch(update)).status, 503);
   telegram.faults.clear();
   await setBindings({ REPORTER_IDS: '' });
-  try {
-    assert.equal((await dispatch(update)).status, 200);
-    assert.equal(telegram.canJoin(777), true);
-    assert.equal(telegram.has(71), true);
-    assert.equal(telegram.has(82), true);
-  } finally {
-    await setBindings({});
-  }
+  assert.equal((await dispatch(update)).status, 200);
+  assert.equal(telegram.canJoin(777), true);
+  assert.equal(telegram.has(71), true);
+  assert.equal(telegram.has(82), true);
 });
 
 test('user: Given missing or invalid inline provenance, When a reporter replies with bs, Then a usage reply replaces punishment and source registration', async () => {
@@ -125,7 +121,7 @@ test('user: Given missing or invalid inline provenance, When a reporter replies 
     for (const id of [70, 71, 81]) assert.equal(telegram.has(id), true);
     for (const id of [22, 777]) assert.equal(telegram.canJoin(id), true);
     assert.equal(await database.prepare('SELECT source_id FROM blacklisted_sources WHERE source_id=777').first(), null);
-    assert.ok(telegram.replies.at(-1).text.length > 0);
+    assert.match(telegram.replies.at(-1).text, /Could not resolve/);
   }
 });
 
@@ -137,6 +133,27 @@ test('user: Given an inline message, When a reporter replies with an empty usern
   assert.equal(telegram.has(82), false);
   assert.equal(await database.prepare('SELECT source_id FROM blacklisted_sources WHERE source_id=777').first(), null);
   assert.match(telegram.replies.at(-1).text, /Could not resolve/);
+});
+
+test('user: Given an inline message, When a reporter replies with an explicit bs username, Then only the named source is registered and nobody is punished', async () => {
+  telegram.accounts.set('@example_bot', { id: 780, type: 'private', username: 'example_bot' });
+  const update = await inlineReport('/bs @example_bot');
+  assert.equal((await dispatch(update)).status, 200);
+  const sources = (await database.prepare('SELECT source_id FROM blacklisted_sources WHERE source_id IN (777, 780)').all()).results;
+  assert.deepEqual(sources, [{ source_id: 780 }]);
+  for (const id of [70, 71, 81]) assert.equal(telegram.has(id), true);
+  for (const id of [22, 777]) assert.equal(telegram.canJoin(id), true);
+  assert.match(telegram.replies.at(-1).text, /ID: 780/);
+});
+
+test('user: Given a forwarded inline message in a private chat, When a reporter replies with bare bs, Then the command shows usage without registering the bot', async () => {
+  const privateChat = { id: 11, type: 'private' };
+  const target = { ...message(90, 11), chat: privateChat, via_bot: { id: 777, is_bot: true } };
+  const update = { update_id: 400, message: { ...message(91, 11), chat: privateChat, text: '/bs',
+    entities: [{ type: 'bot_command', offset: 0, length: 3 }], reply_to_message: target } };
+  assert.equal((await dispatch(update)).status, 200);
+  assert.match(telegram.replies.at(-1).text, /Could not resolve/);
+  assert.equal(await database.prepare('SELECT source_id FROM blacklisted_sources WHERE source_id=777').first(), null);
 });
 
 test('user: Given a reply target from a different group, When a reporter uses bs, Then no source is registered or account punished', async () => {

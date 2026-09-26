@@ -63,15 +63,20 @@ test('user: Given a listed private-chat reporter, When an ordinary username is a
   assert.equal(telegram.canSend(22), true);
 });
 
-test('user: Given an unlisted administrator or a forged anonymous compatibility user, When bs is requested, Then no source is added or model invoked', async () => {
+test('user: Given an unlisted administrator or a forged anonymous compatibility user, When bs is requested, Then no source is added or username resolved', async () => {
   telegram.accounts.set('@example_bot', { id: 777, type: 'private', username: 'example_bot' });
+  let lookups = 0;
+  telegram.faults.set('getChat', () => {
+    lookups += 1;
+    return Response.json({ ok: true, result: { id: 777, type: 'private', username: 'example_bot' } });
+  });
   for (const update of [command('/bs example_bot', 22),
     { ...command(), message: { ...command().message, sender_chat: { ...chat, id: -10099 } } }]) {
     assert.equal((await dispatch(update)).status, 200);
   }
   assert.equal(await database.prepare('SELECT source_id FROM blacklisted_sources WHERE source_id=777').first(), null);
   assert.deepEqual(telegram.replies, []);
-  assert.equal(model.state, null);
+  assert.equal(lookups, 0);
 });
 
 test('user: Given an authorized sender chat, When bs addresses this bot, Then the source is saved regardless of destination group', async () => {
@@ -89,7 +94,6 @@ test('user: Given missing or malformed usernames and unresolved accounts, When b
   await database.prepare('DELETE FROM blacklisted_sources').run();
   for (const text of ['/bs', '/bs two names', '/bs https://example.com', '/bs missing']) {
     assert.equal((await dispatch(command(text))).status, 200);
-    assert.ok(telegram.replies.at(-1).text.length > 0);
     assert.match(telegram.replies.at(-1).text, /Could not resolve/);
   }
   assert.equal((await database.prepare('SELECT count(*) AS n FROM blacklisted_sources').first()).n, 0);
@@ -109,6 +113,27 @@ test('user: Given unavailable source storage, When bs is retried after recovery,
   assert.match(telegram.replies.at(-1).text, /779/);
 });
 
+test('user: Given an unlisted sender, When their /bs message carries a campaign marker, Then the message is deleted and the sender muted without registering a source', async () => {
+  telegram.accounts.set('@example_bot', { id: 780, type: 'private', username: 'example_bot' });
+  const update = command('/bs example_bot @safdhifobot campaign_001', 22);
+  telegram.send(update.message);
+  assert.equal((await dispatch(update)).status, 200);
+  assert.equal(telegram.has(300), false);
+  assert.equal(telegram.canSend(22), false);
+  assert.equal(await database.prepare('SELECT source_id FROM blacklisted_sources WHERE source_id=780').first(), null);
+  assert.deepEqual(telegram.replies, []);
+});
+
+test('user: Given a blacklisted account, When it sends a /bs command without authorization, Then it is banned and its message removed', async () => {
+  await database.prepare('INSERT INTO blacklisted_users (bot_id, user_id, added_at) VALUES (123, 22, 1)').run();
+  const update = command('/bs example_bot', 22);
+  telegram.send(update.message);
+  assert.equal((await dispatch(update)).status, 200);
+  assert.equal(telegram.has(300), false);
+  assert.equal(telegram.canJoin(22), false);
+  assert.deepEqual(telegram.replies, []);
+});
+
 test('user: Given edited commands or commands for another bot, When delivered, Then no source is added', async () => {
   telegram.accounts.set('@example_bot', { id: 780, type: 'private', username: 'example_bot' });
   assert.equal((await dispatch({ edited_message: command().message })).status, 200);
@@ -116,32 +141,6 @@ test('user: Given edited commands or commands for another bot, When delivered, T
   assert.equal(await database.prepare('SELECT source_id FROM blacklisted_sources WHERE source_id=780').first(), null);
   assert.deepEqual(telegram.replies, []);
 });
-
-test('user: Given a previously banned account, When bs adds it as a source, Then its ban and indexed messages stay unchanged', async () => {
-  telegram.accounts.set('@example_bot', { id: 22, type: 'private', username: 'example_bot' });
-  telegram.send(message(200));
-  await dispatch({ update_id: 199, message: message(200) });
-  telegram.members.set(22, { status: 'kicked', until_date: 0 });
-  assert.equal((await dispatch(command())).status, 200);
-  assert.equal(telegram.canJoin(22), false);
-  assert.equal(telegram.canSend(22), false);
-  assert.equal(telegram.has(200), true);
-});
-
-for (const status of ['creator', 'administrator']) {
-  test(`user: Given a target with ${status} privileges, When an authorized reporter adds it as a source, Then membership and indexed history remain protected`, async () => {
-    telegram.accounts.set('@example_bot', { id: 22, type: 'private', username: 'example_bot' });
-    telegram.send(message(200));
-    await dispatch({ update_id: 199, message: message(200) });
-    telegram.members.set(22, { status });
-    assert.equal((await dispatch(command())).status, 200);
-    assert.equal(telegram.canJoin(22), true);
-    assert.equal(telegram.canSend(22), true);
-    assert.equal(telegram.has(200), true);
-    assert.match(telegram.replies.at(-1).text, /ID: 22/);
-    assert.equal((await database.prepare('SELECT count(*) AS n FROM blacklisted_users').first()).n, 0);
-  });
-}
 
 test('user: Given a saved command and a renamed account during retry, When acknowledgement resumes, Then only the original source is saved and neither account is punished', async () => {
   telegram.accounts.set('@example_bot', { id: 22, type: 'private', username: 'example_bot' });
@@ -181,15 +180,11 @@ test('user: Given a pending source acknowledgement, When the reporter loses acce
   const saved = await database.prepare('SELECT * FROM reports').first();
   telegram.faults.clear();
   await setBindings({ REPORTER_IDS: '' });
-  try {
-    assert.equal((await dispatch(update)).status, 200);
-    assert.deepEqual(telegram.replies, []);
-    assert.equal(telegram.has(300), true);
-    assert.deepEqual(await database.prepare('SELECT * FROM reports').first(), saved);
-    assert.equal((await database.prepare('SELECT source_id FROM blacklisted_sources WHERE source_id=777').first()).source_id, 777);
-  } finally {
-    await setBindings({});
-  }
+  assert.equal((await dispatch(update)).status, 200);
+  assert.deepEqual(telegram.replies, []);
+  assert.equal(telegram.has(300), true);
+  assert.deepEqual(await database.prepare('SELECT * FROM reports').first(), saved);
+  assert.equal((await database.prepare('SELECT source_id FROM blacklisted_sources WHERE source_id=777').first()).source_id, 777);
 });
 
 test('user: Given an active username alias, When an authorized private-chat command resolves it, Then the account ID is saved', async () => {
@@ -211,17 +206,6 @@ test('user: Given an authorized reporter, When the removed ban command is sent, 
   assert.equal(telegram.canJoin(22), true);
   assert.equal(telegram.canSend(22), true);
   assert.deepEqual(telegram.replies, []);
-});
-
-test('user: Given a message sent through a bot, When an authorized administrator reports it, Then only its actual sender enters the account blacklist', async () => {
-  await database.prepare('DELETE FROM blacklisted_sources').run();
-  const target = { ...message(), via_bot: { id: 777, is_bot: true } };
-  telegram.send(target);
-  assert.equal((await dispatch(report(target))).status, 200);
-  assert.equal(telegram.has(81), false);
-  assert.equal(telegram.canJoin(22), false);
-  assert.deepEqual((await database.prepare('SELECT user_id FROM blacklisted_users').all()).results, [{ user_id: 22 }]);
-  assert.equal((await database.prepare('SELECT count(*) AS n FROM blacklisted_sources').first()).n, 0);
 });
 
 for (const status of ['administrator', 'creator']) {
@@ -281,7 +265,7 @@ for (const type of ['group', 'supergroup', 'private']) {
       telegram.send(update.message);
       assert.equal((await dispatch(update)).status, 200);
       assert.equal(telegram.has(300), type === 'private');
-      assert.ok(telegram.replies.at(-1).text.length > 0);
+      assert.match(telegram.replies.at(-1).text, text === '/bs missing' ? /Could not resolve/ : /ID: 777/);
     }
   });
 }

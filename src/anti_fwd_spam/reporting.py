@@ -12,14 +12,16 @@ from .telegram import TelegramError
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
+    from .policy import TelegramUpdate
+
 
 @dataclass(frozen=True, slots=True)
 class ReportingPlugin:
     """A side-effect-free recognizer and an authorized reporting handler."""
 
     name: str
-    matches: Callable[[dict[str, object]], bool]
-    handle: Callable[[dict[str, object], dict[str, object], str], Awaitable[AppResponse]]
+    matches: Callable[[TelegramUpdate], bool]
+    handle: Callable[[TelegramUpdate], Awaitable[AppResponse]]
 
 
 class Reporting:
@@ -29,24 +31,29 @@ class Reporting:
         """Bind the runtime reporter allowlist."""
         self.reporter_ids = reporter_ids
 
-    async def dispatch(
-        self, plugins: tuple[ReportingPlugin, ...], update: dict[str, object], raw_json: str
-    ) -> AppResponse | None:
-        """Run the first matching plugin after authorization, or leave the update unhandled."""
-        message = update.get("message", update.get("edited_message"))
-        if not isinstance(message, dict):
+    def authorized(self, update: TelegramUpdate) -> bool:
+        """Check the sending identity: a sender chat alone, otherwise a genuine non-bot user."""
+        sender_chat = update.message.get("sender_chat")
+        identifier = sender_chat.get("id") if isinstance(sender_chat, dict) else user_id(update.message)
+        return type(identifier) is int and identifier in self.reporter_ids
+
+    def denied(self, plugins: tuple[ReportingPlugin, ...], update: TelegramUpdate) -> bool:
+        """Return True when a plugin recognizes the update but its sender is not authorized."""
+        return any(plugin.matches(update) for plugin in plugins) and not self.authorized(update)
+
+    async def dispatch(self, plugins: tuple[ReportingPlugin, ...], update: TelegramUpdate) -> AppResponse | None:
+        """Run the first matching plugin after authorization.
+
+        Unmatched and unauthorized updates return None, so automatic moderation still applies to them.
+        """
+        plugin = next((plugin for plugin in plugins if plugin.matches(update)), None)
+        if plugin is None:
             return None
-        for plugin in plugins:
-            if not plugin.matches(message):
-                continue
-            sender_chat = message.get("sender_chat")
-            identifier = sender_chat.get("id") if isinstance(sender_chat, dict) else user_id(message)
-            if type(identifier) is not int or identifier not in self.reporter_ids:
-                return AppResponse(200, f"{plugin.name} ignored; reporter not allowed")
-            try:
-                return await plugin.handle(update, message, raw_json)
-            except EvidenceError:
-                return AppResponse(503, f"{plugin.name} storage unavailable; retry pending")
-            except TelegramError as error:
-                return AppResponse(503 if error.retryable else 200, f"{plugin.name} failed")
-        return None
+        if not self.authorized(update):
+            return None
+        try:
+            return await plugin.handle(update)
+        except EvidenceError:
+            return AppResponse(503, f"{plugin.name} storage unavailable; retry pending")
+        except TelegramError as error:
+            return AppResponse(503 if error.retryable else 200, f"{plugin.name} failed")

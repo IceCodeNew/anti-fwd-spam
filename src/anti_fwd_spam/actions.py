@@ -7,13 +7,14 @@ from dataclasses import dataclass, replace
 from http import HTTPStatus
 from typing import TYPE_CHECKING
 
-from .evidence import DELETE_BATCH_SIZE, EvidenceError
+from .evidence import BAN_FAILED, BANNED, DELETE_BATCH_SIZE, EvidenceError
 from .telegram import DeleteOutcome, TelegramError, call_method, delete_message
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
     from .evidence import ReportStore, StoredReport
+    from .policy import TelegramUpdate
     from .telegram import Fetch
 
 ADMIN_STATUSES = frozenset({"creator", "administrator"})
@@ -102,7 +103,11 @@ class Actions:
         return result["status"]
 
     async def delete_and_mute(
-        self, message: dict[str, object], *, can_act: Callable[[], Awaitable[bool]] | None = None
+        self,
+        message: dict[str, object],
+        *,
+        can_act: Callable[[], Awaitable[bool]] | None = None,
+        mute: bool = True,
     ) -> AppResponse:
         """Delete one message and permanently mute its sender, preserving administrators and history."""
         chat, message_id = message.get("chat"), message.get("message_id")
@@ -121,7 +126,7 @@ class Actions:
             return AppResponse(200, "moderation cancelled")
         response = await self._delete_target(chat_id, message_id)
         identifier = user_id(message)
-        if not response.target_removed or identifier is None or chat.get("type") != "supergroup":
+        if not mute or not response.target_removed or identifier is None or chat.get("type") != "supergroup":
             return replace(response, body=response.body + "; mute skipped")
         try:
             response = await self._mute(chat_id, message_id, identifier, response.body, can_act)
@@ -132,10 +137,9 @@ class Actions:
     async def delete_history_and_ban(
         self,
         target: BanTarget,
-        update: dict[str, object],
-        raw_json: str,
+        update: TelegramUpdate,
         *,
-        subject_id: int = 0,
+        subject_id: int,
         remove_report: bool = True,
     ) -> AppResponse:
         """Persist and resume a ban, target deletion and indexed history cleanup.
@@ -145,15 +149,10 @@ class Actions:
         the triggering message and only delete this account's indexed history.
         Command handlers can own report removal after acknowledging multiple subjects.
         """
-        update_id = update.get("update_id")
-        message = update.get("message", update.get("edited_message"))
-        if type(update_id) is not int or update_id < 0 or not isinstance(message, dict):
+        if update.update_id is None:
             return AppResponse(400, "invalid moderation update")
-        evidence = message.get("reply_to_message") if target.message_id is not None else message
-        if not isinstance(evidence, dict):
-            return AppResponse(400, "invalid moderation evidence")
-        key = (self.bot_id, update_id)
-        saved = await self.store.save(key, raw_json, evidence, int(time.time()), subject_id)
+        key = (self.bot_id, update.update_id)
+        saved = await self.store.save(key, update.raw_json, int(time.time()), subject_id)
         if saved.status is not None:
             return AppResponse(saved.status, saved.body)
         if saved.ban_claimed and saved.moderation_result is None:
@@ -164,7 +163,7 @@ class Actions:
                 needs_confirmation=True,
             )
         try:
-            reporter_id = user_id(message)
+            reporter_id = user_id(update.message)
             authorized = (
                 target.message_id is None
                 or saved.moderation_result is not None
@@ -190,20 +189,19 @@ class Actions:
         report_key: tuple[int, int],
         saved: StoredReport,
         *,
-        subject_id: int = 0,
+        subject_id: int,
     ) -> AppResponse:
         chat_id, identifier = target.chat_id, target.user_id
         response = await self._resume_ban(chat_id, identifier, report_key, saved, subject_id)
-        if target.message_id is not None and (response is None or response.sender_banned):
-            banned = response is not None and response.sender_banned
-            deletion = await self._delete_target(chat_id, target.message_id)
-            response = replace(
-                deletion,
-                body=deletion.body + ("; banned" if banned else "; ban skipped"),
-                sender_banned=banned,
-            )
         if response is None:
-            return AppResponse(200, "account moderation skipped; protected administrator")
+            # No account to ban, or a protected administrator: only an explicit report target remains.
+            if target.message_id is None:
+                return AppResponse(200, "account moderation skipped; protected administrator")
+            response = AppResponse(200, "ban skipped")
+        # A report deletes its target unless the target is already removed or the ban waits for a retry.
+        if target.message_id is not None and response.status == HTTPStatus.OK and not response.target_removed:
+            deletion = await self._delete_target(chat_id, target.message_id)
+            response = replace(deletion, body=f"{deletion.body}; {response.body}", sender_banned=response.sender_banned)
         if response.target_removed:
             await self.store.remember_moderation(*report_key, response.body, subject_id)
         if identifier is not None and response.sender_banned:
@@ -220,18 +218,18 @@ class Actions:
         saved: StoredReport,
         subject_id: int,
     ) -> AppResponse | None:
-        if saved.moderation_result in {"banned", "deleted; banned"} or (
-            saved.moderation_result == "target removed before upgrade"
-            and (saved.body.startswith("deleted; banned") or saved.body == "deletion pending retry; banned")
-        ):
-            # Persisted records from older releases inferred removal from a successful ban.
-            return AppResponse(200, "banned", sender_banned=True)
+        if saved.moderation_result == BANNED:
+            # The ban succeeded, but the target deletion or report cleanup did not finish.
+            return AppResponse(200, BANNED, sender_banned=True)
+        if saved.moderation_result == BAN_FAILED:
+            # Telegram rejected the ban permanently; only a pending target deletion remains.
+            return AppResponse(200, BAN_FAILED)
         if saved.moderation_result is not None:
             return AppResponse(
                 200,
                 saved.moderation_result,
                 target_removed=True,
-                sender_banned=saved.moderation_result == "already absent; banned",
+                sender_banned=saved.moderation_result.endswith(f"; {BANNED}"),
             )
         return await self._ban(chat_id, identifier, report_key, subject_id) if identifier is not None else None
 
@@ -301,13 +299,15 @@ class Actions:
                     {"chat_id": chat_id, "user_id": identifier, "until_date": 0},
                 )
                 if result is not True:
-                    return AppResponse(503, "ban failed")
-            await self.store.remember_moderation(*report_key, "banned", subject_id)
+                    return AppResponse(503, BAN_FAILED)
+            await self.store.remember_moderation(*report_key, BANNED, subject_id)
         except TelegramError as error:
             if claimed and error.rejected:
                 await self.store.release_ban(*report_key, subject_id)
-            return AppResponse(503 if error.retryable else 200, "ban failed")
-        return AppResponse(200, "banned", sender_banned=True)
+            if not error.retryable:
+                await self.store.remember_moderation(*report_key, BAN_FAILED, subject_id)
+            return AppResponse(503 if error.retryable else 200, BAN_FAILED)
+        return AppResponse(200, BANNED, sender_banned=True)
 
     async def _mute(
         self,

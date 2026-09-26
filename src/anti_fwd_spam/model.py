@@ -9,7 +9,6 @@ import logging
 from http import HTTPMethod, HTTPStatus
 from typing import TYPE_CHECKING
 
-from .evidence import MEDIA_FIELDS
 from .telegram import TelegramError, call_method
 
 if TYPE_CHECKING:
@@ -37,6 +36,21 @@ class ModelConfig:
     api_key: str = dataclasses.field(repr=False)
 
 
+MEDIA_FIELDS = frozenset(
+    [
+        "animation",
+        "audio",
+        "document",
+        "live_photo",
+        "paid_media",
+        "photo",
+        "sticker",
+        "story",
+        "video",
+        "video_note",
+        "voice",
+    ],
+)
 MODEL_CONTENT_FIELDS = MEDIA_FIELDS | frozenset(
     {
         "text",

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 
@@ -9,7 +10,8 @@ MAX_TELEGRAM_ID = (1 << 52) - 1
 MAX_CONFIG_LENGTH = 4_096
 MAX_ID_ENTRIES = 500
 TOKEN_PART_COUNT = 2
-SUPPORTED_CHAT_TYPES = frozenset({"group", "supergroup", "private", "channel"})
+GROUP_CHAT_TYPES = frozenset({"group", "supergroup"})
+SUPPORTED_CHAT_TYPES = GROUP_CHAT_TYPES | {"private", "channel"}
 SUPPORTED_FORWARD_ORIGINS = frozenset({"user", "hidden_user", "chat", "channel"})
 SPAM_PATTERNS = (
     re.compile(r"@[A-Za-z0-9_]{5,32}\s+campaign_[0-9]+"),
@@ -27,6 +29,12 @@ def matches_spam_pattern(message: dict[str, object]) -> bool:
     )
 
 
+def reply_target(message: dict[str, object]) -> dict[str, object] | None:
+    """Return an explicit reply, not the topic root that Telegram attaches to forum topic messages."""
+    target = message.get("reply_to_message")
+    return target if isinstance(target, dict) and "forum_topic_created" not in target else None
+
+
 class ConfigError(ValueError):
     """The Worker configuration is absent or invalid."""
 
@@ -37,7 +45,7 @@ class Config:
 
     bot_token: str
     webhook_secret: str
-    reporter_ids: frozenset[int] = frozenset()
+    reporter_ids: frozenset[int]
 
     @classmethod
     def from_values(
@@ -75,7 +83,7 @@ class Config:
         return cls(
             token,
             secret,
-            _parse_ids("REPORTER_IDS", reporter_ids, allow_negative=True),
+            _parse_reporter_ids(reporter_ids),
         )
 
 
@@ -104,21 +112,39 @@ def _message_sources(message: dict[str, object]) -> frozenset[int]:
     return frozenset(sources)
 
 
-def source_ids(update: object) -> frozenset[int]:
-    """Validate consumed fields and extract explicit bot provenance in groups."""
+@dataclass(frozen=True, slots=True)
+class TelegramUpdate:
+    """A validated message update with its raw JSON and explicit bot provenance."""
+
+    raw_json: str
+    update_id: int | None
+    message: dict[str, object]
+    chat_id: int
+    chat_type: str
+    message_id: int
+    sent_at: int | None
+    edited: bool
+    sources: frozenset[int]
+
+    @property
+    def in_group(self) -> bool:
+        """Return True for basic groups and supergroups."""
+        return self.chat_type in GROUP_CHAT_TYPES
+
+
+def parse_update(raw_json: str) -> TelegramUpdate | None:
+    """Validate every field that routing consumes; return None for updates without a message."""
+    update = json.loads(raw_json)
     if not isinstance(update, dict):
         message = "update must be an object"
         raise TypeError(message)
-
-    has_message = "message" in update
-    has_edited_message = "edited_message" in update
-    if has_message and has_edited_message:
+    if "message" in update and "edited_message" in update:
         message = "update must contain at most one supported message"
         raise ValueError(message)
-    if not has_message and not has_edited_message:
-        return frozenset()
-
-    raw_message = update.get("message" if has_message else "edited_message")
+    edited = "edited_message" in update
+    if not edited and "message" not in update:
+        return None
+    raw_message = update["edited_message" if edited else "message"]
     if not isinstance(raw_message, dict):
         message = "message must be an object"
         raise TypeError(message)
@@ -130,17 +156,26 @@ def source_ids(update: object) -> frozenset[int]:
     if not isinstance(chat_type, str) or chat_type not in SUPPORTED_CHAT_TYPES:
         message = "message.chat.type is invalid"
         raise ValueError(message)
-    if chat_type not in {"group", "supergroup"}:
-        return frozenset()
-
-    _telegram_id(chat.get("id"), allow_negative=True)
-    _telegram_id(raw_message.get("message_id"), allow_negative=False)
-    sources = _message_sources(raw_message)
     update_id = update.get("update_id")
-    if sources and (type(update_id) is not int or update_id < 0):
+    if update_id is not None and (type(update_id) is not int or update_id < 0):
         message = "update.update_id is invalid"
         raise ValueError(message)
-    return sources
+    sources = _message_sources(raw_message) if chat_type in GROUP_CHAT_TYPES else frozenset()
+    if sources and update_id is None:
+        message = "update.update_id is required for a source match"
+        raise ValueError(message)
+    sent_at = raw_message.get("date")
+    return TelegramUpdate(
+        raw_json=raw_json,
+        update_id=update_id,
+        message=raw_message,
+        chat_id=_telegram_id(chat.get("id"), allow_negative=True),
+        chat_type=chat_type,
+        message_id=_telegram_id(raw_message.get("message_id"), allow_negative=False),
+        sent_at=sent_at if type(sent_at) is int else None,
+        edited=edited,
+        sources=sources,
+    )
 
 
 def _required_string(name: str, value: object, *, maximum: int) -> str:
@@ -150,24 +185,24 @@ def _required_string(name: str, value: object, *, maximum: int) -> str:
     return value
 
 
-def _parse_ids(name: str, value: object, *, allow_negative: bool = False) -> frozenset[int]:
+def _parse_reporter_ids(value: object) -> frozenset[int]:
     if not isinstance(value, str) or len(value) > MAX_CONFIG_LENGTH:
-        message = f"{name} must be a string no longer than {MAX_CONFIG_LENGTH} characters"
+        message = f"REPORTER_IDS must be a string no longer than {MAX_CONFIG_LENGTH} characters"
         raise ConfigError(message)
     entries = [entry.strip() for entry in value.split(",") if entry.strip()]
     if len(entries) > MAX_ID_ENTRIES:
-        message = f"{name} supports at most {MAX_ID_ENTRIES} entries"
+        message = f"REPORTER_IDS supports at most {MAX_ID_ENTRIES} entries"
         raise ConfigError(message)
     parsed: set[int] = set()
     for entry in entries:
-        digits = entry.removeprefix("-") if allow_negative else entry
+        digits = entry.removeprefix("-")
         if not digits.isascii() or not digits.isdecimal():
-            message = f"{name} entries must be decimal integers"
+            message = "REPORTER_IDS entries must be decimal integers"
             raise ConfigError(message)
         try:
-            parsed.add(_telegram_id(int(entry), allow_negative=allow_negative))
+            parsed.add(_telegram_id(int(entry), allow_negative=True))
         except ValueError as error:
-            message = f"{name} entry is outside Telegram's range"
+            message = "REPORTER_IDS entry is outside Telegram's range"
             raise ConfigError(message) from error
     return frozenset(parsed)
 

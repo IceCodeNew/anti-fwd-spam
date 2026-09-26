@@ -9,7 +9,7 @@ from http import HTTPStatus
 from typing import TYPE_CHECKING
 
 from .actions import Actions
-from .evidence import MESSAGE_WINDOW_SECONDS, RETENTION_SECONDS, EvidenceError
+from .evidence import MESSAGE_WINDOW_SECONDS, RETENTION_SECONDS, storage_errors
 from .model import SPAM_THRESHOLD, ModelRetryError, spam_probability
 
 if TYPE_CHECKING:
@@ -52,7 +52,7 @@ class ModelTasks:
     ) -> bool:
         """Deduplicate deliveries; an edit also leaves a tombstone before any original delivery."""
         phase = "done" if state is None else "classify"
-        try:
+        with storage_errors():
             row = (
                 await self.database.prepare(
                     "INSERT INTO model_tasks "
@@ -74,13 +74,11 @@ class ModelTasks:
                 )
                 .first()
             )
-        except Exception as error:
-            raise EvidenceError from error
         return row is not None
 
     async def claim(self, now: int, target: tuple[int, int] | None = None) -> Task | None:
         """Atomically claim one due stage and charge an attempt before the external request."""
-        try:
+        with storage_errors():
             row = (
                 await self.database.prepare(
                     "UPDATE model_tasks SET attempts = attempts + 1, generation = generation + 1, lease_until = ?, "
@@ -116,17 +114,15 @@ class ModelTasks:
                 int(row.attempts),
                 int(row.generation),
             )
-        except Exception as error:
-            raise EvidenceError from error
 
     async def finish(
-        self, task: Task, phase: str, now: int, *, retry: bool = False, target: dict[str, object] | None = None
+        self, task: Task, phase: str, now: int, *, retry: bool = False, action: dict[str, object] | None = None
     ) -> bool:
         """Commit an owned result, clearing content once classification ends."""
         if retry and task.attempts > len(RETRY_DELAYS):
             phase, retry = "done", False
         due = now + RETRY_DELAYS[task.attempts - 1] if retry else now
-        try:
+        with storage_errors():
             row = (
                 await self.database.prepare(
                     "UPDATE model_tasks SET phase = ?, input_json = CASE WHEN ? THEN input_json ELSE ? END, "
@@ -137,7 +133,7 @@ class ModelTasks:
                 .bind(
                     phase,
                     retry,
-                    json.dumps({"target": target}) if phase == "delete" and target is not None else None,
+                    json.dumps(action) if phase == "delete" and action is not None else None,
                     retry,
                     due,
                     self.bot_id,
@@ -151,8 +147,6 @@ class ModelTasks:
                 )
                 .first()
             )
-        except Exception as error:
-            raise EvidenceError from error
         return row is not None
 
     async def expire(self, now: int) -> None:
@@ -177,38 +171,40 @@ class ModelTasks:
 
     async def run(self, task: Task, fetcher: Fetch, token: str, models: tuple[ModelConfig, ...], now: int) -> None:
         """Persist inference before moderation, so retries cannot reevaluate a saved score."""
+        payload = json.loads(task.input_json or "{}")
+        snapshot = payload.get("target")
+        target = snapshot if isinstance(snapshot, dict) else None
+        # Tasks saved by the previous release have no mute flag and keep the mute.
+        mute = payload.get("mute") is not False
+        action: dict[str, object] | None = {"target": target, "mute": mute} if target is not None else None
         if task.phase == "classify":
             model = models[(task.attempts - 1) % len(models)]
-            payload = json.loads(task.input_json or "{}")
             try:
-                probability = await spam_probability(fetcher, model, payload.get("state", payload))
+                probability = await spam_probability(fetcher, model, payload["state"])
             except ModelRetryError as error:
                 retry = error.retryable or task.attempts < len(models)
                 await self.finish(task, "classify" if retry else "done", max(now, int(time.time())), retry=retry)
                 return
             now = max(now, int(time.time()))
             phase = "delete" if probability is not None and probability >= SPAM_THRESHOLD else "done"
-            snapshot = payload.get("target")
-            target = snapshot if isinstance(snapshot, dict) else None
-            if not await self.finish(task, phase, now, target=target) or phase == "done":
+            if not await self.finish(task, phase, now, action=action) or phase == "done":
                 return
             deletion = await self.claim(now, (task.chat_id, task.message_id))
             if deletion is None:
                 return
             task = deletion
-        target = await self._target(task)
         retry = False
         if target is not None:
 
             async def can_act() -> bool:
                 return await self._owns(task, max(now, int(time.time())))
 
-            response = await Actions(fetcher, token, self.store).delete_and_mute(target, can_act=can_act)
+            response = await Actions(fetcher, token, self.store).delete_and_mute(target, can_act=can_act, mute=mute)
             retry = response.status == HTTPStatus.SERVICE_UNAVAILABLE
         await self.finish(task, "delete" if retry else "done", max(now, int(time.time())), retry=retry)
 
     async def _owns(self, task: Task, now: int) -> bool:
-        try:
+        with storage_errors():
             row = await (
                 self.database.prepare(
                     "SELECT 1 FROM model_tasks WHERE bot_id = ? AND chat_id = ? AND message_id = ? "
@@ -217,30 +213,4 @@ class ModelTasks:
                 .bind(self.bot_id, task.chat_id, task.message_id, task.generation, now, now, now)
                 .first()
             )
-        except Exception as error:
-            raise EvidenceError from error
         return row is not None
-
-    async def _target(self, task: Task) -> dict[str, object] | None:
-        payload = json.loads(task.input_json or "{}")
-        target = payload.get("target")
-        if isinstance(target, dict):
-            return target
-        # Pending tasks created before sender snapshots can recover identity from the index.
-        try:
-            row = await (
-                self.database.prepare(
-                    "SELECT sender_id FROM recent_messages WHERE bot_id = ? AND chat_id = ? AND message_id = ?"
-                )
-                .bind(self.bot_id, task.chat_id, task.message_id)
-                .first()
-            )
-        except Exception as error:
-            raise EvidenceError from error
-        if row is None:
-            return None
-        return {
-            "chat": {"id": task.chat_id, "type": "supergroup"},
-            "message_id": task.message_id,
-            "from": {"id": int(row.sender_id), "is_bot": False},
-        }

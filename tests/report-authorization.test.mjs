@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { database, dispatch, model, setBindings, telegram } from './worker-runtime.mjs';
+import { database, dispatch, model, runtime, setBindings, telegram } from './worker-runtime.mjs';
 import { chat, message, report } from './telegram-fake.mjs';
 
 for (const allowed of ['', undefined, '22', '111']) {
@@ -17,12 +17,26 @@ for (const allowed of ['', undefined, '22', '111']) {
     assert.equal(telegram.has(82), true);
     assert.equal(telegram.canJoin(22), true);
     assert.equal(telegram.canSend(22), true);
-    for (const table of ['reports', 'blacklisted_users', 'model_tasks']) {
+    for (const table of ['reports', 'blacklisted_users']) {
       assert.equal((await database.prepare(`SELECT COUNT(*) AS count FROM ${table}`).first()).count, 0);
     }
-    assert.equal(model.state, null);
   });
 }
+
+test('user: Given an unlisted member, When their reply to an ordinary message mentions the bot and carries a campaign marker, Then the reply is deleted and they are muted without report evidence', async () => {
+  await setBindings({ REPORTER_IDS: '11' });
+  const update = report(message(80, 11));
+  update.message.from = message(82, 22).from;
+  update.message.text = '😀 @test_gate_bot @safdhifobot campaign_001';
+  telegram.send(update.message);
+  telegram.send(update.message.reply_to_message);
+  assert.equal((await dispatch(update)).status, 200);
+  assert.equal(telegram.has(82), false);
+  assert.equal(telegram.has(80), true);
+  assert.equal(telegram.canSend(22), false);
+  assert.equal(telegram.canJoin(11), true);
+  assert.equal((await database.prepare('SELECT COUNT(*) AS count FROM reports').first()).count, 0);
+});
 
 test('user: Given an allowed account sending anonymously, When its report contains a compatibility user ID, Then the group identity cannot authorize a report', async () => {
   await setBindings({ REPORTER_IDS: '11,1087968824' });
@@ -110,3 +124,34 @@ for (const status of ['member', 'kicked', 'administrator', 'creator']) {
     if (protectedAccount) assert.deepEqual(telegram.members.get(22), { status });
   });
 }
+
+test('user: Given an unlisted member, When their report quotes the campaign marker of the spam it replies to, Then only the report is deleted and the member keeps speaking', async () => {
+  await setBindings({ REPORTER_IDS: '33' });
+  const spam = { ...message(80, 11), text: '@safdhifobot campaign_001' };
+  const update = report(spam);
+  update.message.from = message(82, 22).from;
+  update.message.text = '😀 @test_gate_bot @safdhifobot campaign_001';
+  telegram.send(update.message);
+  assert.equal((await dispatch(update)).status, 200);
+  assert.equal(telegram.has(82), false);
+  assert.equal(telegram.canSend(22), true);
+  assert.equal((await database.prepare('SELECT COUNT(*) AS count FROM reports').first()).count, 0);
+});
+
+test('user: Given an unlisted member, When Jev flags their report on spam and deletion resumes later, Then only the report is deleted and the member keeps speaking', async () => {
+  await setBindings({ REPORTER_IDS: '33', EXPERIENTIAL_API_KEY: 'test-model-key' });
+  model.probability = 1;
+  const update = report({ ...message(80, 11), text: '@safdhifobot campaign_001' });
+  update.message.from = message(82, 22).from;
+  update.message.text = '😀 @test_gate_bot 福利推广，联系我购买';
+  telegram.send(update.message);
+  telegram.faults.set('deleteMessage', () => Response.json({ ok: false, error_code: 429 }, { status: 429 }));
+  assert.equal((await dispatch(update)).status, 200);
+  assert.equal(telegram.has(82), true);
+  telegram.faults.clear();
+  const { due_at: due } = await database.prepare('SELECT due_at FROM model_tasks WHERE message_id = 82').first();
+  telegram.now = due;
+  await (await runtime.getWorker()).scheduled({ scheduledTime: new Date(due * 1000), cron: '* * * * *' });
+  assert.equal(telegram.has(82), false);
+  assert.equal(telegram.canSend(22), true);
+});

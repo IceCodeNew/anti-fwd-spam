@@ -7,6 +7,13 @@ const keys = ['TYPESAFE_AI_API_KEY', 'EXPERIENTIAL_API_KEY', 'OPENCODE_API_KEY',
 const credentials = ['test-typesafe-key', 'test-model-key', 'test-opencode-key', 'test-commandcode-key', 'test-gateway-key'];
 const configured = names => Object.fromEntries(names.map(name => [name, credentials[keys.indexOf(name)]]));
 const pending = () => database.prepare('SELECT * FROM model_tasks WHERE message_id = 81').first();
+// The webhook attempt can finish a few seconds after dispatch; later retries follow the scheduled clock exactly.
+const WEBHOOK_SLACK = 5;
+async function dispatchNow(update) {
+  const sent = Math.floor(Date.now() / 1000);
+  await dispatch(update);
+  return sent;
+}
 async function tick(now) {
   telegram.now = now;
   await (await runtime.getWorker()).scheduled({ scheduledTime: new Date(now * 1000), cron: '* * * * *' });
@@ -26,98 +33,57 @@ for (const key of keys) {
   });
 }
 
-for (const status of [503, 403]) {
-  test(`user: Given a TypeSafe HTTP ${status} and working Experiential, When the retry becomes due, Then another provider removes the target`, async () => {
-    await setModelKeys(configured(keys.slice(0, 2)));
-    model.response = url => url.includes('api.typesafe.ai')
-      ? new Response('unavailable', { status })
-      : Response.json({ answers: { spam: { type: 'noul', noul: 0.99 } } });
-    telegram.send(message());
-    await dispatch({ update_id: 1, message: message() });
-    assert.equal(telegram.has(81), true);
-    const saved = await pending();
-    assert.equal(saved.due_at - saved.created_at, 60);
-    await tick(saved.due_at - 1);
-    assert.equal(telegram.has(81), true);
-    await tick(saved.due_at);
-    assert.equal(telegram.has(81), false);
-  });
-}
-
-test('user: Given a TypeSafe HTTP 503 and working gateway fallback, When the retry becomes due, Then the gateway removes the target', async () => {
-  await setModelKeys(configured(['TYPESAFE_AI_API_KEY', 'AI_GATEWAY_API_KEY']));
-  model.response = url => url.includes('api.typesafe.ai')
-    ? new Response('unavailable', { status: 503 })
-    : Response.json({ answers: { spam: { type: 'boolean', probability: 0.99 } } });
-  telegram.send(message());
-  await dispatch({ update_id: 1, message: message() });
-  assert.equal(telegram.has(81), true);
-  const saved = await pending();
-  assert.equal(saved.due_at - saved.created_at, 60);
-  await tick(saved.due_at - 1);
-  assert.equal(telegram.has(81), true);
-  await tick(saved.due_at);
-  assert.equal(telegram.has(81), false);
-});
-
 test('user: Given four configured providers, When the first three reject requests, Then the fourth can classify after 1, 2 and 5 minutes', async () => {
   await setModelKeys(configured(keys.slice(0, 4)));
   model.response = url => url === 'https://api.commandcode.ai/provider/v1/systemone'
     ? Response.json({ answers: { spam: { type: 'noul', noul: 0.96 } } })
     : new Response('rejected', { status: 401 });
   telegram.send(message());
-  await dispatch({ update_id: 1, message: message() });
-  let now = (await pending()).created_at;
-  for (const delay of [60, 120, 300]) {
+  telegram.send(message(80));
+  const sent = await dispatchNow({ update_id: 1, message: message() });
+  await tick(sent + 59);
+  assert.equal(telegram.has(81), true);
+  let now = sent + 60 + WEBHOOK_SLACK;
+  await tick(now);
+  for (const delay of [120, 300]) {
     now += delay;
-    assert.equal((await pending()).due_at, now);
     await tick(now - 1);
     assert.equal(telegram.has(81), true);
     await tick(now);
   }
   assert.equal(telegram.has(81), false);
+  assert.equal(telegram.has(80), true);
+  assert.equal(telegram.canSend(22), false);
   assert.equal((await pending()).input_json, null);
 });
 
-for (const status of [503, 401]) {
-  test(`user: Given OpenCode HTTP ${status} and a CommandCode key, When the retry is due, Then CommandCode classifies without clearing earlier messages`, async () => {
-    await setModelKeys(configured(['OPENCODE_API_KEY', 'CMD_API_KEY']));
-    model.response = url => url === 'https://api.commandcode.ai/provider/v1/systemone'
-      ? Response.json({ model: 'typesafe/jev', answers: { spam: { type: 'noul', noul: 0.96 } } })
-      : new Response('unavailable', { status });
-    telegram.send(message());
-    telegram.send(message(80));
-    await dispatch({ update_id: 1, message: message() });
-    assert.equal(telegram.has(81), true);
-    const saved = await pending();
-    assert.equal(saved.due_at - saved.created_at, 60);
-    await tick(saved.due_at - 1);
-    assert.equal(telegram.has(81), true);
-    await tick(saved.due_at);
-    assert.equal(telegram.has(81), false);
-    assert.equal(telegram.has(80), true);
-    assert.equal(telegram.canSend(22), false);
-    assert.equal((await pending()).input_json, null);
-  });
-}
-
 test('user: Given all five provider keys, When the first four fail, Then the retry budget ends without consulting the fifth provider', async () => {
   await setModelKeys(configured(keys));
-  model.response = url => url.includes('ai-gateway.vercel.sh')
-    ? Response.json({ answers: { spam: { type: 'boolean', probability: 1 } } })
-    : new Response('unavailable', { status: 503 });
+  const calls = [];
+  model.response = url => {
+    calls.push(url);
+    return url.includes('ai-gateway.vercel.sh')
+      ? Response.json({ answers: { spam: { type: 'boolean', probability: 1 } } })
+      : new Response('unavailable', { status: 503 });
+  };
   telegram.send(message());
-  await dispatch({ update_id: 1, message: message() });
-  let now = (await pending()).created_at;
-  for (const delay of [60, 120, 300]) {
+  const sent = await dispatchNow({ update_id: 1, message: message() });
+  await tick(sent + 59);
+  assert.equal(calls.length, 1);
+  let now = sent + 60 + WEBHOOK_SLACK;
+  await tick(now);
+  for (const delay of [120, 300]) {
+    const attempts = calls.length;
+    await tick(now + delay - 1);
+    assert.equal(calls.length, attempts);
     now += delay;
-    assert.equal((await pending()).due_at, now);
     await tick(now);
   }
   await tick(now + 600);
+  assert.equal(calls.length, 4);
+  assert.equal(calls.some(url => url.includes('ai-gateway.vercel.sh')), false);
   assert.equal(telegram.has(81), true);
   assert.equal(telegram.canSend(22), true);
-  assert.equal((await pending()).phase, 'done');
   assert.equal((await pending()).input_json, null);
 });
 

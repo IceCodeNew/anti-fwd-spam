@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { readFile } from 'node:fs/promises';
 import { chat, message, report, token, username } from './telegram-fake.mjs';
 import { database, dispatch, headers, model, runtime, telegram } from './worker-runtime.mjs';
 
@@ -196,6 +195,45 @@ test('user bans reported spam: Given a non-member commenter and a sticker report
   assert.equal(row.expires_at - row.received_at, 259200);
 });
 
+test('user: Given the bot cannot ban the sender and deletion waits for a retry, When the report is redelivered after the reporter loses admin rights, Then the target is deleted without another ban attempt', async () => {
+  const update = report();
+  telegram.send(update.message.reply_to_message);
+  telegram.send(update.message);
+  let banAttempts = 0;
+  telegram.faults.set('banChatMember', () => {
+    banAttempts += 1;
+    return Response.json({
+      ok: false, error_code: 400, description: 'Bad Request: not enough rights to restrict/unrestrict chat member',
+    }, { status: 400 });
+  });
+  telegram.faults.set('deleteMessage:81', () => Response.json({ ok: false, error_code: 429 }, { status: 429 }));
+  assert.equal((await dispatch(update)).status, 503);
+  assert.equal(telegram.has(81), true);
+  telegram.faults.delete('deleteMessage:81');
+  telegram.members.set(11, { status: 'member' });
+  assert.equal((await dispatch(update)).status, 200);
+  assert.equal(telegram.has(81), false);
+  assert.equal(telegram.has(82), false);
+  assert.equal(banAttempts, 1);
+  assert.equal(telegram.canJoin(22), true);
+  assert.equal((await database.prepare('SELECT COUNT(*) AS n FROM blacklisted_users').first()).n, 0);
+});
+
+test('user: Given a forum topic, When an administrator mentions the bot without replying to a message, Then the topic creator is not reported', async () => {
+  const topic = { ...message(60), forum_topic_created: { name: 'topic', icon_color: 1 } };
+  telegram.send(topic);
+  const update = report(topic);
+  update.message.message_thread_id = 60;
+  update.message.is_topic_message = true;
+  telegram.send(update.message);
+  telegram.send(message(80));
+  await dispatch({ update_id: 70, message: message(80) });
+  assert.equal((await dispatch(update)).status, 200);
+  assert.equal(telegram.canJoin(22), true);
+  for (const id of [60, 80, 82]) assert.equal(telegram.has(id), true);
+  assert.equal((await evidence()).length, 0);
+});
+
 test('user reports old spam: Given a target Telegram refuses to delete, When an administrator reports it, Then the sender is banned but the report remains and the outcome does not claim deletion', async () => {
   const target = { ...message(), date: 1 };
   const update = report(target);
@@ -383,26 +421,6 @@ test('user records a report: Given a regular member and rich media, When they me
   assert.equal(telegram.canSend(22), true);
   const [row] = await evidence();
   assert.deepEqual(JSON.parse(row.raw_update), update);
-  assert.deepEqual(JSON.parse(row.classification), {
-    version: 1, content_types: ['animation', 'document', 'photo', 'rich_message', 'text'],
-    media_fields: ['animation', 'document', 'photo'], via_bot_present: true, present_fields: Object.keys(target).sort(),
-  });
-});
-
-test('user searches non-text evidence: Given media and service-message reports, When recorded, Then their content types remain searchable alongside the original JSON', async () => {
-  telegram.members.set(11, { status: 'member' });
-  const kinds = ['audio', 'live_photo', 'paid_media', 'sticker', 'story', 'video', 'video_note', 'voice',
-    'checklist', 'contact', 'dice', 'game', 'poll', 'venue', 'location', 'gift', 'unique_gift', 'invoice',
-    'successful_payment', 'new_chat_members', 'forum_topic_created', 'video_chat_started', 'web_app_data', 'giveaway'];
-  for (const [index, kind] of kinds.entries()) {
-    const target = { ...message(), [kind]: { sample: kind } };
-    delete target.text;
-    const update = { ...report(target), update_id: index };
-    assert.equal((await dispatch(update)).status, 200);
-    const row = (await evidence()).find(row => row.update_id === index);
-    assert.deepEqual(JSON.parse(row.classification).content_types, [kind]);
-    assert.deepEqual(JSON.parse(row.raw_update), update);
-  }
 });
 
 for (const status of ['creator', 'administrator']) {
@@ -443,7 +461,7 @@ test('user protects anonymous senders: Given a target sent as a chat, When an ad
   assert.equal(telegram.canSend(22), true);
 });
 
-test('user reports without joining: Given a commenter with left status, When a rule matches their message, Then they are muted without losing history', async () => {
+test('user mutes a non-member commenter: Given a commenter with left status, When a rule matches their message, Then they are muted without losing history', async () => {
   telegram.members.set(22, { status: 'left' });
   telegram.send(message(80));
   const spam = { ...message(), via_bot: { id: 273234066, is_bot: true } };
@@ -533,13 +551,14 @@ test('user retains evidence during failure: Given unavailable report storage, Wh
   }
 });
 
-for (const stage of ['getChatMember:11', 'getChatMember:22', 'banChatMember']) {
-  test(`user recovers from ${stage}: Given a temporary Telegram failure, When delivery is retried, Then evidence is retained and moderation finishes`, async () => {
+for (const [stage, status] of [['getChatMember:11', 429], ['getChatMember:22', 429], ['banChatMember', 429],
+  ['banChatMember', 408]]) {
+  test(`user recovers from ${stage} HTTP ${status}: Given a temporary Telegram failure, When delivery is retried, Then evidence is retained and moderation finishes`, async () => {
     const update = report();
     telegram.send(message(80));
     telegram.send(update.message.reply_to_message);
     telegram.send(update.message);
-    telegram.faults.set(stage, () => Response.json({ ok: false, error_code: 429, parameters: { retry_after: 1 } }, { status: 429 }));
+    telegram.faults.set(stage, () => Response.json({ ok: false, error_code: status, parameters: { retry_after: 1 } }, { status }));
 
     assert.equal((await dispatch(update)).status, 503);
     const [pending] = await evidence();
@@ -662,6 +681,8 @@ test('user rejects malformed updates: Given invalid identifiers or cross-chat re
     { message: { ...target, forward_origin: { type: [] } } },
     report({ ...target, chat: { ...chat, id: -999 } }),
     report({ ...target, message_id: false }),
+    { update_id: -1, message: target },
+    { update_id: 1, message: { ...target, chat: { id: 22, type: 'private' }, message_id: 0 } },
   ];
   telegram.send(target);
   for (const update of invalid) assert.equal((await dispatch(update)).status, 400, JSON.stringify(update));
@@ -677,6 +698,7 @@ test('user authenticates delivery: Given a report, When its route, method, secre
     [{ headers: { ...headers, 'x-telegram-bot-api-secret-token': 'wrong' } }, 401],
     [{ headers: { ...headers, 'x-telegram-bot-api-secret-token': 'é' } }, 401],
     [{ headers: { 'content-type': 'application/json' } }, 401],
+    [{ headers: { ...headers, 'x-telegram-bot-api-secret-token': 'wrong' }, body: '{' }, 401],
     [{ method: 'GET', body: undefined }, 405],
     [{ headers: { ...headers, 'content-type': 'text/plain' } }, 415],
     [{ body: '{' }, 400],
@@ -708,9 +730,9 @@ test('user expires evidence: Given records immediately before and at expiry, Whe
   await worker.scheduled({ scheduledTime: new Date((row.expires_at - 1) * 1000), cron: '* * * * *' });
   assert.equal((await evidence()).length, 1);
   // Seed already-aged evidence through D1, not wall-clock sleeps or Python patches.
-  await database.prepare(`INSERT INTO reports (bot_id, update_id, received_at, expires_at, raw_update, classification)
+  await database.prepare(`INSERT INTO reports (bot_id, update_id, received_at, expires_at, raw_update)
     WITH RECURSIVE ids(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM ids WHERE n<1001)
-    SELECT 123, 100+n, ?, ?, '{}', '{}' FROM ids`).bind(row.received_at, row.expires_at).run();
+    SELECT 123, 100+n, ?, ?, '{}' FROM ids`).bind(row.received_at, row.expires_at).run();
   await database.prepare('UPDATE reports SET expires_at = ? WHERE update_id = 1101').bind(row.expires_at + 1).run();
 
   await worker.scheduled({ scheduledTime: new Date(row.expires_at * 1000), cron: '* * * * *' });
@@ -890,49 +912,3 @@ for (const failure of ['server error', 'unexpected success payload']) {
     assert.equal(telegram.has(83), false);
   });
 }
-
-test('user upgrades pending reports: Given legacy cleanup and failed-ban records, When migrations run and deliveries resume, Then completed actions stay completed while an unattempted ban can still proceed', async () => {
-  const statements = [database.prepare('DROP TABLE reports'), database.prepare('DROP TABLE blacklisted_sources')];
-  for (const sql of (await readFile('migrations/0001_reports.sql', 'utf8')).split(';').filter(sql => sql.trim())) {
-    statements.push(database.prepare(sql));
-  }
-  const outcomes = ['deleted; banned; report cleanup pending', 'already absent; ban skipped; report cleanup pending',
-    'ban failed', 'report recorded; authority check failed'];
-  for (const [index, outcome] of outcomes.entries()) {
-    statements.push(database.prepare(`INSERT INTO reports
-      (bot_id, update_id, received_at, expires_at, raw_update, classification, response_body)
-      VALUES (123, ?, 100, 259300, ?, '{}', ?)`).bind(index, JSON.stringify({ ...report(), update_id: index }), outcome));
-  }
-  for (const file of ['0002_report_progress.sql', '0009_sources.sql', '0010_report_subjects.sql']) {
-    for (const sql of (await readFile(`migrations/${file}`, 'utf8')).split(';').filter(sql => sql.trim())) {
-      statements.push(database.prepare(sql));
-    }
-  }
-  await database.batch(statements);
-  telegram.send(message(90));
-  telegram.send(message());
-  telegram.send(report().message);
-  telegram.faults.set('deleteMessage:81', () => Response.json({ ok: false, error_code: 429 }, { status: 429 }));
-  for (let attempt = 0; attempt < 2; attempt++) {
-    assert.equal((await dispatch({ ...report(), update_id: 0 })).status, 503);
-    assert.equal(telegram.has(81), true);
-    assert.equal(telegram.has(82), true);
-    assert.equal(telegram.canJoin(22), true);
-  }
-  telegram.faults.clear();
-  for (const update_id of [0, 1, 2]) {
-    assert.equal((await dispatch({ ...report(), update_id })).status, 200);
-    assert.equal(telegram.canJoin(22), true);
-    assert.equal(telegram.has(90), true);
-    assert.equal(telegram.has(81), false);
-    assert.equal(telegram.has(82), false);
-  }
-  telegram.send(message());
-  assert.equal((await dispatch({ ...report(), update_id: 3 })).status, 200);
-  assert.equal(telegram.canJoin(22), false);
-  assert.equal(telegram.has(90), true);
-  for (const row of await evidence()) {
-    assert.deepEqual(JSON.parse(row.raw_update), { ...report(), update_id: row.update_id });
-    assert.equal(row.expires_at, 259300);
-  }
-});

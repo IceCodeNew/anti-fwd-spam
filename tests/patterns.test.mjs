@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { dispatch, model, telegram, database, setBindings } from './worker-runtime.mjs';
+import { dispatch, model, telegram, database, setBindings, task, tick } from './worker-runtime.mjs';
 import { message } from './telegram-fake.mjs';
 
 model.enabled = true;
@@ -11,16 +11,21 @@ const flood = ('💰'.repeat(23) + '\n').repeat(8) + '💰'.repeat(8);
 for (const text of [campaign, flood, '@example_bot campaign_2', '💰'.repeat(4), '🔴 '.repeat(4),
   '🔴说明：💰 \n💰\t💰 💰结束🔴', '💰说明：🔴🔴🔴🔴结束💰',
   `请警惕这种垃圾消息：${campaign}，不要点击`, '@example_bot campaign_1 this is a discussion',
-  '@example_bot campaign_1a', '有收款码的来，每天赚 5000，私聊']) {
-  for (const field of ['text', 'caption']) {
+  '@example_bot campaign_1a', '有收款码的来，每天赚 5000，私聊', '极品新人小萝莉 ms7N', '萝莉资源私聊',
+  '达达妹🌼（约课上门）看头像q Jai', '看头像扣扣 12345', '看头像加q 123', '看头像q', '小雅 包夜上门']) {
+  for (const field of ['text', 'caption', 'nickname', 'biography']) {
     test(`user: Given ${field} containing ${text === flood ? 'the screenshot flood' : JSON.stringify(text)}, When Jev would accept it, Then only that message is deleted and its sender muted`, async () => {
       const previous = message(80);
       telegram.send(previous);
       await dispatch({ update_id: 1, message: previous });
       model.state = null;
       const target = message();
-      delete target.text;
-      target[field] = text;
+      if (field === 'nickname') target.from.first_name = text;
+      else if (field === 'biography') model.profile = { bio: text };
+      else {
+        delete target.text;
+        target[field] = text;
+      }
       telegram.send(target);
       assert.equal((await dispatch({ update_id: 2, message: target })).status, 200);
       assert.equal(telegram.has(81), false);
@@ -51,6 +56,81 @@ for (const [name, contact] of [
     assert.equal(telegram.members.get(22).until_date, 0);
   });
 }
+
+test('user: Given a spam phrase split across first and last name, When Jev would accept it, Then only that message is deleted and its sender muted', async () => {
+  const target = message();
+  target.from = { ...target.from, first_name: '看头像q', last_name: 'Jai' };
+  telegram.send(target);
+  assert.equal((await dispatch({ update_id: 1, message: target })).status, 200);
+  assert.equal(telegram.has(81), false);
+  assert.equal(telegram.canSend(22), false);
+});
+
+test('user: Given a spam biography and no model key, When its owner sends ordinary text, Then only that message is deleted and its sender muted', async () => {
+  await setBindings({ EXPERIENTIAL_API_KEY: undefined });
+  model.profile = { bio: '极品新人小萝莉' };
+  telegram.send(message());
+  assert.equal((await dispatch({ update_id: 1, message: message() })).status, 200);
+  assert.equal(telegram.has(81), false);
+  assert.equal(telegram.canSend(22), false);
+});
+
+test('user: Given a spam biography, no model key, and a rate-limited deletion, When the scheduled retry runs, Then the message is deleted and its sender muted', async () => {
+  await setBindings({ EXPERIENTIAL_API_KEY: undefined });
+  model.profile = { bio: '极品新人小萝莉' };
+  telegram.send(message());
+  telegram.faults.set('deleteMessage', () => Response.json({ ok: false, error_code: 429 }, { status: 429 }));
+  assert.equal((await dispatch({ update_id: 1, message: message() })).status, 200);
+  assert.equal(telegram.has(81), true);
+  telegram.faults.clear();
+  await tick((await task()).due_at);
+  assert.equal(telegram.has(81), false);
+  assert.equal(telegram.canSend(22), false);
+});
+
+test('user: Given an unstarted biography check and no model key, When the scheduled trigger runs, Then the message is deleted and its sender muted', async () => {
+  await setBindings({ EXPERIENTIAL_API_KEY: undefined });
+  model.profile = { bio: '极品新人小萝莉' };
+  telegram.send(message());
+  const now = Math.floor(Date.now() / 1000);
+  const target = { chat: { id: -10012, type: 'supergroup' }, message_id: 81, from: { id: 22, is_bot: false } };
+  await database.prepare(`INSERT INTO model_tasks
+    (bot_id, chat_id, message_id, phase, input_json, due_at, stop_at, created_at, expires_at)
+    VALUES (123, -10012, 81, 'classify', ?, ?, ?, ?, ?)`)
+    .bind(JSON.stringify({ state: { nickname: 'User 22', message: { text: 'message' } }, target, mute: true }),
+      now, message().date + 48 * 3600, now, now + 3 * 86400).run();
+  await tick(now);
+  assert.equal(telegram.has(81), false);
+  assert.equal(telegram.canSend(22), false);
+});
+
+test('user: Given a spam biography, When its owner edits a message, Then the edit is not checked against the biography', async () => {
+  model.profile = { bio: '极品新人小萝莉' };
+  model.probability = 1;
+  telegram.send(message());
+  assert.equal((await dispatch({ update_id: 1, edited_message: message() })).status, 200);
+  assert.equal(telegram.has(81), true);
+  assert.equal(telegram.canSend(22), true);
+});
+
+test('user: Given ordinary nicknames and biographies, When Jev accepts their messages, Then they stay visible and Jev receives the same profile', async () => {
+  const profiles = [
+    ['明天约课', null], ['约课上门辅导 李老师', null], ['张师傅 上门服务', null], ['看头像', null],
+    ['看头像Queen', null], ['萝莉塔裙子爱好者', null], ['User 22', '热爱萝莉塔和摄影'],
+    ['User 22', '频道 @example_channel 客服 @example_support'],
+  ];
+  for (const [index, [nickname, bio]] of profiles.entries()) {
+    model.profile = bio === null ? null : { bio };
+    const target = message(81 + index);
+    target.from.first_name = nickname;
+    telegram.send(target);
+    assert.equal((await dispatch({ update_id: index + 1, message: target })).status, 200);
+    assert.equal(telegram.has(target.message_id), true);
+    assert.equal(telegram.canSend(22), true);
+    assert.equal(model.state.nickname, nickname);
+    assert.equal(model.state.bio, bio ?? '');
+  }
+});
 
 test('user: Given an ordinary contact card, When Jev accepts it, Then it stays visible and Jev receives the name without the phone number', async () => {
   const target = message();
@@ -108,6 +188,9 @@ test('user: Given ordinary discussion and short emoji runs, When Jev accepts the
     '💰'.repeat(3), '🔴 '.repeat(3),
     '💰'.repeat(2) + '🔴'.repeat(2), '💰💰💰文字💰', '🔴🔴💰🔴🔴', '普通消息',
     '收款码在哪里设置？', '收款码今天收了一万块的货款', '收款码今天收入1000多', '收款码今天赚了100块',
+    '新人报到', '新人萝莉塔爱好者报到', '萝莉塔风格的裙子', '萝莉塔服装资源分享', '新人求推荐萝莉塔店铺', '嫩粉色萝莉塔裙', '明天约课',
+    '快递可以上门取件',
+    '可以约课上门辅导吗', '全套上门安装', '你看头像q版的挺可爱',
   ];
   for (const [index, text] of examples.entries()) {
     const target = { ...message(81 + index), text };

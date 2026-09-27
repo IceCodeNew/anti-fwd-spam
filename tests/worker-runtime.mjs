@@ -102,8 +102,29 @@ export async function setBindings(bindings) {
   database = await runtime.getD1Database('REPORTS');
 }
 
-export function dispatch(update, options = {}) {
-  return runtime.dispatchFetch('https://worker.test/webhook', {
+export async function tick(now) {
+  telegram.now = now;
+  await (await runtime.getWorker()).scheduled({ scheduledTime: new Date(now * 1000), cron: '* * * * *' });
+}
+
+export const task = () => database.prepare('SELECT * FROM model_tasks WHERE message_id = 81').first();
+
+// The Worker checks biographies and runs Jev after its response; Miniflare cannot await that work.
+export async function dispatch(update, options = {}) {
+  const response = await runtime.dispatchFetch('https://worker.test/webhook', {
     method: 'POST', headers, body: JSON.stringify(update), ...options,
   });
+  await backgroundTasksSettled();
+  return response;
+}
+
+// A task is still running while it is unclaimed or its lease is active.
+async function backgroundTasksSettled() {
+  for (let polls = 0; polls < 1000; polls++) {
+    const busy = await database.prepare("SELECT 1 FROM model_tasks WHERE phase != 'done' "
+      + 'AND (attempts = 0 OR lease_until > unixepoch()) LIMIT 1').first();
+    if (!busy) return;
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  assert.fail('background model task did not settle');
 }

@@ -1,22 +1,17 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { database, dispatch, model, runtime, setBindings as setModelKeys, telegram } from './worker-runtime.mjs';
+import { dispatch, model, setBindings as setModelKeys, task as pending, telegram, tick } from './worker-runtime.mjs';
 import { message } from './telegram-fake.mjs';
 
 const keys = ['TYPESAFE_AI_API_KEY', 'EXPERIENTIAL_API_KEY', 'OPENCODE_API_KEY', 'CMD_API_KEY', 'AI_GATEWAY_API_KEY'];
 const credentials = ['test-typesafe-key', 'test-model-key', 'test-opencode-key', 'test-commandcode-key', 'test-gateway-key'];
 const configured = names => Object.fromEntries(names.map(name => [name, credentials[keys.indexOf(name)]]));
-const pending = () => database.prepare('SELECT * FROM model_tasks WHERE message_id = 81').first();
 // The webhook attempt can finish a few seconds after dispatch; later retries follow the scheduled clock exactly.
 const WEBHOOK_SLACK = 5;
 async function dispatchNow(update) {
   const sent = Math.floor(Date.now() / 1000);
   await dispatch(update);
   return sent;
-}
-async function tick(now) {
-  telegram.now = now;
-  await (await runtime.getWorker()).scheduled({ scheduledTime: new Date(now * 1000), cron: '* * * * *' });
 }
 
 for (const key of keys) {

@@ -20,6 +20,8 @@ from .telegram import DeleteOutcome, Fetch, TelegramError, call_method, delete_m
 MODEL_TASK_STORAGE_FAILURE = "model task storage unavailable; retry pending"
 
 if TYPE_CHECKING:
+    from collections.abc import Coroutine
+
     from .model import ModelConfig
     from .policy import Config, TelegramUpdate
 
@@ -102,6 +104,8 @@ class Moderator:
         self.config, self.fetcher, self.store = config, fetcher, store
         self.bot_username = bot_username
         self.models = models
+        # The entrypoint keeps this work alive after it sends the webhook response.
+        self.background: Coroutine[object, object, None] | None = None
         self.actions = Actions(fetcher, config.bot_token, store)
         self.reporting = Reporting(config.reporter_ids)
         self.command_plugins = (
@@ -271,7 +275,7 @@ class Moderator:
         )
 
     async def check_content(self, update: TelegramUpdate) -> AppResponse:
-        """Apply local patterns to new and edited messages, and classify only new messages.
+        """Apply local patterns to all messages; queue the biography check and Jev only for new messages.
 
         A denied report on local-rule spam is deleted without a mute, so a member who quotes that spam keeps speaking.
         """
@@ -281,13 +285,10 @@ class Moderator:
         mute = not self.quotes_reported_spam(update)
         if matches_spam_pattern(message):
             return await self.actions.delete_and_mute(message, mute=mute)
-        if update.edited:
+        if update.edited or user_id(message) is None or not MODEL_CONTENT_FIELDS.intersection(message):
             return AppResponse(200, "ignored")
-        if not self.models or user_id(message) is None or not MODEL_CONTENT_FIELDS.intersection(message):
-            return AppResponse(200, "ignored")
-        state = await model_input(self.fetcher, self.config.bot_token, message)
         payload: dict[str, object] = {
-            "state": state,
+            "state": model_input(message),
             "target": {
                 "chat": {"id": update.chat_id, "type": update.chat_type},
                 "message_id": update.message_id,
@@ -295,13 +296,17 @@ class Moderator:
             },
             "mute": mute,
         }
-        now = int(time.time())
         tasks = ModelTasks(self.store, self.actions.bot_id)
-        if await tasks.enqueue(update.chat_id, update.message_id, update.sent_at, payload, now):
-            task = await tasks.claim(now, (update.chat_id, update.message_id))
-            if task is not None:
-                await tasks.run(task, self.fetcher, self.config.bot_token, self.models, now)
+        if await tasks.enqueue(update.chat_id, update.message_id, update.sent_at, payload, int(time.time())):
+            self.background = self.run_task(tasks, update.chat_id, update.message_id)
         return AppResponse(200, "model task recorded")
+
+    async def run_task(self, tasks: ModelTasks, chat_id: int, message_id: int) -> None:
+        """Check the biography and classify after the webhook response; the scheduled trigger retries failures."""
+        now = int(time.time())
+        task = await tasks.claim(now, (chat_id, message_id))
+        if task is not None:
+            await tasks.run(task, self.fetcher, self.config.bot_token, self.models, now)
 
     async def index_message(self, update: TelegramUpdate) -> None:
         """Index eligible account messages, including bots, within the deletion window."""

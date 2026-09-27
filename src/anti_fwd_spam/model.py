@@ -134,25 +134,26 @@ class ModelRetryError(Exception):
         self.retryable = retryable
 
 
-async def model_input(fetcher: Fetch, token: str, message: dict[str, object]) -> dict[str, object]:
-    """Snapshot the current message and an optional biography without conversation history."""
+def model_input(message: dict[str, object]) -> dict[str, object]:
+    """Snapshot the sender nickname and current message without conversation history."""
     sender = message.get("from")
     if not isinstance(sender, dict):
         return {}
-    bio = None
+    return {"nickname": display_name(sender), "message": message_content(message)}
+
+
+async def sender_bio(fetcher: Fetch, token: str, user_id: int) -> str | None:
+    """Return the sender biography, or None when Telegram cannot supply it."""
     try:
-        profile = await call_method(fetcher, token, "getChat", {"chat_id": sender["id"]})
-        if isinstance(profile, dict) and profile.get("id") == sender["id"] and profile.get("type") == "private":
-            candidate = profile.get("bio", "")
-            if isinstance(candidate, str):
-                bio = candidate
+        profile = await call_method(fetcher, token, "getChat", {"chat_id": user_id})
     except TelegramError:
         logging.getLogger(__name__).warning("Biography lookup failed; classifying with unknown biography")
-    return {
-        "nickname": display_name(sender),
-        "bio": bio,
-        "message": message_content(message),
-    }
+        return None
+    if isinstance(profile, dict) and profile.get("id") == user_id and profile.get("type") == "private":
+        candidate = profile.get("bio", "")
+        if isinstance(candidate, str):
+            return candidate
+    return None
 
 
 async def spam_probability(fetcher: Fetch, config: ModelConfig, state: dict[str, object]) -> float | None:

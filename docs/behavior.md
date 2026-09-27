@@ -37,7 +37,7 @@ Telegram sends updates to `POST /webhook`. The Worker verifies `TELEGRAM_WEBHOOK
                                            └── No report ──▶ Local rules ──▶ Jev
 ```
 
-Commands are checked before automatic moderation. An authorized command ends routing. This also applies to an edited `/bs`, which the handler ignores. Reply reports are checked after blacklist handling and indexing. A denied command or reply report runs no handler and creates no report evidence. Its message then continues through the blacklist checks, local rules, and Jev like any unreported group message. If local rules or Jev match a denied report, and the reported message itself matches the local rules, Action 1 deletes the report but does not mute the sender. Thus a member who quotes that spam can continue to send messages. A bot mention or `/bs` alone does not prevent the mute. Private messages other than authorized commands are ignored.
+Commands are checked before automatic moderation. An authorized command ends routing. This also applies to an edited `/bs`, which the handler ignores. Reply reports are checked after blacklist handling and indexing. A denied command or reply report runs no handler and creates no report evidence. Its message then continues through the blacklist checks, local rules, and Jev like any unreported group message. If local rules or Jev match a denied report, and the text, caption, contact name, or sender nickname of the reported message matches the local rules, Action 1 deletes the report but does not mute the sender. Thus a member who quotes that spam can continue to send messages. A bot mention or `/bs` alone does not prevent the mute. Private messages other than authorized commands are ignored.
 
 In a forum topic, Telegram attaches the topic's creation message to messages that do not reply to anything. That creation message is never a report target, so a mention or bare `/bs` in a topic reports only when it replies to another message.
 
@@ -69,7 +69,10 @@ The following map describes new supergroup messages after command handling. A is
                │
                │ no report
                ▼
-       Text/caption/contact-name regex ── match ─────────────────────▶ Action 1 on A
+       Regex on text/caption/contact name/nickname ── match ─────────▶ Action 1 on A
+               │ no match
+               ▼
+       Background task: same regex on biography ── match ────────────▶ Action 1 on A
                │ no match
                ▼
        Jev classification ── score reaches threshold ────────────────▶ Action 1 on A
@@ -81,7 +84,7 @@ The following map describes new supergroup messages after command handling. A is
 
 Source matching uses `via_bot.id` and visible bot origins in `forward_origin.sender_user`. It does not inspect copied text or hidden forwarding origins. All matched sources are handled independently. See `parse_update` in [policy.py](../src/anti_fwd_spam/policy.py).
 
-The local regexes search anywhere in the current text, caption, or shared contact card's name. Jev evaluates the nickname, available biography, and message content of new messages only when local rules did not match. Exact patterns and model settings belong to `SPAM_PATTERNS` in [policy.py](../src/anti_fwd_spam/policy.py) and `SPAM_THRESHOLD` / `MODEL_PROVIDERS` in [model.py](../src/anti_fwd_spam/model.py).
+Each local regex searches anywhere in the current text, caption, shared contact card's name, and the sender's nickname. If no regex matches a new message from a human sender with content, the webhook saves a D1 model task and responds. The Worker then runs the task in the background: it reads the sender's biography and searches it with the same regexes. If no regex matches, Jev evaluates the nickname, biography, and message content. A match at any stage stops the later stages and applies Action 1. If the biography lookup fails, the bot does not search a biography, and Jev receives an unknown biography. Without model keys, the background task stops after the biography search. Exact patterns and model settings belong to `SPAM_PATTERNS` in [policy.py](../src/anti_fwd_spam/policy.py) and `SPAM_THRESHOLD` / `MODEL_PROVIDERS` in [model.py](../src/anti_fwd_spam/model.py).
 
 ### Action 1: delete the current message and permanently mute
 
@@ -128,7 +131,7 @@ Moderation runs before acknowledgement, so a rejected reply cannot prevent punis
 
 ## Edits and retries
 
-Edited group messages cancel pending model work within the message window. They still undergo source filtering, reply-report handling, and the local regexes; a regex match applies Action 1 to the edited message. They skip automatic account-blacklist checks and fresh Jev classification. Edited `/bs` commands from authorized reporters are ignored.
+Edited group messages cancel pending model work within the message window. They still undergo source filtering, reply-report handling, and the local regexes on text, captions, contact names, and nicknames; a regex match applies Action 1 to the edited message. They skip automatic account-blacklist checks, the biography search, and fresh Jev classification. Edited `/bs` commands from authorized reporters are ignored.
 
 Model classification starts with the first configured entry in `MODEL_PROVIDERS`. Failed requests can rotate through the configured providers, including CommandCode's System One endpoint. The classification budget is one initial attempt and three retries, delayed by 1, 2, and 5 minutes. With five configured providers, the fifth is outside that budget. A valid non-spam score or an invalid answer stops classification without trying another provider.
 
@@ -143,12 +146,12 @@ Model classification starts with the first configured entry in `MODEL_PROVIDERS`
               │ due
               ▼
 ┌───────────────────────────┐
-│ Scheduled trigger         │──▶ Resume due tasks ──▶ Jev or pending Action 1
+│ Scheduled trigger         │──▶ Resume due tasks ──▶ Biography, Jev, or pending Action 1
 │ Expire temporary records  │
 └───────────────────────────┘
 ```
 
-Webhook and scheduled retries are distinct. Each scheduled run claims and completes due tasks one at a time, at most `SCHEDULED_TASKS_PER_RUN` per run. Removing model keys pauses model-task execution. Model failures do not count as spam. See `ModelTasks.run` in [tasks.py](../src/anti_fwd_spam/tasks.py) for task progress and `Default.scheduled` in [entry.py](../src/entry.py) for the scheduled entrypoint.
+Webhook and scheduled retries are distinct. The first task attempt runs in the background after the webhook response. Each scheduled run claims and completes due tasks one at a time, at most `SCHEDULED_TASKS_PER_RUN` per run. A retry reads the biography again before it asks Jev. Without model keys, the scheduled trigger still completes pending deletions and unstarted biography checks, but model retries pause until a key is configured. Model failures do not count as spam. See `ModelTasks.run` in [tasks.py](../src/anti_fwd_spam/tasks.py) for task progress and `Default.scheduled` in [entry.py](../src/entry.py) for the scheduled entrypoint.
 
 ## Add a reporting entrypoint
 

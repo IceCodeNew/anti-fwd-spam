@@ -161,7 +161,7 @@ Then lift any mute or ban in each affected group's Telegram member settings. Rem
 
 ## Automatic text filtering
 
-Local rules check new and edited group messages before Jev, including messages from bots, without an API key. They search anywhere in text, captions, or a shared contact card's name for campaign markers, payment-QR-code income offers, and runs of identical money-bag or red-circle emojis, allowing whitespace between emojis. Surrounding text or other emojis do not prevent a match. The exact patterns are `SPAM_PATTERNS` in [policy.py](src/anti_fwd_spam/policy.py). The contents of replied-to messages and individual sensitive words do not trigger these rules.
+Local rules check new and edited group messages before Jev, including messages from bots, without an API key. They search anywhere in text, captions, a shared contact card's name, or the sender's nickname for campaign markers, payment-QR-code income offers, sexual-solicitation offers, and runs of identical money-bag or red-circle emojis, allowing whitespace between emojis. Surrounding text or other emojis do not prevent a match. If no rule matches a new message from a human sender, the bot reads the sender's Telegram biography in the background and searches it with the same rules before it asks Jev. Edited messages skip the biography search. The exact patterns are `SPAM_PATTERNS` in [policy.py](src/anti_fwd_spam/policy.py). The contents of replied-to messages and individual sensitive words do not trigger these rules.
 
 A match deletes the current message and permanently mutes a human sender in a supergroup, preserving earlier messages and both blacklists. Bot senders are not muted. Group owners and administrators are protected. Private messages skip this check.
 

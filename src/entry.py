@@ -53,13 +53,16 @@ class Default(WorkerEntrypoint):
         except ValueError:
             return _response(AppResponse(413, "update too large"))
 
-        app_response = await Moderator(
+        moderator = Moderator(
             config,
             fetch,
             ReportStore(getattr(self.env, "REPORTS", None)),
             bot_username,
             models,
-        ).process(request.headers.get("content-type"), body)
+        )
+        app_response = await moderator.process(request.headers.get("content-type"), body)
+        if moderator.background is not None:
+            self.ctx.waitUntil(moderator.background)
         if any(marker in app_response.body for marker in ("failed", "rejected", "retry")):
             logging.getLogger(__name__).warning("Moderation outcome: %s", app_response.body)
         return _response(app_response)
@@ -91,12 +94,10 @@ class Default(WorkerEntrypoint):
         tasks = ModelTasks(store, int(config.bot_token.split(":", 1)[0]))
         await tasks.expire(now)
         models = self._get_models()
-        if not models:
-            return
         for _ in range(SCHEDULED_TASKS_PER_RUN):
             # Each lease starts when its task is claimed, not when the run started.
             now = max(now, int(time.time()))
-            task = await tasks.claim(now)
+            task = await tasks.claim(now, inference=bool(models))
             if task is None:
                 return
             await tasks.run(task, fetch, config.bot_token, models, now)

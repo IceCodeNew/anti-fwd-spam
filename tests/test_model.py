@@ -6,7 +6,7 @@ import unittest
 from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
-from anti_fwd_spam.model import ModelConfig, ModelRetryError, model_input, spam_probability
+from anti_fwd_spam.model import ModelConfig, ModelRetryError, model_input, sender_bio, spam_probability
 from tests.test_telegram import ClockLoop
 
 if TYPE_CHECKING:
@@ -83,11 +83,10 @@ class ModelDeadlineTests(unittest.TestCase):
                 await stall()
             return StreamingResponse(read_body, cancelled)
 
-        state = await model_input(
-            fetcher,
-            "123:token",
-            {"from": {"id": 22, "first_name": "Alice"}, "text": "Hello"},
-        )
+        state = {
+            **model_input({"from": {"id": 22, "first_name": "Alice"}, "text": "Hello"}),
+            "bio": await sender_bio(fetcher, "123:token", 22),
+        }
         if stall_profile:
             self.assertEqual(await spam_probability(fetcher, CONFIG, state), 0.99)
         else:

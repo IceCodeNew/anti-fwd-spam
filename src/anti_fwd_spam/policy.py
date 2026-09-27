@@ -17,12 +17,19 @@ SPAM_PATTERNS = (
     re.compile(r"@[A-Za-z0-9_]{5,32}\s+campaign_[0-9]+"),
     re.compile(r"([💰🔴])(?:\s*\1){3,}"),
     re.compile(r"收款码.{0,12}?(?:[天日].{0,2}?[赚挣]|日入).{0,6}?(?:[0-9]{4,}|[千万wW])"),
+    re.compile(r"(?:极品|新人|童颜|嫩)小?萝莉(?!塔)|萝莉(?:上门|包夜|资源)"),
+    re.compile(r"(?:约炮|包夜|外围|楼凤)上门|看头像\s*加?\s*(?:[qQ]|扣扣?)(?![A-Za-z\u4e00-\u9fff])"),
 )
 
 
 def matches_spam_pattern(message: dict[str, object]) -> bool:
-    """Search current text, captions, and shared contact names without inspecting replies."""
-    return any(pattern.search(text) is not None for text in _pattern_texts(message) for pattern in SPAM_PATTERNS)
+    """Search current text, captions, shared contact names, and the sender's nickname without inspecting replies."""
+    return any(matches_spam_text(text) for text in _pattern_texts(message))
+
+
+def matches_spam_text(text: object) -> bool:
+    """Search one string, such as a sender biography, with the same patterns as message fields."""
+    return isinstance(text, str) and any(pattern.search(text) is not None for pattern in SPAM_PATTERNS)
 
 
 def display_name(account: dict[str, object]) -> str:
@@ -32,9 +39,8 @@ def display_name(account: dict[str, object]) -> str:
 
 def _pattern_texts(message: dict[str, object]) -> list[str]:
     texts = [text for field in ("text", "caption") if isinstance(text := message.get(field), str)]
-    contact = message.get("contact")
-    if isinstance(contact, dict):
-        texts.append(display_name(contact))
+    accounts = (message.get("contact"), message.get("from"))
+    texts.extend(display_name(account) for account in accounts if isinstance(account, dict))
     return texts
 
 

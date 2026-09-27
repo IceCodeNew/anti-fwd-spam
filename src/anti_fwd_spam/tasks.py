@@ -10,7 +10,8 @@ from typing import TYPE_CHECKING
 
 from .actions import Actions
 from .evidence import MESSAGE_WINDOW_SECONDS, RETENTION_SECONDS, storage_errors
-from .model import SPAM_THRESHOLD, ModelRetryError, spam_probability
+from .model import SPAM_THRESHOLD, ModelRetryError, sender_bio, spam_probability
+from .policy import matches_spam_text
 
 if TYPE_CHECKING:
     from .evidence import ReportStore
@@ -76,8 +77,11 @@ class ModelTasks:
             )
         return row is not None
 
-    async def claim(self, now: int, target: tuple[int, int] | None = None) -> Task | None:
-        """Atomically claim one due stage and charge an attempt before the external request."""
+    async def claim(self, now: int, target: tuple[int, int] | None = None, *, inference: bool = True) -> Task | None:
+        """Atomically claim one due stage and charge an attempt before the external request.
+
+        Without inference, claim only deletions and unstarted biography checks; model retries stay paused.
+        """
         with storage_errors():
             row = (
                 await self.database.prepare(
@@ -86,6 +90,7 @@ class ModelTasks:
                     "WHERE rowid = (SELECT rowid FROM model_tasks WHERE bot_id = ? AND phase != 'done' "
                     "AND due_at <= ? AND lease_until <= ? AND stop_at > ? AND expires_at > ? "
                     "AND attempts < ? AND (? IS NULL OR (chat_id = ? AND message_id = ?)) "
+                    "AND (? OR phase = 'delete' OR attempts = 0) "
                     "ORDER BY due_at, rowid LIMIT 1) RETURNING *",
                 )
                 .bind(
@@ -101,6 +106,7 @@ class ModelTasks:
                     target[0] if target else None,
                     target[0] if target else None,
                     target[1] if target else None,
+                    inference,
                 )
                 .first()
             )
@@ -170,7 +176,7 @@ class ModelTasks:
         )
 
     async def run(self, task: Task, fetcher: Fetch, token: str, models: tuple[ModelConfig, ...], now: int) -> None:
-        """Persist inference before moderation, so retries cannot reevaluate a saved score."""
+        """Check the biography, then classify; persist the result before moderation so retries cannot reevaluate it."""
         payload = json.loads(task.input_json or "{}")
         snapshot = payload.get("target")
         target = snapshot if isinstance(snapshot, dict) else None
@@ -178,15 +184,20 @@ class ModelTasks:
         mute = payload.get("mute") is not False
         action: dict[str, object] | None = {"target": target, "mute": mute} if target is not None else None
         if task.phase == "classify":
-            model = models[(task.attempts - 1) % len(models)]
-            try:
-                probability = await spam_probability(fetcher, model, payload["state"])
-            except ModelRetryError as error:
-                retry = error.retryable or task.attempts < len(models)
-                await self.finish(task, "classify" if retry else "done", max(now, int(time.time())), retry=retry)
-                return
+            state = payload["state"]
+            state["bio"] = await sender_bio(fetcher, token, target["from"]["id"]) if target is not None else None
+            spam = matches_spam_text(state["bio"])
+            if not spam and models:
+                model = models[(task.attempts - 1) % len(models)]
+                try:
+                    probability = await spam_probability(fetcher, model, state)
+                except ModelRetryError as error:
+                    retry = error.retryable or task.attempts < len(models)
+                    await self.finish(task, "classify" if retry else "done", max(now, int(time.time())), retry=retry)
+                    return
+                spam = probability is not None and probability >= SPAM_THRESHOLD
             now = max(now, int(time.time()))
-            phase = "delete" if probability is not None and probability >= SPAM_THRESHOLD else "done"
+            phase = "delete" if spam else "done"
             if not await self.finish(task, phase, now, action=action) or phase == "done":
                 return
             deletion = await self.claim(now, (task.chat_id, task.message_id))

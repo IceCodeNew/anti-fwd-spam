@@ -1,16 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { database, dispatch, model, runtime, telegram } from './worker-runtime.mjs';
+import { database, dispatch, model, task, telegram, tick } from './worker-runtime.mjs';
 import { message } from './telegram-fake.mjs';
 
 model.enabled = true;
 
-async function tick(now) {
-  telegram.now = now;
-  await (await runtime.getWorker()).scheduled({ scheduledTime: new Date(now * 1000), cron: '* * * * *' });
-}
-
-const task = () => database.prepare('SELECT * FROM model_tasks WHERE message_id = 81').first();
 
 for (const stage of ['inference', 'deletion']) {
   test(`user: Given a temporary ${stage} failure, When time advances, Then retries wait 1, 2 and 5 minutes and stop`, async () => {
@@ -116,12 +110,16 @@ test('user: Given a sender promoted while model deletion is pending, When Telegr
 test('user: Given deleted spam, When the task ownership check fails once before muting, Then the scheduled retry mutes its sender', async () => {
   model.probability = 1;
   telegram.send(message());
+  telegram.faults.set('deleteMessage', () => Response.json({ ok: false, error_code: 429 }, { status: 429 }));
+  assert.equal((await dispatch({ update_id: 1, message: message() })).status, 200);
+  assert.equal(telegram.has(81), true);
+  telegram.faults.clear();
   telegram.faults.set('getChatMember:22', async () => {
     if (!telegram.has(81)) await database.prepare('ALTER TABLE model_tasks RENAME TO unavailable_tasks').run();
     return Response.json({ ok: true, result: { status: 'member', user: message().from } });
   });
   try {
-    assert.equal((await dispatch({ update_id: 1, message: message() })).status, 503);
+    await tick((await task()).due_at);
   } finally {
     await database.prepare('ALTER TABLE unavailable_tasks RENAME TO model_tasks').run();
   }
@@ -330,15 +328,17 @@ test('user: Given a reclaimed task, When an earlier worker returns a stale spam 
     async () => { firstStarted.resolve(); await firstReply.promise; return 1; },
     async () => { secondStarted.resolve(); await secondReply.promise; return 0; },
   ];
-  model.response = async () => Response.json({ answers: { spam: { type: 'noul', noul: await responses.shift()() } } });
+  model.response = new Response('unavailable', { status: 503 });
   telegram.send(message());
-  const original = dispatch({ update_id: 30, message: message() });
+  assert.equal((await dispatch({ update_id: 30, message: message() })).status, 200);
+  model.response = async () => Response.json({ answers: { spam: { type: 'noul', noul: await responses.shift()() } } });
+  const original = tick((await task()).due_at);
   await firstStarted.promise;
   const reclaimed = tick((await task()).due_at);
   await secondStarted.promise;
   try {
     firstReply.resolve();
-    assert.equal((await original).status, 200);
+    await original;
     assert.equal(telegram.has(81), true);
   } finally {
     firstReply.resolve();

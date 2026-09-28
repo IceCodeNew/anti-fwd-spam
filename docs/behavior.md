@@ -11,14 +11,15 @@ Telegram sends updates to `POST /webhook`. The Worker verifies `TELEGRAM_WEBHOOK
 │ Authenticated Telegram update│
 └──────────────┬───────────────┘
                │
-               ├── /bs in private or group chat ──▶ Command plugins ──┐
+               ├── Listed /bs in any chat ────────▶ Command plugins ──┐
                │                                                      │
                └── Group message ──▶ Blacklist checks                 │
                                            │ no match                 │
                                            ▼                          │
                                      Index message                    │
                                            │                          ▼
-                                           ├── Reply + bot mention ──▶ REPORTER_IDS
+                                     ├── Reply + bot mention ──▶ REPORTER_IDS
+                                     ├── Unlisted bare /bs ────▶ Evidence only
                                            │   (reply plugins)        │
                                            │                          ├── Unlisted /bs @name: ordinary filtering
                                            │                          ├── Unlisted reply: save evidence
@@ -37,7 +38,7 @@ Telegram sends updates to `POST /webhook`. The Worker verifies `TELEGRAM_WEBHOOK
                                            └── No report ──▶ Local rules ──▶ Jev
 ```
 
-Commands are checked before automatic moderation. A listed command ends routing. This also applies to an edited `/bs`, which the handler ignores. An unlisted bare `/bs` replying to a valid group target saves evidence without registering a source or punishing either account. An unlisted `/bs @username` does not register a source or save report evidence; it continues through ordinary message filtering. Reply reports are checked after blacklist handling and indexing. A valid unlisted reply mentioning the bot saves evidence and ends routing without automatic moderation. Private messages other than listed commands are ignored.
+Listed commands are checked before automatic moderation. A listed command ends routing. An edited listed `/bs` is ignored as a command and fences any earlier model task. An unlisted bare `/bs` is checked against blacklists first; when it replies to a valid group target without a blacklist match, it saves evidence without registering a source or punishing either account. An unlisted `/bs @username` does not register a source or save report evidence; it continues through ordinary message filtering. Reply reports are checked after blacklist handling and indexing. A valid unlisted reply mentioning the bot saves evidence and ends routing without automatic moderation. Private messages other than listed commands are ignored.
 
 In a forum topic, Telegram attaches the topic's creation message to messages that do not reply to anything. That creation message is never a report target, so a mention or bare `/bs` in a topic reports only when it replies to another message.
 
@@ -86,7 +87,7 @@ The following map describes new supergroup messages after command handling. A is
 
 Source matching uses `via_bot.id` and visible bot origins in `forward_origin.sender_user`. It does not inspect copied text or hidden forwarding origins. All matched sources are handled independently. See `parse_update` in [policy.py](../src/anti_fwd_spam/policy.py).
 
-For a direct message without a reference, the webhook regex searches the current text, caption, shared contact card name, and sender nickname. A miss queues a D1 task. In the background, the Worker fetches the sender's private profile and, when a contact card has a usable `user_id`, the contact account's private profile. The deferred regex checks the returned sender biography and contact account nickname and biography. Jev then evaluates the available complete input if regex did not match. A missing contact `user_id` or failed lookup leaves its account profile unknown; the card name remains available. The contact phone number is not sent to Jev.
+For a group message without a reference, the webhook regex searches the current text, caption, shared contact card name, and sender nickname. A miss queues a D1 task. In the background, the Worker fetches the sender's private profile and, when a contact card has a usable `user_id`, the contact account's private profile. The deferred regex checks the returned sender biography and contact account nickname and biography. Jev then evaluates the available complete input if regex did not match. A missing contact `user_id` or failed lookup leaves its account profile unknown; the card name remains available. The contact phone number is not sent to Jev.
 
 A message with an explicit same-chat reply, external reply, or quote bypasses both local regex stages. Jev sees the current message body, sender nickname and biography as one unit and the available referenced body, sender nickname and biography as another. It estimates the probability that the reference is advertising **and** the current sender intends to promote it. Without a reference, Jev estimates whether the current unit is advertising; for a contact card, it estimates whether the card name and available contact account profile advertise spam. Same-chat replies include the referenced message body and user nickname; a referenced user ID permits a biography lookup. External replies may supply only quoted text and origin information, so unavailable body, nickname, or biography is omitted. Only the current sender can receive Action 1. Without model keys, quoted messages cannot be classified by regex. Exact patterns and model settings belong to `SPAM_PATTERNS` in [policy.py](../src/anti_fwd_spam/policy.py) and `SPAM_THRESHOLD` / `MODEL_PROVIDERS` in [model.py](../src/anti_fwd_spam/model.py).
 
@@ -136,7 +137,7 @@ Moderation runs before acknowledgement, so a rejected reply cannot prevent punis
 
 ## Edits and retries
 
-Edited group messages cancel pending model work within the message window. They still undergo source filtering and reply-report handling. Edited messages without a reference also undergo local regex checks on text, captions, contact names, and nicknames; a match applies Action 1. Edited messages with a reference bypass local regex and do not start fresh Jev classification. Edits skip automatic account-blacklist checks and profile lookups. Edited `/bs` commands from authorized reporters are ignored.
+Edited group messages fence earlier model work within the message window. They still undergo source filtering and reply-report handling unless a listed `/bs` command ends routing. Edited messages without a reference undergo local regex checks on text, captions, contact names, and nicknames; a match applies Action 1. Edited messages with a reference bypass local regex and start a fresh Jev classification. Edits skip automatic account-blacklist checks; only referenced edits fetch profiles for Jev. Edited `/bs` commands from authorized reporters are ignored as commands but still fence earlier model work.
 
 Model classification starts with the first configured entry in `MODEL_PROVIDERS`. Failed requests can rotate through the configured providers, including CommandCode's System One endpoint. The classification budget is one initial attempt and three retries, delayed by 1, 2, and 5 minutes. With five configured providers, the fifth is outside that budget. A valid non-spam score or an invalid answer stops classification without trying another provider.
 

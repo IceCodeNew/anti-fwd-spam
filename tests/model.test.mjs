@@ -155,6 +155,24 @@ test('user: Given a listed member\'s report or an edit, When the model would fla
   assert.equal(telegram.has(81), true);
 });
 
+test('user: Given a quoted message edited into promotion, When Jev flags the edited context, Then the sender is muted', async () => {
+  const original = { ...message(), text: '请看这个',
+    external_reply: { origin: { type: 'hidden_user', sender_user_name: '广告账号' } },
+    quote: { text: '普通内容' } };
+  model.probability = 0;
+  telegram.send(original);
+  assert.equal((await dispatch({ update_id: 100, message: original })).status, 200);
+  assert.equal(telegram.has(81), true);
+
+  const edited = { ...original, text: '太好了，快联系他', edit_date: Math.floor(Date.now() / 1000),
+    quote: { text: '收款码一天赚一万' } };
+  model.probability = 1;
+  assert.equal((await dispatch({ update_id: 101, edited_message: edited })).status, 200);
+  assert.equal(telegram.has(81), false);
+  assert.equal(telegram.canSend(22), false);
+  assert.equal(model.state.context.quoted_text, '收款码一天赚一万');
+});
+
 test('user: Given a malformed model envelope, When a message is evaluated, Then it remains visible', async () => {
   let id = 81;
   for (const body of ['not JSON', '[]', '{}', '{"answers":[]}', '{"answers":{"spam":{"type":"text","noul":1}}}',

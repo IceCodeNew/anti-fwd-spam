@@ -89,6 +89,12 @@ def recent(sent_at: int, now: int) -> bool:
     return now - MESSAGE_WINDOW_SECONDS < sent_at <= now
 
 
+def edit_revision(update: TelegramUpdate) -> int:
+    """Use Telegram's update ID, or its edit timestamp when the ID is unavailable."""
+    candidate = update.update_id if update.update_id is not None else update.message.get("edit_date")
+    return candidate if type(candidate) is int and candidate > 0 else 1
+
+
 class Moderator:
     """Select moderation policies after validating updates and reporter authority."""
 
@@ -137,8 +143,16 @@ class Moderator:
             return AppResponse(400, "invalid update")
         if update is None:
             return AppResponse(200, "ignored")
-        response = await self.reporting.dispatch(self.command_plugins, update)
-        return response or await self.process_update(update)
+        if self.reporting.authorized(update):
+            response = await self.reporting.dispatch(self.command_plugins, update)
+            if response is not None:
+                if update.edited and update.in_group:
+                    try:
+                        await self.cancel_model_task(update)
+                    except EvidenceError:
+                        return AppResponse(503, MODEL_TASK_STORAGE_FAILURE)
+                return response
+        return await self.process_update(update)
 
     async def process_update(self, update: TelegramUpdate) -> AppResponse:
         """Route a group message through account, source, report and content policies."""
@@ -167,6 +181,9 @@ class Moderator:
         except EvidenceError:
             return AppResponse(503, "message index unavailable; retry pending")
         response = await self.reporting.dispatch(self.reply_plugins, update)
+        if response is not None:
+            return response
+        response = await self.reporting.dispatch(self.command_plugins, update)
         if response is not None:
             return response
         try:
@@ -277,8 +294,13 @@ class Moderator:
         """Stop pending inference or moderation based on content that an edit replaced."""
         now = int(time.time())
         if update.sent_at is not None and recent(update.sent_at, now):
-            await ModelTasks(self.store, self.actions.bot_id).enqueue(
-                update.chat_id, update.message_id, update.sent_at, None, now
+            referenced = (
+                reply_target(update.message) is not None
+                or isinstance(update.message.get("external_reply"), dict)
+                or isinstance(update.message.get("quote"), dict)
+            )
+            await ModelTasks(self.store, self.actions.bot_id).cancel_edit(
+                (update.chat_id, update.message_id), update.sent_at, now, edit_revision(update), referenced=referenced
             )
 
     def quotes_reported_spam(self, update: TelegramUpdate) -> bool:
@@ -306,7 +328,11 @@ class Moderator:
         )
         if not referenced and matches_spam_pattern(message):
             return await self.actions.delete_and_mute(message, mute=mute)
-        if update.edited or user_id(message) is None or not MODEL_CONTENT_FIELDS.intersection(message):
+        if (
+            (update.edited and not referenced)
+            or user_id(message) is None
+            or not MODEL_CONTENT_FIELDS.intersection(message)
+        ):
             return AppResponse(200, "ignored")
         payload: dict[str, object] = {
             "state": model_input(message),
@@ -319,7 +345,13 @@ class Moderator:
             "profile_ids": profile_ids(message),
         }
         tasks = ModelTasks(self.store, self.actions.bot_id)
-        if await tasks.enqueue(update.chat_id, update.message_id, update.sent_at, payload, int(time.time())):
+        if update.edited:
+            queued = await tasks.enqueue_edit(
+                (update.chat_id, update.message_id), update.sent_at, payload, int(time.time()), edit_revision(update)
+            )
+        else:
+            queued = await tasks.enqueue(update.chat_id, update.message_id, update.sent_at, payload, int(time.time()))
+        if queued:
             self.background = self.run_task(tasks, update.chat_id, update.message_id)
         return AppResponse(200, "model task recorded")
 

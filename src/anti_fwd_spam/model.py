@@ -140,11 +140,14 @@ class ModelRetryError(Exception):
 
 
 def origin_name(origin: object) -> str | None:
-    """Use only an available user nickname or chat title, not a hidden user's label."""
+    """Use the visible origin name without inferring an account identity."""
     if not isinstance(origin, dict):
         return None
     if origin.get("type") == "user" and isinstance(origin.get("sender_user"), dict):
         return display_name(origin["sender_user"])
+    if origin.get("type") == "hidden_user":
+        label = origin.get("sender_user_name")
+        return label if isinstance(label, str) else None
     sending_chat = origin.get("sender_chat") if origin.get("type") == "chat" else origin.get("chat")
     if origin.get("type") in {"chat", "channel"} and isinstance(sending_chat, dict):
         title = sending_chat.get("title")

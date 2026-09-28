@@ -111,7 +111,7 @@ test('user: Given an external quote whose own text matches a rule, When Jev find
   assert.equal((await dispatch({ update_id: 1, message: target })).status, 200);
   assert.equal(telegram.has(81), true);
   assert.equal(telegram.canSend(22), true);
-  assert.equal(model.state.context.reply_nickname, undefined);
+  assert.equal(model.state.context.reply_nickname, '未知');
 });
 
 test('user: Given a spam biography, no model key, and a rate-limited deletion, When the scheduled retry runs, Then the message is deleted and its sender muted', async () => {

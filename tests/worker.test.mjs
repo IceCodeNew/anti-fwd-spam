@@ -31,6 +31,21 @@ test('user: Given paused model tasks without a secret, When a message is edited,
   assert.equal(telegram.has(81), true);
 });
 
+test('user: Given a pending model task, When a listed reporter edits that message into bs, Then old inference is cancelled', async () => {
+  const now = Math.floor(Date.now() / 1000);
+  await database.prepare(`INSERT INTO model_tasks
+    (bot_id, chat_id, message_id, phase, input_json, due_at, stop_at, created_at, expires_at)
+    VALUES (123, -10012, 81, 'classify', '{"message":{"text":"old"}}', ?, ?, ?, ?)`)
+    .bind(now, now + 3600, now, now + 3 * 86400).run();
+  const edited = { ...message(81, 11), text: '/bs', edit_date: now };
+  telegram.send(edited);
+  assert.equal((await dispatch({ update_id: 3, edited_message: edited })).status, 200);
+  const saved = await database.prepare('SELECT phase, input_json FROM model_tasks').first();
+  assert.equal(saved.phase, 'done');
+  assert.equal(saved.input_json, null);
+  assert.equal(telegram.has(81), true);
+});
+
 for (const outcome of ['confirmed', 'response lost']) {
   test(`user keeps an administrative unmute after ${outcome}: Given an automatic mute took effect, When an administrator unmutes before redelivery, Then the user remains able to send and new spam is still moderated`, async () => {
     const update = { update_id: 900, message: { ...message(), via_bot: { id: 273234066, is_bot: true } } };
@@ -810,7 +825,7 @@ test('user: Given a ban awaiting confirmation and a duplicate report, When delet
 
 test('user preserves concurrent completion: Given overlapping deliveries, When a late attempt fails after another succeeds, Then redelivery does not repeat a completed punishment', async () => {
   const entered = Promise.withResolvers(), release = Promise.withResolvers();
-  telegram.faults.set('getChatMember:11', () => { entered.resolve(); return release.promise; });
+  telegram.faults.set('getChatMember:22', () => { entered.resolve(); return release.promise; });
   const update = report();
   telegram.send(update.message.reply_to_message);
   const pending = dispatch(update);
@@ -832,7 +847,7 @@ test('user preserves concurrent completion: Given overlapping deliveries, When a
 
 test('user keeps an unban across overlapping reports: Given two deliveries of one report, When the delayed delivery resumes after completion and an administrator unban, Then new messages and membership survive', async () => {
   const entered = Promise.withResolvers(), release = Promise.withResolvers();
-  telegram.faults.set('getChatMember:11', () => { entered.resolve(); return release.promise; });
+  telegram.faults.set('getChatMember:22', () => { entered.resolve(); return release.promise; });
   const update = report();
   telegram.send(update.message.reply_to_message);
   telegram.send(update.message);
@@ -844,7 +859,7 @@ test('user keeps an unban across overlapping reports: Given two deliveries of on
     telegram.members.set(22, { status: 'member' });
     telegram.send(message(90));
   } finally {
-    release.resolve(Response.json({ ok: true, result: { status: 'administrator', user: message(1, 11).from } }));
+    release.resolve(Response.json({ ok: true, result: { status: 'member', user: message(1, 22).from } }));
     await pending;
   }
 

@@ -112,6 +112,19 @@ test('user: Given an unlisted member, When they reply with bare bs, Then the tar
   assert.equal((await database.prepare('SELECT COUNT(*) AS n FROM reports').first()).n, 1);
 });
 
+test('user: Given a blacklisted unlisted reporter, When they send bare bs, Then account filtering takes priority', async () => {
+  const update = await inlineReport();
+  update.message.from = message(82, 33).from;
+  telegram.members.set(33, { status: 'member' });
+  await database.prepare('INSERT INTO blacklisted_users (bot_id, user_id, added_at) VALUES (?, ?, ?)')
+    .bind(123, 33, Math.floor(Date.now() / 1000)).run();
+  assert.equal((await dispatch(update)).status, 200);
+  assert.equal(telegram.has(82), false);
+  assert.equal(telegram.canJoin(33), false);
+  assert.equal(telegram.canJoin(22), true);
+  assert.equal(await database.prepare('SELECT source_id FROM blacklisted_sources WHERE source_id=777').first(), null);
+});
+
 test('user: Given an unlisted member, When they use bs with a username, Then no source or report is saved', async () => {
   const update = await inlineReport('/bs @example_bot');
   update.message.from = message(82, 33).from;

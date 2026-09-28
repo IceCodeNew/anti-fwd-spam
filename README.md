@@ -80,7 +80,7 @@ printf '%s' "$TELEGRAM_WEBHOOK_SECRET" | mise exec -- uv run pywrangler secret p
 | `BOT_USERNAME` | Your moderation bot's username, without `@`. |
 | `REPORTER_IDS` | Trusted numeric user or sender-chat IDs, separated by commas. For example: `123456789,-1001234567890`. Replace both example IDs. |
 
-Only listed identities can report or use `/bs`, even if they own a group. For messages sent as a group or channel, authorization uses that sending identity, not the personal account behind it. Listing a group does not authorize its members' personal accounts. Leave the list empty to disable reports and `/bs`.
+Only listed identities can trigger report moderation or register a source with `/bs`, even if they own a group. Unlisted identities can submit reply reports as evidence. For messages sent as a group or channel, authorization uses that sending identity, not the personal account behind it. Listing a group does not authorize its members' personal accounts. Leave the list empty to disable direct report moderation and source registration.
 
 Keep tokens and secrets out of repository files, screenshots, and public logs.
 
@@ -110,9 +110,9 @@ Confirm that the response contains `"ok":true` and `"result":true`. Use this tok
 
 Using an identity listed in `REPORTER_IDS`, choose **Reply** on the spam message, type `@`, select your moderation bot, and send.
 
-In a supergroup, a report from an administrator or an authorized group/channel identity deletes the target message, bans its sender, and clears eligible indexed history. Human and bot accounts follow the same policy, with group owners and administrators protected from bans. The bot removes the report after cleanup succeeds. A listed ordinary member's report saves evidence without deleting messages or restricting anyone.
+In a supergroup, a report from any identity in `REPORTER_IDS` deletes the target message, bans its sender, and clears eligible indexed history, regardless of the reporter's group role. Human and bot accounts follow the same policy, with group owners and administrators protected from bans. The bot removes the report after cleanup succeeds. A reply report from an unlisted identity saves evidence only, even if that identity is a group administrator.
 
-If Telegram rejects the ban, for example because the bot lacks ban permission, the bot still deletes the target message. In a forum topic, reply to the spam message itself; a mention that replies to nothing does not report the topic's creator. The bot moderates reports and `/bs` commands from unlisted identities like any other message. If the local rules or Jev remove such a report, and the reported message matches the local rules, the bot does not mute the sender.
+If Telegram rejects the ban, for example because the bot lacks ban permission, the bot still deletes the target message. In a forum topic, reply to the spam message itself; a mention that replies to nothing does not report the topic's creator. An unlisted reply with a bot mention or bare `/bs` saves evidence without automatic punishment. An unlisted `/bs @username` cannot register a source and undergoes ordinary filtering.
 
 Confirmed bans add the sender to the account blacklist. When that account posts in another supergroup using this bot, the bot bans it there and clears eligible indexed messages.
 
@@ -124,7 +124,7 @@ Send `/bs @example_bot` using a listed reporting identity, in private or in a gr
 
 The bot saves the resolved account ID in the source list and replies with that ID. It removes the group command after replying, including when lookup fails; private-chat commands and result replies remain. This named command does not ban the account or delete its history. Check the returned ID: Telegram cannot resolve every username, and the command does not check whether the account is a bot.
 
-To report both an inline message's sender A and its source bot B, reply to that message with `/bs` (or `/bs@your_moderation_bot`), without a username. The bot reads B's ID from the message and registers it as a source. For an authorized administrator report, it bans A and B and clears each account's eligible indexed history, protecting administrators. A listed ordinary member can register B but cannot trigger these punishments. The bot removes the group command after processing; temporary failures leave it pending retry.
+To report both an inline message's sender A and its source bot B, reply to that message with `/bs` (or `/bs@your_moderation_bot`), without a username. The bot reads B's ID from the message and registers it as a source. For any listed reporting identity, it bans A and B and clears each account's eligible indexed history, protecting target administrators. An unlisted bare reply saves evidence only. The bot removes a listed group command after processing; temporary failures leave it pending retry.
 
 If a ban result is uncertain, the bot keeps the command and asks you to check membership before sending a new report. It does not repeat an unconfirmed ban automatically.
 
@@ -135,9 +135,11 @@ When someone sends an inline message through a listed source bot, or forwards a 
 
 Copied text, hidden forwarding origins, and messages sent directly by an ordinary account do not match the source list.
 
+When someone replies to or quotes spam while promoting it, Jev can classify the sender's own message using the referenced text as context, including an external reply. A warning or report that merely quotes spam does not count as promotion. A spam classification deletes the current message and permanently mutes its sender; it does not ban the quoted message's author or clean history. Local regex rules inspect the sender's own message, nickname, and biography, not quoted text alone.
+
 ### Administrator protection and history limits
 
-Group owners and administrators are exempt from mutes and bans, including when the source bot is an administrator. Automatic filtering leaves their messages intact. An authorized administrator report can still delete a targeted administrator message.
+Group owners and administrators are exempt from mutes and bans, including when the source bot is an administrator. Automatic filtering leaves their messages intact. A listed reporter can still delete a targeted administrator message.
 
 History cleanup covers indexed messages received in the same group, up to the triggering message or before the report, and less than 48 hours old. The bot cannot search unread history. Telegram may remove additional history when banning an account.
 

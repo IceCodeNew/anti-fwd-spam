@@ -8,6 +8,22 @@ model.enabled = true;
 const campaign = '@safdhifobot campaign_001 g1789957985962f8909ecd';
 const flood = ('💰'.repeat(23) + '\n').repeat(8) + '💰'.repeat(8);
 
+for (const context of ['same_chat', 'external']) {
+  test(`user: Given a warning quoting spam in ${context}, When only the quote matches a local rule, Then the sender stays unrestricted`, async () => {
+    await setBindings({ EXPERIENTIAL_API_KEY: undefined });
+    const current = { ...message(), text: '这是广告，别点' };
+    if (context === 'same_chat') current.reply_to_message = { ...message(80, 11), text: campaign };
+    else {
+      current.external_reply = { origin: { type: 'hidden_user' } };
+      current.quote = { text: campaign };
+    }
+    telegram.send(current);
+    assert.equal((await dispatch({ update_id: 1, message: current })).status, 200);
+    assert.equal(telegram.has(81), true);
+    assert.equal(telegram.canSend(22), true);
+  });
+}
+
 for (const text of [campaign, flood, '@example_bot campaign_2', '💰'.repeat(4), '🔴 '.repeat(4),
   '🔴说明：💰 \n💰\t💰 💰结束🔴', '💰说明：🔴🔴🔴🔴结束💰',
   `请警惕这种垃圾消息：${campaign}，不要点击`, '@example_bot campaign_1 this is a discussion',

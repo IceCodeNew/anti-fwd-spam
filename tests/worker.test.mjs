@@ -352,7 +352,9 @@ test('user expires message identifiers: Given an indexed message and a controlle
   const recent = { ...message(70), date: Math.floor(Date.now() / 1000) - 60 };
   await dispatch({ message: recent });
   telegram.members.set(11, { status: 'member' });
-  await dispatch(report());
+  const unlisted = report();
+  unlisted.message.from.id = 33;
+  await dispatch(unlisted);
   const worker = await runtime.getWorker();
   const count = async () => (await database.prepare('SELECT count(*) AS count FROM recent_messages WHERE message_id = 70').first()).count;
   await worker.scheduled({ scheduledTime: new Date((recent.date + 48 * 3600 - 1) * 1000), cron: '* * * * *' });
@@ -396,7 +398,7 @@ test('user protects promoted senders: Given paused history cleanup, When the sen
   assert.deepEqual(telegram.members.get(22), { status: 'administrator' });
 });
 
-test('user records a report: Given a regular member and rich media, When they mention the bot in a reply, Then all evidence survives without deleting or restricting anyone', async () => {
+test('user acts on a listed report: Given a regular member and rich media, When they mention the bot in a reply, Then the target is removed and its sender banned', async () => {
   telegram.members.set(11, { status: 'member' });
   const target = {
     ...message(), animation: { file_id: 'animation', file_unique_id: 'unique-a' }, document: { file_id: 'animation' },
@@ -414,11 +416,11 @@ test('user records a report: Given a regular member and rich media, When they me
 
   const response = await dispatch(update);
 
-  assert.equal(await response.text(), 'report recorded');
-  assert.equal(telegram.has(70), true);
-  assert.equal(telegram.has(81), true);
-  assert.equal(telegram.has(82), true);
-  assert.equal(telegram.canSend(22), true);
+  assert.match(await response.text(), /banned/);
+  assert.equal(telegram.has(70), false);
+  assert.equal(telegram.has(81), false);
+  assert.equal(telegram.has(82), false);
+  assert.equal(telegram.canJoin(22), false);
   const [row] = await evidence();
   assert.deepEqual(JSON.parse(row.raw_update), update);
 });
@@ -551,7 +553,7 @@ test('user retains evidence during failure: Given unavailable report storage, Wh
   }
 });
 
-for (const [stage, status] of [['getChatMember:11', 429], ['getChatMember:22', 429], ['banChatMember', 429],
+for (const [stage, status] of [['getChatMember:22', 429], ['banChatMember', 429],
   ['banChatMember', 408]]) {
   test(`user recovers from ${stage} HTTP ${status}: Given a temporary Telegram failure, When delivery is retried, Then evidence is retained and moderation finishes`, async () => {
     const update = report();
@@ -613,6 +615,7 @@ test('user chooses the reported bot: Given username entities and UTF-16 offsets,
     delete update.message.text;
     delete update.message.entities;
     Object.assign(update.message, fields);
+    update.message.from.id = 33;
     telegram.send(update.message.reply_to_message);
     const response = await dispatch({ update_id: index, edited_message: update.message });
     assert.equal(response.status, 200);

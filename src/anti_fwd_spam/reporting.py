@@ -22,6 +22,7 @@ class ReportingPlugin:
     name: str
     matches: Callable[[TelegramUpdate], bool]
     handle: Callable[[TelegramUpdate], Awaitable[AppResponse]]
+    record_denied: Callable[[TelegramUpdate], Awaitable[AppResponse | None]] | None = None
 
 
 class Reporting:
@@ -44,15 +45,16 @@ class Reporting:
     async def dispatch(self, plugins: tuple[ReportingPlugin, ...], update: TelegramUpdate) -> AppResponse | None:
         """Run the first matching plugin after authorization.
 
-        Unmatched and unauthorized updates return None, so automatic moderation still applies to them.
+        Unmatched updates return None. A plugin may preserve denied reports as evidence.
         """
         plugin = next((plugin for plugin in plugins if plugin.matches(update)), None)
         if plugin is None:
             return None
-        if not self.authorized(update):
+        handler = plugin.handle if self.authorized(update) else plugin.record_denied
+        if handler is None:
             return None
         try:
-            return await plugin.handle(update)
+            return await handler(update)
         except EvidenceError:
             return AppResponse(503, f"{plugin.name} storage unavailable; retry pending")
         except TelegramError as error:

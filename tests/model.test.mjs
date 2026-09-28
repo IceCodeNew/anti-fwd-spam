@@ -73,16 +73,43 @@ test('user: Given a media caption and unavailable biography, When classified, Th
   assert.equal(JSON.stringify(model.state).includes('private-file'), false);
 });
 
-test('user: Given a listed member\'s report or an edit, When the model would flag spam, Then neither message is removed', async () => {
+test('user: Given a same-chat reply that endorses a spam message, When Jev flags the new sender, Then the reply is muted with one quoted context', async () => {
+  const spam = { ...message(80, 11), text: '看头像q Jai', reply_to_message: message(79, 11) };
+  const current = { ...message(), text: '真的羡慕，联系这个号', reply_to_message: spam };
+  model.probability = 0.96;
+  telegram.send(current);
+  assert.equal((await dispatch({ update_id: 6, message: current })).status, 200);
+  assert.equal(telegram.has(81), false);
+  assert.equal(telegram.canSend(22), false);
+  assert.equal(model.state.message.text, current.text);
+  assert.equal(model.state.context.reply.text, spam.text);
+  assert.equal(model.state.context.reply_nickname, 'User 11');
+  assert.equal(model.state.context.reply.reply_to_message, undefined);
+});
+
+test('user: Given an external quote, When Jev flags an endorsing sender, Then only the sender is muted and the bounded quote is context', async () => {
+  const current = { ...message(), text: '真的羡慕，联系这个号', external_reply: { origin: { type: 'hidden_user' } },
+    quote: { text: '看头像q Jai'.repeat(200) } };
+  model.probability = 0.96;
+  telegram.send(current);
+  assert.equal((await dispatch({ update_id: 7, message: current })).status, 200);
+  assert.equal(telegram.has(81), false);
+  assert.equal(telegram.canSend(22), false);
+  assert.equal(model.state.context.external_reply, true);
+  assert.equal(model.state.context.quoted_text.length, 1024);
+});
+
+test('user: Given a listed member\'s report or an edit, When the model would flag spam, Then the report acts on its target and edits skip fresh classification', async () => {
   model.probability = 1;
   telegram.members.set(11, { status: 'member' });
   const update = report();
   telegram.send(update.message);
   telegram.send(update.message.reply_to_message);
   assert.equal((await dispatch(update)).status, 200);
-  assert.equal(telegram.has(81), true);
-  assert.equal(telegram.has(82), true);
-  assert.equal((await dispatch({ update_id: 5, edited_message: message() })).status, 200);
+  assert.equal(telegram.has(81), false);
+  assert.equal(telegram.has(82), false);
+  telegram.send(message(81, 44));
+  assert.equal((await dispatch({ update_id: 5, edited_message: message(81, 44) })).status, 200);
   assert.equal(telegram.has(81), true);
 });
 

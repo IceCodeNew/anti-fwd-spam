@@ -113,6 +113,7 @@ class Moderator:
                 "command",
                 lambda update: source_argument(update.message, self.bot_username) is not None,
                 self.source_command,
+                self.record_denied_source,
             ),
         )
         self.reply_plugins = (
@@ -122,6 +123,7 @@ class Moderator:
                     reply_target(update.message) is not None and mentions_bot(update.message, self.bot_username)
                 ),
                 self.report,
+                self.record_report,
             ),
         )
 
@@ -210,6 +212,20 @@ class Moderator:
         if response.needs_confirmation:
             reply += "\nBan result is uncertain; check membership before submitting a new report."
         return await self._finish_source_command(update, reply, response)
+
+    async def record_denied_source(self, update: TelegramUpdate) -> AppResponse | None:
+        """Keep a bare reply command as evidence without registering its source."""
+        if source_argument(update.message, self.bot_username) != "" or not update.in_group:
+            return None
+        return await self.record_report(update)
+
+    async def record_report(self, update: TelegramUpdate) -> AppResponse:
+        """Save an unlisted identity's valid reply without taking moderation action."""
+        if update.update_id is None or reported_target(update) is None:
+            return AppResponse(400, "invalid report target")
+        key = (self.actions.bot_id, update.update_id)
+        await self.store.save(key, update.raw_json, int(time.time()), 0)
+        return AppResponse(200, "report recorded")
 
     async def _finish_source_command(self, update: TelegramUpdate, reply: str, response: AppResponse) -> AppResponse:
         """Acknowledge the result and retain commands that require manual inspection."""

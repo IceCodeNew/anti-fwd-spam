@@ -82,23 +82,42 @@ for (const protectedId of [22, 777]) {
   });
 }
 
-test('user: Given a listed ordinary member, When they reply with bs, Then the source is registered but neither account is punished', async () => {
+test('user: Given a listed ordinary member, When they reply with bs, Then the source and sender are banned', async () => {
   const update = await inlineReport();
   telegram.members.set(11, { status: 'member' });
   assert.equal((await dispatch(update)).status, 200);
-  for (const id of [70, 71, 81]) assert.equal(telegram.has(id), true);
-  for (const id of [22, 777]) assert.equal(telegram.canJoin(id), true);
+  for (const id of [70, 71, 81]) assert.equal(telegram.has(id), false);
+  for (const id of [22, 777]) assert.equal(telegram.canJoin(id), false);
   assert.equal((await database.prepare('SELECT source_id FROM blacklisted_sources WHERE source_id=777').first()).source_id, 777);
-  assert.equal((await database.prepare('SELECT COUNT(*) AS n FROM blacklisted_users').first()).n, 0);
+  assert.equal((await database.prepare('SELECT COUNT(*) AS n FROM blacklisted_users').first()).n, 2);
 });
 
-test('user: Given an unlisted sender-chat identity, When a reply uses bs with an allowed compatibility user, Then neither blacklist changes', async () => {
+test('user: Given an unlisted sender-chat identity, When a reply uses bs with an allowed compatibility user, Then only evidence is saved', async () => {
   const update = await inlineReport();
   update.message.sender_chat = { ...chat, id: -10099 };
   assert.equal((await dispatch(update)).status, 200);
   for (const id of [70, 71, 81, 82]) assert.equal(telegram.has(id), true);
   assert.equal(await database.prepare('SELECT source_id FROM blacklisted_sources WHERE source_id=777').first(), null);
+  assert.equal((await database.prepare('SELECT COUNT(*) AS n FROM reports').first()).n, 1);
+});
+
+test('user: Given an unlisted member, When they reply with bare bs, Then the target is preserved as evidence without source registration', async () => {
+  const update = await inlineReport();
+  update.message.from = message(82, 33).from;
+  assert.equal((await dispatch(update)).status, 200);
+  assert.equal(telegram.has(81), true);
+  assert.equal(telegram.has(82), true);
+  assert.equal(telegram.canJoin(22), true);
+  assert.equal(await database.prepare('SELECT source_id FROM blacklisted_sources WHERE source_id=777').first(), null);
+  assert.equal((await database.prepare('SELECT COUNT(*) AS n FROM reports').first()).n, 1);
+});
+
+test('user: Given an unlisted member, When they use bs with a username, Then no source or report is saved', async () => {
+  const update = await inlineReport('/bs @example_bot');
+  update.message.from = message(82, 33).from;
+  assert.equal((await dispatch(update)).status, 200);
   assert.equal((await database.prepare('SELECT COUNT(*) AS n FROM reports').first()).n, 0);
+  assert.equal(await database.prepare('SELECT source_id FROM blacklisted_sources WHERE source_id=777').first(), null);
 });
 
 test('user: Given a pending combined report, When reporter access is revoked before retry, Then the pending source and command remain untouched', async () => {

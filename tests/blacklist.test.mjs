@@ -93,13 +93,14 @@ test('user retains confirmed reports across evidence expiry: Given an anonymous 
   assert.equal(telegram.has(91, destination), false);
 });
 
-test('user keeps unconfirmed reports local: Given a member report, protected sender, or rejected ban, When those reports finish, Then no account enters the shared blacklist', async () => {
+test('user keeps unconfirmed reports local: Given an unlisted report, protected sender, or rejected ban, When those reports finish, Then no account enters the shared blacklist', async () => {
   for (const [sender, reporterStatus, senderStatus, rejected] of [
     [31, 'member', 'member', false], [32, 'administrator', 'creator', false], [33, 'administrator', 'member', true],
   ]) {
     telegram.members.set(11, { status: reporterStatus });
     telegram.members.set(sender, { status: senderStatus });
     const update = report(message(sender, sender));
+    if (sender === 31) update.message.from.id = 34;
     update.update_id = sender;
     update.message.message_id = sender + 100;
     telegram.send(update.message.reply_to_message);

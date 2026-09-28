@@ -91,6 +91,29 @@ test('user: Given a spam biography and no model key, When its owner sends ordina
   assert.equal(telegram.canSend(22), false);
 });
 
+test('user: Given a contact whose account biography matches a rule, When the card name is ordinary and Jev is unavailable, Then deferred regex mutes the sender', async () => {
+  await setBindings({ EXPERIENTIAL_API_KEY: undefined });
+  const target = { ...message(), contact: { first_name: '王小明', user_id: 55, phone_number: '8613800000000' } };
+  delete target.text;
+  model.profiles.set(55, { first_name: '王小明', bio: '收款码一天赚一万' });
+  telegram.send(target);
+  assert.equal((await dispatch({ update_id: 1, message: target })).status, 200);
+  assert.equal(telegram.has(81), false);
+  assert.equal(telegram.canSend(22), false);
+});
+
+test('user: Given an external quote whose own text matches a rule, When Jev finds no promotion, Then regex does not decide punishment', async () => {
+  const target = { ...message(), text: '看头像q Jai 这是广告，别点',
+    external_reply: { origin: { type: 'hidden_user', sender_user_name: '未知' } },
+    quote: { text: '看头像q Jai' } };
+  model.probability = 0;
+  telegram.send(target);
+  assert.equal((await dispatch({ update_id: 1, message: target })).status, 200);
+  assert.equal(telegram.has(81), true);
+  assert.equal(telegram.canSend(22), true);
+  assert.equal(model.state.context.reply_nickname, undefined);
+});
+
 test('user: Given a spam biography, no model key, and a rate-limited deletion, When the scheduled retry runs, Then the message is deleted and its sender muted', async () => {
   await setBindings({ EXPERIENTIAL_API_KEY: undefined });
   model.profile = { bio: '极品新人小萝莉' };

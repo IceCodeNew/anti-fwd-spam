@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 from .actions import Actions
 from .evidence import MESSAGE_WINDOW_SECONDS, RETENTION_SECONDS, storage_errors
-from .model import SPAM_THRESHOLD, ModelRetryError, sender_bio, spam_probability
+from .model import SPAM_THRESHOLD, ModelRetryError, sender_bio, spam_probability, user_profile
 from .policy import matches_spam_text
 
 if TYPE_CHECKING:
@@ -32,6 +32,37 @@ class Task:
     input_json: str | None
     attempts: int
     generation: int
+
+
+async def enrich_profiles(
+    state: dict[str, object], identifiers: object, fetcher: Fetch, token: str
+) -> None:
+    """Add available referenced-user and contact profiles before local and model checks."""
+    if not isinstance(identifiers, dict):
+        return
+    context = state.get("context")
+    if isinstance(context, dict) and type(identifiers.get("reply")) is int:
+        _, biography = await user_profile(fetcher, token, identifiers["reply"])
+        if biography is not None:
+            context["reply_bio"] = biography
+    contact = state.get("contact")
+    if isinstance(contact, dict) and type(identifiers.get("contact")) is int:
+        nickname, biography = await user_profile(fetcher, token, identifiers["contact"])
+        if nickname is not None:
+            contact["nickname"] = nickname
+        if biography is not None:
+            contact["bio"] = biography
+
+
+def deferred_regex_match(state: dict[str, object]) -> bool:
+    """Match available profile fields only for messages without a reference."""
+    if isinstance(state.get("context"), dict):
+        return False
+    contact = state.get("contact")
+    values = [state.get("bio")]
+    if isinstance(contact, dict):
+        values.extend((contact.get("nickname"), contact.get("bio")))
+    return any(matches_spam_text(value) for value in values)
 
 
 class ModelTasks:
@@ -186,7 +217,8 @@ class ModelTasks:
         if task.phase == "classify":
             state = payload["state"]
             state["bio"] = await sender_bio(fetcher, token, target["from"]["id"]) if target is not None else None
-            spam = matches_spam_text(state["bio"])
+            await enrich_profiles(state, payload.get("profile_ids"), fetcher, token)
+            spam = deferred_regex_match(state)
             if not spam and models:
                 model = models[(task.attempts - 1) % len(models)]
                 try:

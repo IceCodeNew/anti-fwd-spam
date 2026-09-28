@@ -70,13 +70,14 @@ The following map describes new supergroup messages after command handling. A is
                │
                │ no report
                ▼
-       Regex on authored text/caption/contact name/nickname ── match ─▶ Action 1 on A
+       No reference: regex on authored text/card name/nickname ── match ─▶ Action 1 on A
                │ no match
                ▼
-       Background task: same regex on biography ── match ────────────▶ Action 1 on A
+       Background: fetch available user profiles
+       No reference: regex on sender/contact profile ── match ────────▶ Action 1 on A
                │ no match
                ▼
-       Jev: authored content + labeled quote context ── spam ────────▶ Action 1 on A
+       Jev: sender, reference, contact units ── spam ────────────────▶ Action 1 on A
                │
                └── Below threshold / no model configured ──▶ Leave message unchanged
 
@@ -85,7 +86,9 @@ The following map describes new supergroup messages after command handling. A is
 
 Source matching uses `via_bot.id` and visible bot origins in `forward_origin.sender_user`. It does not inspect copied text or hidden forwarding origins. All matched sources are handled independently. See `parse_update` in [policy.py](../src/anti_fwd_spam/policy.py).
 
-Each local regex searches anywhere in the current sender's text, caption, shared contact card's name, and nickname. Quoted text alone never triggers a local regex action. If no regex matches a new message from a human sender with content, the webhook saves a D1 model task and responds. The Worker then runs the task in the background: it reads the sender's biography and searches it with the same regexes. If no regex matches, Jev evaluates the sender's nickname, biography, and authored message together with a labeled, single-level reply or quoted text. Jev can flag a sender who promotes a referenced spam message, including an external reply, but quotation alone does not establish spam. An external reply does not identify an account to punish beyond the current sender. A match at any stage stops the later stages and applies Action 1. If the biography lookup fails, Jev receives an unknown biography. Without model keys, the background task stops after the biography search. Exact patterns and model settings belong to `SPAM_PATTERNS` in [policy.py](../src/anti_fwd_spam/policy.py) and `SPAM_THRESHOLD` / `MODEL_PROVIDERS` in [model.py](../src/anti_fwd_spam/model.py).
+For a direct message without a reference, the webhook regex searches the current text, caption, shared contact card name, and sender nickname. A miss queues a D1 task. In the background, the Worker fetches the sender's private profile and, when a contact card has a usable `user_id`, the contact account's private profile. The deferred regex checks the returned sender biography and contact account nickname and biography. Jev then evaluates the available complete input if regex did not match. A missing contact `user_id` or failed lookup leaves its account profile unknown; the card name remains available. The contact phone number is not sent to Jev.
+
+A message with an explicit same-chat reply, external reply, or quote bypasses both local regex stages. Jev sees the current message body, sender nickname and biography as one unit and the available referenced body, sender nickname and biography as another. It estimates the probability that the reference is advertising **and** the current sender intends to promote it. Without a reference, Jev estimates whether the current unit is advertising; for a contact card, it estimates whether the card name and available contact account profile advertise spam. Same-chat replies include the referenced message body and user nickname; a referenced user ID permits a biography lookup. External replies may supply only quoted text and origin information, so unavailable body, nickname, or biography is omitted. Only the current sender can receive Action 1. Without model keys, quoted messages cannot be classified by regex. Exact patterns and model settings belong to `SPAM_PATTERNS` in [policy.py](../src/anti_fwd_spam/policy.py) and `SPAM_THRESHOLD` / `MODEL_PROVIDERS` in [model.py](../src/anti_fwd_spam/model.py).
 
 ### Action 1: delete the current message and permanently mute
 
@@ -133,7 +136,7 @@ Moderation runs before acknowledgement, so a rejected reply cannot prevent punis
 
 ## Edits and retries
 
-Edited group messages cancel pending model work within the message window. They still undergo source filtering, reply-report handling, and the local regexes on text, captions, contact names, and nicknames; a regex match applies Action 1 to the edited message. They skip automatic account-blacklist checks, the biography search, and fresh Jev classification. Edited `/bs` commands from authorized reporters are ignored.
+Edited group messages cancel pending model work within the message window. They still undergo source filtering and reply-report handling. Edited messages without a reference also undergo local regex checks on text, captions, contact names, and nicknames; a match applies Action 1. Edited messages with a reference bypass local regex and do not start fresh Jev classification. Edits skip automatic account-blacklist checks and profile lookups. Edited `/bs` commands from authorized reporters are ignored.
 
 Model classification starts with the first configured entry in `MODEL_PROVIDERS`. Failed requests can rotate through the configured providers, including CommandCode's System One endpoint. The classification budget is one initial attempt and three retries, delayed by 1, 2, and 5 minutes. With five configured providers, the fifth is outside that budget. A valid non-spam score or an invalid answer stops classification without trying another provider.
 

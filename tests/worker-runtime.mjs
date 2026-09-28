@@ -7,7 +7,7 @@ import { unstable_getMiniflareWorkerOptions } from 'wrangler';
 import { Telegram, token, username } from './telegram-fake.mjs';
 
 export const telegram = new Telegram();
-export const model = { enabled: false, probability: 0, profile: null, state: null, response: null };
+export const model = { enabled: false, probability: 0, profile: null, profiles: new Map(), state: null, response: null };
 export let runtime, database;
 let runtimeOptions;
 let customBindings = false;
@@ -60,8 +60,9 @@ before(async () => {
         const { chat_id } = await request.clone().json();
         if (typeof chat_id === 'string') return telegram.fetch(request);
         assert.ok(Number.isSafeInteger(chat_id) && chat_id > 0);
-        if (model.profile instanceof Response) return model.profile.clone();
-        return Response.json({ ok: true, result: { id: chat_id, type: 'private', ...model.profile } });
+        const profile = model.profiles.get(chat_id) ?? model.profile;
+        if (profile instanceof Response) return profile.clone();
+        return Response.json({ ok: true, result: { id: chat_id, type: 'private', ...profile } });
       }
       return telegram.fetch(request);
     },
@@ -83,7 +84,7 @@ beforeEach(async () => {
     customBindings = false;
   }
   telegram.reset();
-  Object.assign(model, { probability: 0, profile: null, state: null, response: null });
+  Object.assign(model, { probability: 0, profile: null, profiles: new Map(), state: null, response: null });
   await database.prepare('DELETE FROM reports').run();
   await database.prepare('DELETE FROM recent_messages').run();
   await database.prepare('DELETE FROM automatic_mutes').run();

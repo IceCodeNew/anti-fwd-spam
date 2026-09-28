@@ -84,7 +84,49 @@ test('user: Given a same-chat reply that endorses a spam message, When Jev flags
   assert.equal(model.state.message.text, current.text);
   assert.equal(model.state.context.reply.text, spam.text);
   assert.equal(model.state.context.reply_nickname, 'User 11');
+  assert.equal(model.state.context.reply_bio, '');
   assert.equal(model.state.context.reply.reply_to_message, undefined);
+});
+
+test('user: Given a quoted ad with a sender whose biography matches a rule, When Jev rejects promotion, Then the quote and sender remain', async () => {
+  const current = { ...message(), text: '看头像q Jai 这是广告，别点',
+    reply_to_message: { ...message(80, 11), text: '看头像q Jai' } };
+  model.profiles.set(22, { bio: '看头像q Jai' });
+  model.profiles.set(11, { bio: '收款码一天赚一万' });
+  model.probability = 0;
+  telegram.send(current);
+  assert.equal((await dispatch({ update_id: 8, message: current })).status, 200);
+  assert.equal(telegram.has(81), true);
+  assert.equal(telegram.canSend(22), true);
+  assert.equal(model.state.bio, '看头像q Jai');
+  assert.equal(model.state.context.reply_bio, '收款码一天赚一万');
+});
+
+test('user: Given an external quote with an identifiable sender, When classified, Then the available nickname and biography join the quote', async () => {
+  const current = { ...message(), text: '推荐这个',
+    external_reply: { origin: { type: 'user', sender_user: { id: 44, is_bot: false, first_name: '推广', last_name: '者' } } },
+    quote: { text: '收款码一天赚一万' } };
+  model.profiles.set(44, { bio: '推广服务' });
+  telegram.send(current);
+  assert.equal((await dispatch({ update_id: 9, message: current })).status, 200);
+  assert.equal(model.state.context.reply_nickname, '推广 者');
+  assert.equal(model.state.context.reply_bio, '推广服务');
+  assert.equal(model.state.context.quoted_text, '收款码一天赚一万');
+  assert.equal(JSON.stringify(model.state).includes('"id":44'), false);
+});
+
+test('user: Given a contact with a resolvable account, When Jev classifies it, Then the card name and account profile are supplied without the phone number', async () => {
+  const current = { ...message(), contact: { first_name: '普通名字', user_id: 55, phone_number: '8613800000000' } };
+  delete current.text;
+  model.profiles.set(55, { first_name: '商务', last_name: '客服', bio: '联系我了解理财机会' });
+  model.probability = 0.96;
+  telegram.send(current);
+  assert.equal((await dispatch({ update_id: 10, message: current })).status, 200);
+  assert.equal(telegram.has(81), false);
+  assert.equal(model.state.contact.card_name, '普通名字');
+  assert.equal(model.state.contact.nickname, '商务 客服');
+  assert.equal(model.state.contact.bio, '联系我了解理财机会');
+  assert.equal(JSON.stringify(model.state).includes('8613800000000'), false);
 });
 
 test('user: Given an external quote, When Jev flags an endorsing sender, Then only the sender is muted and the bounded quote is context', async () => {

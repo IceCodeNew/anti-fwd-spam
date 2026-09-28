@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 from .actions import Actions, AppResponse, BanTarget, user_id
 from .evidence import MESSAGE_WINDOW_SECONDS, EvidenceError, ReportStore
-from .model import MODEL_CONTENT_FIELDS, model_input
+from .model import MODEL_CONTENT_FIELDS, model_input, profile_ids
 from .policy import matches_spam_pattern, parse_update, reply_target
 from .reporting import Reporting, ReportingPlugin
 from .sources import replied_source, resolve_source, source_argument
@@ -299,7 +299,12 @@ class Moderator:
         if update.sent_at is None or not recent(update.sent_at, int(time.time())):
             return AppResponse(200, "ignored")
         mute = not self.quotes_reported_spam(update)
-        if matches_spam_pattern(message):
+        referenced = (
+            reply_target(message) is not None
+            or isinstance(message.get("external_reply"), dict)
+            or isinstance(message.get("quote"), dict)
+        )
+        if not referenced and matches_spam_pattern(message):
             return await self.actions.delete_and_mute(message, mute=mute)
         if update.edited or user_id(message) is None or not MODEL_CONTENT_FIELDS.intersection(message):
             return AppResponse(200, "ignored")
@@ -311,6 +316,7 @@ class Moderator:
                 "from": {"id": user_id(message), "is_bot": False},
             },
             "mute": mute,
+            "profile_ids": profile_ids(message),
         }
         tasks = ModelTasks(self.store, self.actions.bot_id)
         if await tasks.enqueue(update.chat_id, update.message_id, update.sent_at, payload, int(time.time())):

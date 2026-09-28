@@ -135,7 +135,9 @@ When someone sends an inline message through a listed source bot, or forwards a 
 
 Copied text, hidden forwarding origins, and messages sent directly by an ordinary account do not match the source list.
 
-When someone replies to or quotes spam while promoting it, Jev can classify the sender's own message using the referenced text as context, including an external reply. A warning or report that merely quotes spam does not count as promotion. A spam classification deletes the current message and permanently mutes its sender; it does not ban the quoted message's author or clean history. Local regex rules inspect the sender's own message, nickname, and biography, not quoted text alone.
+When someone replies to or quotes spam, the bot sends the available sender and reference details to Jev. Jev judges whether the reference advertises spam and the current sender intends to promote it; a warning or report does not count as promotion. These replies bypass local regex decisions, including regex matches in the sender's biography. A spam classification deletes the current message and permanently mutes its sender; it does not ban the quoted author or clean history. External replies may lack the original message body or author profile, so Jev receives only the fields Telegram provides.
+
+For messages without a reference, local regex rules first check the message, sender nickname, and shared contact card name. After a miss, the background task fetches the sender's biography and, if the card contains a Telegram user ID, tries to fetch that contact account's nickname and biography. The deferred regex checks the available profile fields, and Jev evaluates the complete available input. A contact card without a usable ID still supplies its displayed name; the bot does not send its phone number to Jev.
 
 ### Administrator protection and history limits
 
@@ -163,13 +165,13 @@ Then lift any mute or ban in each affected group's Telegram member settings. Rem
 
 ## Automatic text filtering
 
-Local rules check new and edited group messages before Jev, including messages from bots, without an API key. They search anywhere in text, captions, a shared contact card's name, or the sender's nickname for campaign markers, payment-QR-code income offers, sexual-solicitation offers, and runs of identical money-bag or red-circle emojis, allowing whitespace between emojis. Surrounding text or other emojis do not prevent a match. If no rule matches a new message from a human sender, the bot reads the sender's Telegram biography in the background and searches it with the same rules before it asks Jev. Edited messages skip the biography search. The exact patterns are `SPAM_PATTERNS` in [policy.py](src/anti_fwd_spam/policy.py). The contents of replied-to messages and individual sensitive words do not trigger these rules.
+Local rules check new and edited group messages without a reference before Jev, including messages from bots, without an API key. They search anywhere in text, captions, a shared contact card's name, or the sender's nickname for campaign markers, payment-QR-code income offers, sexual-solicitation offers, and runs of identical money-bag or red-circle emojis, allowing whitespace between emojis. Surrounding text or other emojis do not prevent a match. If no rule matches a new message from a human sender, the bot checks the available sender and contact account profiles in the background before it asks Jev. Edited messages skip profile lookups. The exact patterns are `SPAM_PATTERNS` in [policy.py](src/anti_fwd_spam/policy.py). Messages with a reference bypass these rules, including edits.
 
 A match deletes the current message and permanently mutes a human sender in a supergroup, preserving earlier messages and both blacklists. Bot senders are not muted. Group owners and administrators are protected. Private messages skip this check.
 
 ## Optional: enable Jev spam checks
 
-Model checks send the sender's display name, available biography, and message text or caption with formatting, shared contact names, and selected media descriptions to an external provider. No media is downloaded or inspected. Review the provider's privacy terms and pricing before enabling this feature.
+Model checks send the sender's display name, available biography, and message text or caption with formatting, shared contact names, available contact account profile, available quoted message and author profile, and selected media descriptions to an external provider. No media is downloaded or inspected. Review the provider's privacy terms and pricing before enabling this feature.
 
 Save an API key under the corresponding Worker secret. With multiple keys, the bot starts with the first configured provider below and can switch providers on failures:
 

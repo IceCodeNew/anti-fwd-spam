@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from dataclasses import dataclass
@@ -10,7 +11,7 @@ from typing import TYPE_CHECKING
 
 from .actions import Actions
 from .evidence import MESSAGE_WINDOW_SECONDS, RETENTION_SECONDS, storage_errors
-from .model import SPAM_THRESHOLD, ModelRetryError, sender_bio, spam_probability
+from .model import SPAM_THRESHOLD, ModelRetryError, spam_probability, user_profile
 from .policy import matches_spam_text
 
 if TYPE_CHECKING:
@@ -32,6 +33,45 @@ class Task:
     input_json: str | None
     attempts: int
     generation: int
+
+
+async def enrich_profiles(
+    state: dict[str, object], identifiers: object, sender_id: int | None, fetcher: Fetch, token: str
+) -> None:
+    """Fetch independent private profiles concurrently within the task lease."""
+    ids = identifiers if isinstance(identifiers, dict) else {}
+    context = state.get("context")
+    contact = state.get("contact")
+    pending: list[tuple[str, int]] = []
+    if sender_id is not None:
+        pending.append(("sender", sender_id))
+    if isinstance(context, dict) and type(ids.get("reply")) is int:
+        pending.append(("reply", ids["reply"]))
+    if isinstance(contact, dict) and type(ids.get("contact")) is int:
+        pending.append(("contact", ids["contact"]))
+    profiles = await asyncio.gather(*(user_profile(fetcher, token, identifier) for _, identifier in pending))
+    state["bio"] = None
+    for (role, _), (nickname, biography) in zip(pending, profiles, strict=True):
+        if role == "sender":
+            state["bio"] = biography
+        elif role == "reply" and isinstance(context, dict) and biography is not None:
+            context["reply_bio"] = biography
+        elif role == "contact" and isinstance(contact, dict):
+            if nickname is not None:
+                contact["nickname"] = nickname
+            if biography is not None:
+                contact["bio"] = biography
+
+
+def deferred_regex_match(state: dict[str, object]) -> bool:
+    """Match available profile fields only for messages without a reference."""
+    if isinstance(state.get("context"), dict):
+        return False
+    contact = state.get("contact")
+    values = [state.get("bio")]
+    if isinstance(contact, dict):
+        values.extend((contact.get("nickname"), contact.get("bio")))
+    return any(matches_spam_text(value) for value in values)
 
 
 class ModelTasks:
@@ -72,6 +112,59 @@ class ModelTasks:
                     sent_at + MESSAGE_WINDOW_SECONDS,
                     now,
                     now + RETENTION_SECONDS,
+                )
+                .first()
+            )
+        return row is not None
+
+    async def cancel_edit(
+        self, target: tuple[int, int], sent_at: int, now: int, revision: int, *, referenced: bool
+    ) -> None:
+        """Fence older work once for each new Telegram edit."""
+        with storage_errors():
+            await (
+                self.database.prepare(
+                    "INSERT INTO model_tasks "
+                    "(bot_id, chat_id, message_id, phase, input_json, due_at, stop_at, created_at, expires_at, "
+                    "revision, edit_pending) VALUES (?, ?, ?, 'done', NULL, ?, ?, ?, ?, ?, ?) "
+                    "ON CONFLICT(bot_id, chat_id, message_id) DO UPDATE SET "
+                    "phase = 'done', input_json = NULL, attempts = 0, generation = generation + 1, "
+                    "due_at = excluded.due_at, lease_until = 0, stop_at = excluded.stop_at, "
+                    "expires_at = excluded.expires_at, revision = excluded.revision, "
+                    "edit_pending = excluded.edit_pending WHERE excluded.revision > model_tasks.revision"
+                )
+                .bind(
+                    self.bot_id,
+                    *target,
+                    now,
+                    sent_at + MESSAGE_WINDOW_SECONDS,
+                    now,
+                    now + RETENTION_SECONDS,
+                    revision,
+                    referenced,
+                )
+                .run()
+            )
+
+    async def enqueue_edit(
+        self, target: tuple[int, int], sent_at: int, state: dict[str, object], now: int, revision: int
+    ) -> bool:
+        """Classify a referenced edit only once after its older work was fenced."""
+        with storage_errors():
+            row = (
+                await self.database.prepare(
+                    "UPDATE model_tasks SET phase = 'classify', input_json = ?, attempts = 0, "
+                    "due_at = ?, lease_until = 0, stop_at = ?, edit_pending = 0 "
+                    "WHERE bot_id = ? AND chat_id = ? AND message_id = ? AND revision = ? "
+                    "AND phase = 'done' AND edit_pending = 1 RETURNING message_id"
+                )
+                .bind(
+                    json.dumps(state, ensure_ascii=False),
+                    now,
+                    sent_at + MESSAGE_WINDOW_SECONDS,
+                    self.bot_id,
+                    *target,
+                    revision,
                 )
                 .first()
             )
@@ -185,8 +278,10 @@ class ModelTasks:
         action: dict[str, object] | None = {"target": target, "mute": mute} if target is not None else None
         if task.phase == "classify":
             state = payload["state"]
-            state["bio"] = await sender_bio(fetcher, token, target["from"]["id"]) if target is not None else None
-            spam = matches_spam_text(state["bio"])
+            await enrich_profiles(
+                state, payload.get("profile_ids"), target["from"]["id"] if target is not None else None, fetcher, token
+            )
+            spam = deferred_regex_match(state)
             if not spam and models:
                 model = models[(task.attempts - 1) % len(models)]
                 try:

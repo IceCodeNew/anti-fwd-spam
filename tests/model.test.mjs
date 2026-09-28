@@ -73,17 +73,104 @@ test('user: Given a media caption and unavailable biography, When classified, Th
   assert.equal(JSON.stringify(model.state).includes('private-file'), false);
 });
 
-test('user: Given a listed member\'s report or an edit, When the model would flag spam, Then neither message is removed', async () => {
+test('user: Given a same-chat reply that endorses a spam message, When Jev flags the new sender, Then the reply is muted with one quoted context', async () => {
+  const spam = { ...message(80, 11), text: '看头像q Jai', reply_to_message: message(79, 11) };
+  const current = { ...message(), text: '真的羡慕，联系这个号', reply_to_message: spam };
+  model.probability = 0.96;
+  telegram.send(current);
+  assert.equal((await dispatch({ update_id: 6, message: current })).status, 200);
+  assert.equal(telegram.has(81), false);
+  assert.equal(telegram.canSend(22), false);
+  assert.equal(model.state.message.text, current.text);
+  assert.equal(model.state.context.reply.text, spam.text);
+  assert.equal(model.state.context.reply_nickname, 'User 11');
+  assert.equal(model.state.context.reply_bio, '');
+  assert.equal(model.state.context.reply.reply_to_message, undefined);
+});
+
+test('user: Given a quoted ad with a sender whose biography matches a rule, When Jev rejects promotion, Then the quote and sender remain', async () => {
+  const current = { ...message(), text: '看头像q Jai 这是广告，别点',
+    reply_to_message: { ...message(80, 11), text: '看头像q Jai' } };
+  model.profiles.set(22, { bio: '看头像q Jai' });
+  model.profiles.set(11, { bio: '收款码一天赚一万' });
+  model.probability = 0;
+  telegram.send(current);
+  assert.equal((await dispatch({ update_id: 8, message: current })).status, 200);
+  assert.equal(telegram.has(81), true);
+  assert.equal(telegram.canSend(22), true);
+  assert.equal(model.state.bio, '看头像q Jai');
+  assert.equal(model.state.context.reply_bio, '收款码一天赚一万');
+});
+
+test('user: Given an external quote with an identifiable sender, When classified, Then the available nickname and biography join the quote', async () => {
+  const current = { ...message(), text: '推荐这个',
+    external_reply: { origin: { type: 'user', sender_user: { id: 44, is_bot: false, first_name: '推广', last_name: '者' } } },
+    quote: { text: '收款码一天赚一万' } };
+  model.profiles.set(44, { bio: '推广服务' });
+  telegram.send(current);
+  assert.equal((await dispatch({ update_id: 9, message: current })).status, 200);
+  assert.equal(model.state.context.reply_nickname, '推广 者');
+  assert.equal(model.state.context.reply_bio, '推广服务');
+  assert.equal(model.state.context.quoted_text, '收款码一天赚一万');
+  assert.equal(JSON.stringify(model.state).includes('"id":44'), false);
+});
+
+test('user: Given a contact with a resolvable account, When Jev classifies it, Then the card name and account profile are supplied without the phone number', async () => {
+  const current = { ...message(), contact: { first_name: '普通名字', user_id: 55, phone_number: '8613800000000' } };
+  delete current.text;
+  model.profiles.set(55, { first_name: '商务', last_name: '客服', bio: '联系我了解理财机会' });
+  model.probability = 0.96;
+  telegram.send(current);
+  assert.equal((await dispatch({ update_id: 10, message: current })).status, 200);
+  assert.equal(telegram.has(81), false);
+  assert.equal(model.state.contact.card_name, '普通名字');
+  assert.equal(model.state.contact.nickname, '商务 客服');
+  assert.equal(model.state.contact.bio, '联系我了解理财机会');
+  assert.equal(JSON.stringify(model.state).includes('8613800000000'), false);
+});
+
+test('user: Given an external quote, When Jev flags an endorsing sender, Then only the sender is muted and the bounded quote is context', async () => {
+  const current = { ...message(), text: '真的羡慕，联系这个号', external_reply: { origin: { type: 'hidden_user' } },
+    quote: { text: '看头像q Jai'.repeat(200) } };
+  model.probability = 0.96;
+  telegram.send(current);
+  assert.equal((await dispatch({ update_id: 7, message: current })).status, 200);
+  assert.equal(telegram.has(81), false);
+  assert.equal(telegram.canSend(22), false);
+  assert.equal(model.state.context.external_reply, true);
+  assert.equal(model.state.context.quoted_text.length, 1024);
+});
+
+test('user: Given a listed member\'s report or an edit, When the model would flag spam, Then the report acts on its target and edits skip fresh classification', async () => {
   model.probability = 1;
   telegram.members.set(11, { status: 'member' });
   const update = report();
   telegram.send(update.message);
   telegram.send(update.message.reply_to_message);
   assert.equal((await dispatch(update)).status, 200);
+  assert.equal(telegram.has(81), false);
+  assert.equal(telegram.has(82), false);
+  telegram.send(message(81, 44));
+  assert.equal((await dispatch({ update_id: 5, edited_message: message(81, 44) })).status, 200);
   assert.equal(telegram.has(81), true);
-  assert.equal(telegram.has(82), true);
-  assert.equal((await dispatch({ update_id: 5, edited_message: message() })).status, 200);
+});
+
+test('user: Given a quoted message edited into promotion, When Jev flags the edited context, Then the sender is muted', async () => {
+  const original = { ...message(), text: '请看这个',
+    external_reply: { origin: { type: 'hidden_user', sender_user_name: '广告账号' } },
+    quote: { text: '普通内容' } };
+  model.probability = 0;
+  telegram.send(original);
+  assert.equal((await dispatch({ update_id: 100, message: original })).status, 200);
   assert.equal(telegram.has(81), true);
+
+  const edited = { ...original, text: '太好了，快联系他', edit_date: Math.floor(Date.now() / 1000),
+    quote: { text: '收款码一天赚一万' } };
+  model.probability = 1;
+  assert.equal((await dispatch({ update_id: 101, edited_message: edited })).status, 200);
+  assert.equal(telegram.has(81), false);
+  assert.equal(telegram.canSend(22), false);
+  assert.equal(model.state.context.quoted_text, '收款码一天赚一万');
 });
 
 test('user: Given a malformed model envelope, When a message is evaluated, Then it remains visible', async () => {

@@ -162,22 +162,7 @@ class Actions:
                 "ban confirmation failed; check membership and submit a new report if needed",
                 needs_confirmation=True,
             )
-        try:
-            reporter_id = user_id(update.message)
-            authorized = (
-                target.message_id is None
-                or saved.moderation_result is not None
-                or saved.ban_claimed
-                or reporter_id is None
-                or await self.member_status(target.chat_id, reporter_id) in ADMIN_STATUSES
-            )
-            response = (
-                await self._execute_ban(target, key, saved, subject_id=subject_id)
-                if authorized
-                else AppResponse(200, "report recorded")
-            )
-        except TelegramError as error:
-            response = AppResponse(503 if error.retryable else 200, "report recorded; authority check failed")
+        response = await self._execute_ban(target, key, saved, subject_id=subject_id)
         if target.message_id is not None and remove_report:
             response = await self._remove_report_message(target.chat_id, target.before_message_id, response)
         await self.store.finish(*key, response.status, response.body, subject_id)

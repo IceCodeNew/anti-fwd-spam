@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 from .actions import Actions, AppResponse, BanTarget, user_id
 from .evidence import MESSAGE_WINDOW_SECONDS, EvidenceError, ReportStore
-from .model import MODEL_CONTENT_FIELDS, model_input
+from .model import MODEL_CONTENT_FIELDS, model_input, profile_ids
 from .policy import matches_spam_pattern, parse_update, reply_target
 from .reporting import Reporting, ReportingPlugin
 from .sources import replied_source, resolve_source, source_argument
@@ -89,6 +89,12 @@ def recent(sent_at: int, now: int) -> bool:
     return now - MESSAGE_WINDOW_SECONDS < sent_at <= now
 
 
+def edit_revision(update: TelegramUpdate) -> int:
+    """Use Telegram's update ID, or its edit timestamp when the ID is unavailable."""
+    candidate = update.update_id if update.update_id is not None else update.message.get("edit_date")
+    return candidate if type(candidate) is int and candidate > 0 else 1
+
+
 class Moderator:
     """Select moderation policies after validating updates and reporter authority."""
 
@@ -113,6 +119,7 @@ class Moderator:
                 "command",
                 lambda update: source_argument(update.message, self.bot_username) is not None,
                 self.source_command,
+                self.record_denied_source,
             ),
         )
         self.reply_plugins = (
@@ -122,6 +129,7 @@ class Moderator:
                     reply_target(update.message) is not None and mentions_bot(update.message, self.bot_username)
                 ),
                 self.report,
+                self.record_report,
             ),
         )
 
@@ -135,8 +143,16 @@ class Moderator:
             return AppResponse(400, "invalid update")
         if update is None:
             return AppResponse(200, "ignored")
-        response = await self.reporting.dispatch(self.command_plugins, update)
-        return response or await self.process_update(update)
+        if self.reporting.authorized(update):
+            response = await self.reporting.dispatch(self.command_plugins, update)
+            if response is not None:
+                if update.edited and update.in_group:
+                    try:
+                        await self.cancel_model_task(update)
+                    except EvidenceError:
+                        return AppResponse(503, MODEL_TASK_STORAGE_FAILURE)
+                return response
+        return await self.process_update(update)
 
     async def process_update(self, update: TelegramUpdate) -> AppResponse:
         """Route a group message through account, source, report and content policies."""
@@ -165,6 +181,9 @@ class Moderator:
         except EvidenceError:
             return AppResponse(503, "message index unavailable; retry pending")
         response = await self.reporting.dispatch(self.reply_plugins, update)
+        if response is not None:
+            return response
+        response = await self.reporting.dispatch(self.command_plugins, update)
         if response is not None:
             return response
         try:
@@ -210,6 +229,20 @@ class Moderator:
         if response.needs_confirmation:
             reply += "\nBan result is uncertain; check membership before submitting a new report."
         return await self._finish_source_command(update, reply, response)
+
+    async def record_denied_source(self, update: TelegramUpdate) -> AppResponse | None:
+        """Keep a bare reply command as evidence without registering its source."""
+        if source_argument(update.message, self.bot_username) != "" or not update.in_group:
+            return None
+        return await self.record_report(update)
+
+    async def record_report(self, update: TelegramUpdate) -> AppResponse:
+        """Save an unlisted identity's valid reply without taking moderation action."""
+        if update.update_id is None or reported_target(update) is None:
+            return AppResponse(400, "invalid report target")
+        key = (self.actions.bot_id, update.update_id)
+        await self.store.save(key, update.raw_json, int(time.time()), 0)
+        return AppResponse(200, "report recorded")
 
     async def _finish_source_command(self, update: TelegramUpdate, reply: str, response: AppResponse) -> AppResponse:
         """Acknowledge the result and retain commands that require manual inspection."""
@@ -261,8 +294,13 @@ class Moderator:
         """Stop pending inference or moderation based on content that an edit replaced."""
         now = int(time.time())
         if update.sent_at is not None and recent(update.sent_at, now):
-            await ModelTasks(self.store, self.actions.bot_id).enqueue(
-                update.chat_id, update.message_id, update.sent_at, None, now
+            referenced = (
+                reply_target(update.message) is not None
+                or isinstance(update.message.get("external_reply"), dict)
+                or isinstance(update.message.get("quote"), dict)
+            )
+            await ModelTasks(self.store, self.actions.bot_id).cancel_edit(
+                (update.chat_id, update.message_id), update.sent_at, now, edit_revision(update), referenced=referenced
             )
 
     def quotes_reported_spam(self, update: TelegramUpdate) -> bool:
@@ -283,9 +321,18 @@ class Moderator:
         if update.sent_at is None or not recent(update.sent_at, int(time.time())):
             return AppResponse(200, "ignored")
         mute = not self.quotes_reported_spam(update)
-        if matches_spam_pattern(message):
+        referenced = (
+            reply_target(message) is not None
+            or isinstance(message.get("external_reply"), dict)
+            or isinstance(message.get("quote"), dict)
+        )
+        if not referenced and matches_spam_pattern(message):
             return await self.actions.delete_and_mute(message, mute=mute)
-        if update.edited or user_id(message) is None or not MODEL_CONTENT_FIELDS.intersection(message):
+        if (
+            (update.edited and not referenced)
+            or user_id(message) is None
+            or not MODEL_CONTENT_FIELDS.intersection(message)
+        ):
             return AppResponse(200, "ignored")
         payload: dict[str, object] = {
             "state": model_input(message),
@@ -295,9 +342,16 @@ class Moderator:
                 "from": {"id": user_id(message), "is_bot": False},
             },
             "mute": mute,
+            "profile_ids": profile_ids(message),
         }
         tasks = ModelTasks(self.store, self.actions.bot_id)
-        if await tasks.enqueue(update.chat_id, update.message_id, update.sent_at, payload, int(time.time())):
+        if update.edited:
+            queued = await tasks.enqueue_edit(
+                (update.chat_id, update.message_id), update.sent_at, payload, int(time.time()), edit_revision(update)
+            )
+        else:
+            queued = await tasks.enqueue(update.chat_id, update.message_id, update.sent_at, payload, int(time.time()))
+        if queued:
             self.background = self.run_task(tasks, update.chat_id, update.message_id)
         return AppResponse(200, "model task recorded")
 

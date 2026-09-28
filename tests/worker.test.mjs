@@ -31,6 +31,21 @@ test('user: Given paused model tasks without a secret, When a message is edited,
   assert.equal(telegram.has(81), true);
 });
 
+test('user: Given a pending model task, When a listed reporter edits that message into bs, Then old inference is cancelled', async () => {
+  const now = Math.floor(Date.now() / 1000);
+  await database.prepare(`INSERT INTO model_tasks
+    (bot_id, chat_id, message_id, phase, input_json, due_at, stop_at, created_at, expires_at)
+    VALUES (123, -10012, 81, 'classify', '{"message":{"text":"old"}}', ?, ?, ?, ?)`)
+    .bind(now, now + 3600, now, now + 3 * 86400).run();
+  const edited = { ...message(81, 11), text: '/bs', edit_date: now };
+  telegram.send(edited);
+  assert.equal((await dispatch({ update_id: 3, edited_message: edited })).status, 200);
+  const saved = await database.prepare('SELECT phase, input_json FROM model_tasks').first();
+  assert.equal(saved.phase, 'done');
+  assert.equal(saved.input_json, null);
+  assert.equal(telegram.has(81), true);
+});
+
 for (const outcome of ['confirmed', 'response lost']) {
   test(`user keeps an administrative unmute after ${outcome}: Given an automatic mute took effect, When an administrator unmutes before redelivery, Then the user remains able to send and new spam is still moderated`, async () => {
     const update = { update_id: 900, message: { ...message(), via_bot: { id: 273234066, is_bot: true } } };
@@ -352,7 +367,9 @@ test('user expires message identifiers: Given an indexed message and a controlle
   const recent = { ...message(70), date: Math.floor(Date.now() / 1000) - 60 };
   await dispatch({ message: recent });
   telegram.members.set(11, { status: 'member' });
-  await dispatch(report());
+  const unlisted = report();
+  unlisted.message.from.id = 33;
+  await dispatch(unlisted);
   const worker = await runtime.getWorker();
   const count = async () => (await database.prepare('SELECT count(*) AS count FROM recent_messages WHERE message_id = 70').first()).count;
   await worker.scheduled({ scheduledTime: new Date((recent.date + 48 * 3600 - 1) * 1000), cron: '* * * * *' });
@@ -396,7 +413,7 @@ test('user protects promoted senders: Given paused history cleanup, When the sen
   assert.deepEqual(telegram.members.get(22), { status: 'administrator' });
 });
 
-test('user records a report: Given a regular member and rich media, When they mention the bot in a reply, Then all evidence survives without deleting or restricting anyone', async () => {
+test('user acts on a listed report: Given a regular member and rich media, When they mention the bot in a reply, Then the target is removed and its sender banned', async () => {
   telegram.members.set(11, { status: 'member' });
   const target = {
     ...message(), animation: { file_id: 'animation', file_unique_id: 'unique-a' }, document: { file_id: 'animation' },
@@ -414,11 +431,11 @@ test('user records a report: Given a regular member and rich media, When they me
 
   const response = await dispatch(update);
 
-  assert.equal(await response.text(), 'report recorded');
-  assert.equal(telegram.has(70), true);
-  assert.equal(telegram.has(81), true);
-  assert.equal(telegram.has(82), true);
-  assert.equal(telegram.canSend(22), true);
+  assert.match(await response.text(), /banned/);
+  assert.equal(telegram.has(70), false);
+  assert.equal(telegram.has(81), false);
+  assert.equal(telegram.has(82), false);
+  assert.equal(telegram.canJoin(22), false);
   const [row] = await evidence();
   assert.deepEqual(JSON.parse(row.raw_update), update);
 });
@@ -551,7 +568,7 @@ test('user retains evidence during failure: Given unavailable report storage, Wh
   }
 });
 
-for (const [stage, status] of [['getChatMember:11', 429], ['getChatMember:22', 429], ['banChatMember', 429],
+for (const [stage, status] of [['getChatMember:22', 429], ['banChatMember', 429],
   ['banChatMember', 408]]) {
   test(`user recovers from ${stage} HTTP ${status}: Given a temporary Telegram failure, When delivery is retried, Then evidence is retained and moderation finishes`, async () => {
     const update = report();
@@ -613,6 +630,7 @@ test('user chooses the reported bot: Given username entities and UTF-16 offsets,
     delete update.message.text;
     delete update.message.entities;
     Object.assign(update.message, fields);
+    update.message.from.id = 33;
     telegram.send(update.message.reply_to_message);
     const response = await dispatch({ update_id: index, edited_message: update.message });
     assert.equal(response.status, 200);
@@ -807,7 +825,7 @@ test('user: Given a ban awaiting confirmation and a duplicate report, When delet
 
 test('user preserves concurrent completion: Given overlapping deliveries, When a late attempt fails after another succeeds, Then redelivery does not repeat a completed punishment', async () => {
   const entered = Promise.withResolvers(), release = Promise.withResolvers();
-  telegram.faults.set('getChatMember:11', () => { entered.resolve(); return release.promise; });
+  telegram.faults.set('getChatMember:22', () => { entered.resolve(); return release.promise; });
   const update = report();
   telegram.send(update.message.reply_to_message);
   const pending = dispatch(update);
@@ -829,7 +847,7 @@ test('user preserves concurrent completion: Given overlapping deliveries, When a
 
 test('user keeps an unban across overlapping reports: Given two deliveries of one report, When the delayed delivery resumes after completion and an administrator unban, Then new messages and membership survive', async () => {
   const entered = Promise.withResolvers(), release = Promise.withResolvers();
-  telegram.faults.set('getChatMember:11', () => { entered.resolve(); return release.promise; });
+  telegram.faults.set('getChatMember:22', () => { entered.resolve(); return release.promise; });
   const update = report();
   telegram.send(update.message.reply_to_message);
   telegram.send(update.message);
@@ -841,7 +859,7 @@ test('user keeps an unban across overlapping reports: Given two deliveries of on
     telegram.members.set(22, { status: 'member' });
     telegram.send(message(90));
   } finally {
-    release.resolve(Response.json({ ok: true, result: { status: 'administrator', user: message(1, 11).from } }));
+    release.resolve(Response.json({ ok: true, result: { status: 'member', user: message(1, 22).from } }));
     await pending;
   }
 

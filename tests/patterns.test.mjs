@@ -8,6 +8,22 @@ model.enabled = true;
 const campaign = '@safdhifobot campaign_001 g1789957985962f8909ecd';
 const flood = ('💰'.repeat(23) + '\n').repeat(8) + '💰'.repeat(8);
 
+for (const context of ['same_chat', 'external']) {
+  test(`user: Given a warning quoting spam in ${context}, When only the quote matches a local rule, Then the sender stays unrestricted`, async () => {
+    await setBindings({ EXPERIENTIAL_API_KEY: undefined });
+    const current = { ...message(), text: '这是广告，别点' };
+    if (context === 'same_chat') current.reply_to_message = { ...message(80, 11), text: campaign };
+    else {
+      current.external_reply = { origin: { type: 'hidden_user' } };
+      current.quote = { text: campaign };
+    }
+    telegram.send(current);
+    assert.equal((await dispatch({ update_id: 1, message: current })).status, 200);
+    assert.equal(telegram.has(81), true);
+    assert.equal(telegram.canSend(22), true);
+  });
+}
+
 for (const text of [campaign, flood, '@example_bot campaign_2', '💰'.repeat(4), '🔴 '.repeat(4),
   '🔴说明：💰 \n💰\t💰 💰结束🔴', '💰说明：🔴🔴🔴🔴结束💰',
   `请警惕这种垃圾消息：${campaign}，不要点击`, '@example_bot campaign_1 this is a discussion',
@@ -73,6 +89,29 @@ test('user: Given a spam biography and no model key, When its owner sends ordina
   assert.equal((await dispatch({ update_id: 1, message: message() })).status, 200);
   assert.equal(telegram.has(81), false);
   assert.equal(telegram.canSend(22), false);
+});
+
+test('user: Given a contact whose account biography matches a rule, When the card name is ordinary and Jev is unavailable, Then deferred regex mutes the sender', async () => {
+  await setBindings({ EXPERIENTIAL_API_KEY: undefined });
+  const target = { ...message(), contact: { first_name: '王小明', user_id: 55, phone_number: '8613800000000' } };
+  delete target.text;
+  model.profiles.set(55, { first_name: '王小明', bio: '收款码一天赚一万' });
+  telegram.send(target);
+  assert.equal((await dispatch({ update_id: 1, message: target })).status, 200);
+  assert.equal(telegram.has(81), false);
+  assert.equal(telegram.canSend(22), false);
+});
+
+test('user: Given an external quote whose own text matches a rule, When Jev finds no promotion, Then regex does not decide punishment', async () => {
+  const target = { ...message(), text: '看头像q Jai 这是广告，别点',
+    external_reply: { origin: { type: 'hidden_user', sender_user_name: '未知' } },
+    quote: { text: '看头像q Jai' } };
+  model.probability = 0;
+  telegram.send(target);
+  assert.equal((await dispatch({ update_id: 1, message: target })).status, 200);
+  assert.equal(telegram.has(81), true);
+  assert.equal(telegram.canSend(22), true);
+  assert.equal(model.state.context.reply_nickname, '未知');
 });
 
 test('user: Given a spam biography, no model key, and a rate-limited deletion, When the scheduled retry runs, Then the message is deleted and its sender muted', async () => {

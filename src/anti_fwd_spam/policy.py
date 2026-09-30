@@ -44,6 +44,19 @@ def _pattern_texts(message: dict[str, object]) -> list[str]:
     return texts
 
 
+def normalize_sticker_set(value: object) -> str | None:
+    """Return an ASCII sticker set name in lowercase, or None for unusable metadata."""
+    if not isinstance(value, str) or re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}", value) is None or "__" in value:
+        return None
+    return value.lower()
+
+
+def sticker_set_name(message: dict[str, object]) -> str | None:
+    """Read only the current sticker's set name, without inspecting replies."""
+    sticker = message.get("sticker")
+    return normalize_sticker_set(sticker.get("set_name")) if isinstance(sticker, dict) else None
+
+
 def reply_target(message: dict[str, object]) -> dict[str, object] | None:
     """Return an explicit reply, not the topic root that Telegram attaches to forum topic messages."""
     target = message.get("reply_to_message")

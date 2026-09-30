@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
-from .policy import MAX_TELEGRAM_ID, SUPPORTED_CHAT_TYPES, reply_target
+from .policy import MAX_TELEGRAM_ID, SUPPORTED_CHAT_TYPES, normalize_sticker_set, reply_target
 from .telegram import TelegramError, call_method
 
 if TYPE_CHECKING:
@@ -30,9 +30,13 @@ def source_argument(message: dict[str, object], bot_username: str) -> str | None
         return None
     if len(parts) == 1:
         return ""
-    argument = parts[1].strip()
-    # Only a bare command returns empty; an isolated @ remains an invalid argument.
-    return argument.removeprefix("@") or argument
+    return parts[1].strip()
+
+
+def sticker_set_argument(argument: str) -> str | None:
+    """Accept one complete HTTPS sticker-set link without resolving external content."""
+    prefix = "https://t.me/addstickers/"
+    return normalize_sticker_set(argument[len(prefix) :]) if argument.startswith(prefix) else None
 
 
 def replied_source(message: dict[str, object]) -> int | None:

@@ -4,7 +4,7 @@ This document defines the bot's functional contract: accepted inputs, authorizat
 
 ## Inputs and reporting authorization
 
-Telegram sends updates to `POST /webhook`. The Worker verifies `TELEGRAM_WEBHOOK_SECRET` before parsing the update. `parse_update` in [policy.py](../src/anti_fwd_spam/policy.py) then validates every field that routing uses, one time, and returns a `TelegramUpdate`. An update with a malformed message gets HTTP 400 and no moderation. The scheduled trigger is a separate entrypoint for cleanup and model retries.
+Telegram sends updates to `POST /webhook`. The Worker verifies `TELEGRAM_WEBHOOK_SECRET` before it parses the update. `parse_update` in [policy.py](../src/anti_fwd_spam/policy.py) validates message structure, identities, and account provenance, then returns a `TelegramUpdate`. An update with a malformed message gets HTTP 400 and no moderation. Optional sticker metadata with no usable set name does not match the set list; it does not invalidate the update. The scheduled trigger is a separate entrypoint for cleanup and model retries.
 
 ```diagram
 ┌──────────────────────────────┐
@@ -21,7 +21,7 @@ Telegram sends updates to `POST /webhook`. The Worker verifies `TELEGRAM_WEBHOOK
                                      ├── Reply + bot mention ──▶ REPORTER_IDS
                                      ├── Unlisted bare /bs ────▶ Evidence only
                                            │   (reply plugins)        │
-                                           │                          ├── Unlisted /bs @name: ordinary filtering
+                                           │                          ├── Unlisted /bs with argument: ordinary filtering
                                            │                          ├── Unlisted reply: save evidence
                                            │                          │
                                            │                          └── Allowed
@@ -29,16 +29,16 @@ Telegram sends updates to `POST /webhook`. The Worker verifies `TELEGRAM_WEBHOOK
                                            │              ┌───────────────┴──────────────┐
                                            │              ▼                              ▼
                                            │        /bs handler                    Reply handler
-                                           │        Save source ID                 Record evidence
-                                           │        Bare reply: register source      Check target protection
-                                           │          + action 2 on A and B         Apply action 2 if allowed
-                                           │        Reply with ID
+                                           │        Register source / sticker set  Record evidence
+                                           │        Bare reply: Action 2 on A       Check target protection
+                                           │          + B when via_bot is present  Apply action 2 if allowed
+                                           │        Acknowledge result
                                            │        Clean group command
                                            │
                                            └── No report ──▶ Local rules ──▶ Jev
 ```
 
-Listed commands are checked before automatic moderation. A listed command ends routing. An edited listed `/bs` is ignored as a command and fences any earlier model task. An unlisted bare `/bs` is checked against blacklists first; when it replies to a valid group target without a blacklist match, it saves evidence without registering a source or punishing either account. An unlisted `/bs @username` does not register a source or save report evidence; it continues through ordinary message filtering. Reply reports are checked after blacklist handling and indexing. A valid unlisted reply mentioning the bot saves evidence and ends routing without automatic moderation. Private messages other than listed commands are ignored.
+Listed commands are checked before automatic moderation. A listed command ends routing. An edited listed `/bs` is ignored as a command and fences any earlier model task. An unlisted bare `/bs` is checked against blacklists first; when it replies to a valid group target without a blacklist match, it saves evidence without registering a source or punishing either account. An unlisted `/bs` with an explicit username or sticker-set URL does not register a source or save report evidence; it continues through ordinary message filtering. Reply reports are checked after blacklist handling and indexing. A valid unlisted reply mentioning the bot saves evidence and ends routing without automatic moderation. Private messages other than listed commands are ignored.
 
 In a forum topic, Telegram attaches the topic's creation message to messages that do not reply to anything. That creation message is never a report target, so a mention or bare `/bs` in a topic reports only when it replies to another message.
 
@@ -74,6 +74,9 @@ The following map describes new supergroup messages after command handling. A is
        No reference: regex on authored text/card name/nickname ── match ─▶ Action 1 on A
                │ no match
                ▼
+       Current sticker set in blacklisted_sticker_sets? ── yes ─────────▶ Action 1 on A
+               │ no match
+               ▼
        Background: fetch available user profiles
        No reference: regex on sender/contact profile ── match ────────▶ Action 1 on A
                │ no match
@@ -87,13 +90,13 @@ The following map describes new supergroup messages after command handling. A is
 
 Source matching uses `via_bot.id` and visible bot origins in `forward_origin.sender_user`. It does not inspect copied text or hidden forwarding origins. All matched sources are handled independently. See `parse_update` in [policy.py](../src/anti_fwd_spam/policy.py).
 
-For a group message without a reference, the webhook regex searches the current text, caption, shared contact card name, and sender nickname. A miss queues a D1 task. In the background, the Worker fetches the sender's private profile and, when a contact card has a usable `user_id`, the contact account's private profile. The deferred regex checks the returned sender biography and contact account nickname and biography. Jev then evaluates the available complete input if regex did not match. A missing contact `user_id` or failed lookup leaves its account profile unknown; the card name remains available. The contact phone number is not sent to Jev.
+For a group message without a reference, the webhook regex searches the current text, caption, shared contact card name, and sender nickname. After a regex miss, the bot checks the current sticker set against `blacklisted_sticker_sets`; a match applies Action 1 without a model. A miss queues a D1 task. In the background, the Worker fetches the sender's private profile and, when a contact card has a usable `user_id`, the contact account's private profile. The deferred regex checks the returned sender biography and contact account nickname and biography. Jev then evaluates the available complete input if regex did not match. A missing contact `user_id` or failed lookup leaves its account profile unknown; the card name remains available. The contact phone number is not sent to Jev.
 
-A message with an explicit same-chat reply, external reply, or quote bypasses both local regex stages. Jev sees the current message body, sender nickname and biography as one unit and the available referenced body, sender nickname and biography as another. It estimates the probability that the reference is advertising **and** the current sender intends to promote it. Without a reference, Jev estimates whether the current unit is advertising; for a contact card, it estimates whether the card name and available contact account profile advertise spam. Same-chat replies include the referenced message body and user nickname; a referenced user ID permits a biography lookup. External replies may supply only quoted text and origin information, so unavailable body, nickname, or biography is omitted. Only the current sender can receive Action 1. Without model keys, quoted messages cannot be classified by regex. Exact patterns and model settings belong to `SPAM_PATTERNS` in [policy.py](../src/anti_fwd_spam/policy.py) and `SPAM_THRESHOLD` / `MODEL_PROVIDERS` in [model.py](../src/anti_fwd_spam/model.py).
+A message with an explicit same-chat reply, external reply, or quote bypasses both local regex stages and the sticker-set check. A forum topic creation attachment is not a reference for this purpose. Jev sees the current message body, sender nickname and biography as one unit and the available referenced body, sender nickname and biography as another. It estimates the probability that the reference is advertising **and** the current sender intends to promote it. Without a reference, Jev estimates whether the current unit is advertising; for a contact card, it estimates whether the card name and available contact account profile advertise spam. Same-chat replies include the referenced message body and user nickname; a referenced user ID permits a biography lookup. External replies may supply only quoted text and origin information, so unavailable body, nickname, or biography is omitted. Only the current sender can receive Action 1. Without model keys, quoted messages cannot be classified by regex. Exact patterns and model settings belong to `SPAM_PATTERNS` in [policy.py](../src/anti_fwd_spam/policy.py) and `SPAM_THRESHOLD` / `MODEL_PROVIDERS` in [model.py](../src/anti_fwd_spam/model.py).
 
 ### Action 1: delete the current message and permanently mute
 
-`Actions.delete_and_mute` deletes the triggering message and permanently mutes a human sender in a supergroup. It preserves earlier messages and does not add either identity to a blacklist. Bots are not muted. Owners, administrators, and messages sent as the destination group's anonymous identity are protected before deletion.
+`Actions.delete_and_mute` deletes the triggering message and permanently mutes a human sender in a supergroup. It preserves earlier messages and does not change any blacklist. Bots are not muted. Owners, administrators, and messages sent as the destination group's anonymous identity are protected before deletion.
 
 Local rules, Jev, and source filtering share this action. Ordinary groups support deletion but not permanent muting.
 
@@ -112,14 +115,19 @@ Both actions in [actions.py](../src/anti_fwd_spam/actions.py) own membership che
 | Input or result | Persistent effect |
 | --- | --- |
 | Authorized `/bs @example_bot` | Resolve B and add B to `blacklisted_sources`; acknowledge the ID. No immediate ban or history cleanup. |
-| Listed reply report | Apply Action 2 to the actual sender A. A's use of B does not authorize any action against B. Confirmed bans add A to `blacklisted_users`. |
+| Authorized `/bs https://t.me/addstickers/<set_name>` | Add the whole set to `blacklisted_sticker_sets`. No immediate moderation, even when the command replies to a message. |
+| Listed reply mentioning the bot | Apply Action 2 to the actual sender A, human or bot. Do not register a sticker set or source B, or punish B. Confirmed bans add A to `blacklisted_users`. |
 | Unlisted reply report or bare `/bs` reply | Save the update as evidence without registering a source or punishing either account. |
-| Authorized reply with bare `/bs` | Read B from the target's `via_bot.id`, add B to `blacklisted_sources`, and apply Action 2 separately to A and B. Confirmed bans add each account to `blacklisted_users`. No username lookup is needed. |
-| Message from listed source B | Apply Action 1 to A and Action 2 to B. A is not added to either blacklist by this source match. |
+| Authorized reply with bare `/bs` to a sticker | Register the whole set from the target's `sticker.set_name` and apply Action 2 to A. If valid `via_bot` is also present, register B and apply Action 2 to B too. |
+| Authorized reply with bare `/bs` to an inline bot message | Read B from the target's `via_bot.id`, add B to `blacklisted_sources`, and apply Action 2 separately to A and B. Confirmed bans add each account to `blacklisted_users`. No username lookup is needed. |
+| Message from listed source B | Apply Action 1 to A and Action 2 to B. A is not added to any blacklist by this source match. |
 | Message from an account in `blacklisted_users` | Apply Action 2 to that account in the receiving supergroup. |
-| Regex or Jev spam match | Apply Action 1 to the current sender; neither blacklist changes. |
+| No-reference message from a listed sticker set | Apply Action 1 to the current sender; no history cleanup or blacklist changes. |
+| Regex or Jev spam match | Apply Action 1 to the current sender; no blacklist changes. |
 
-`blacklisted_sources` is a source-ID set. `blacklisted_users` is scoped by moderation bot ID. A source can also be present in the account blacklist after a confirmed ban. Temporary evidence, indexed messages, and operation progress have separate retention; see [Data storage](../README.md#data-storage).
+`blacklisted_sources` is a source-ID set. `blacklisted_users` is scoped by moderation bot ID. A source can also be present in the account blacklist after a confirmed ban. `blacklisted_sticker_sets(bot_id, set_name, added_at)` stores whole sets with primary key `(bot_id, set_name)`. Commands and message metadata use the same ASCII set-name validation and lowercase normalization; only an exact full-name match counts. Parameter-bound, indexed lookups query one set for the current moderation bot, without loading or caching the whole list. Registration is idempotent and preserves the first `added_at`. Removing an entry affects subsequent messages immediately; permanent lists do not expire with temporary evidence. Temporary evidence, indexed messages, and operation progress have separate retention; see [Data storage](../README.md#data-storage).
+
+Sticker-set checks retain the message-age and reference gates and inspect only the current message's set, not a referenced set. A regex hit needs no sticker-list lookup, and an absent or unusable set name causes no lookup. A failed lookup returns HTTP 503 for unavailable sticker-list storage, not a no-match result. No file ID identifies a blocked set or an individual blocked sticker. Commands do not fetch the URL, call `getStickerSet`, download images, or infer a source bot from a set-name suffix. Migrations contain no real malicious-set or bot-ID seed; authorized operators register sets after deployment.
 
 ### Inline messages: choose which account to report
 
@@ -131,13 +139,19 @@ Reply + mention ──▶ Action 2 on A only
 Reply + /bs     ──▶ Register B + Action 2 on A + Action 2 on B
 ```
 
-The bare reply command works in groups and accepts `/bs@moderation_bot` too. In a private chat, a listed bare `/bs` reply gets the usage reply. For listed senders, missing or invalid `via_bot` produces a usage reply without adding a source or punishing either account. Explicit `/bs @username` registers the named source only for listed identities. An unlisted bare reply saves evidence only. Listed combined reports can punish A and B regardless of the reporter's group role. Administrator protection and retry progress apply separately to A and B.
+The bare reply command works in groups and accepts `/bs@moderation_bot` too. `reported_target` validates the group-local reply target before registering any source or moderating: cross-chat, malformed, and forum topic-root targets cannot trigger those effects. In a private chat, a listed bare `/bs` reply gets the usage reply. For a sticker, `/bs` registers the whole set and applies Action 2 to A; a valid `via_bot` also registers B and applies Action 2 to B. A and B are handled once if they are the same account. An absent or unusable set name falls back to a valid `via_bot`, never to a file ID. If neither source is usable, the bot gives usage help without registration or punishment; a reply mentioning the bot can report A alone. An unlisted bare reply saves evidence only. Listed combined reports can punish A and B regardless of the reporter's group role. Administrator protection and retry progress apply separately to A and B.
 
-Moderation runs before acknowledgement, so a rejected reply cannot prevent punishment. Retryable failures leave command cleanup pending. If a ban outcome cannot be confirmed, the bot retains the command and asks the reporter to check membership before submitting a new report; it does not blindly repeat the ban. Otherwise, it removes the group command after processing, even if Telegram permanently rejects the acknowledgement.
+Explicit `/bs @username` and `/bs https://t.me/addstickers/<set_name>` register only the specified source or whole set for listed identities, even when sent as replies. Sticker URLs must use that complete HTTPS form: lookalike hosts, extra paths, query strings, fragments, and `@https://…` are invalid. An invalid explicit argument never falls back to bare-reply reporting.
+
+The bot saves command evidence before source registration. Each required registration must succeed before moderation or success acknowledgement. A partial registration followed by a storage failure returns HTTP 503; idempotent retries finish the remaining work. Protected targets and permanent moderation refusals do not remove registered sources. Moderation occurs before acknowledgement, so a rejected reply cannot prevent punishment.
+
+Mention reports remove the report through Action 2. Bare `/bs` commands retain the command until acknowledgement and cleanup, including sticker-only reports. Retryable storage, moderation, acknowledgement, or cleanup failures return HTTP 503 and leave the command pending. Retries reuse per-account progress and do not repeat a confirmed ban after a manual unban; acknowledgement can repeat.
+
+If the bot cannot confirm a ban outcome, it retains the command and asks the reporter to check membership before a new report. It does not repeat the unconfirmed ban. Otherwise, it removes the group command after it completes the operation, even if Telegram permanently rejects the acknowledgement. Private-chat commands remain.
 
 ## Edits and retries
 
-Edited group messages fence earlier model work within the message window. They still undergo source filtering and reply-report handling unless a listed `/bs` command ends routing. Edited messages without a reference undergo local regex checks on text, captions, contact names, and nicknames; a match applies Action 1. Edited messages with a reference bypass local regex and start a fresh Jev classification. Edits skip automatic account-blacklist checks; only referenced edits fetch profiles for Jev. Edited `/bs` commands from authorized reporters are ignored as commands but still fence earlier model work.
+Edited group messages fence earlier model work within the message window. They still undergo source filtering and reply-report handling unless a listed `/bs` command ends routing. Edited messages without a reference undergo local regex checks on text, captions, contact names, and nicknames, followed by the current sticker-set check after a regex miss; a match applies Action 1. Edited messages with a reference bypass local regex and sticker-set checks and start a fresh Jev classification. Edits skip automatic account-blacklist checks; only referenced edits fetch profiles for Jev. Edited `/bs` commands from authorized reporters are ignored as commands but still fence earlier model work.
 
 Model classification starts with the first configured entry in `MODEL_PROVIDERS`. Failed requests can rotate through the configured providers, including CommandCode's System One endpoint. The classification budget is one initial attempt and three retries, delayed by 1, 2, and 5 minutes. With five configured providers, the fifth is outside that budget. A valid non-spam score or an invalid answer stops classification without trying another provider.
 

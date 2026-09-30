@@ -11,9 +11,9 @@ from typing import TYPE_CHECKING
 from .actions import Actions, AppResponse, BanTarget, user_id
 from .evidence import MESSAGE_WINDOW_SECONDS, EvidenceError, ReportStore
 from .model import MODEL_CONTENT_FIELDS, model_input, profile_ids
-from .policy import matches_spam_pattern, parse_update, reply_target
+from .policy import matches_spam_pattern, parse_update, reply_target, sticker_set_name
 from .reporting import Reporting, ReportingPlugin
-from .sources import replied_source, resolve_source, source_argument
+from .sources import replied_source, resolve_source, source_argument, sticker_set_argument
 from .tasks import ModelTasks
 from .telegram import DeleteOutcome, Fetch, TelegramError, call_method, delete_message
 
@@ -208,22 +208,39 @@ class Moderator:
         return response
 
     async def source_command(self, update: TelegramUpdate) -> AppResponse:
-        """Save a resolved source, reply, and remove the command from group chats."""
-        username = source_argument(update.message, self.bot_username)
-        if update.edited or username is None:
+        """Register sources, moderate bare replies, then acknowledge and clean the command."""
+        argument = source_argument(update.message, self.bot_username)
+        if update.edited or argument is None:
             return AppResponse(200, "command ignored")
-        reply_report = update.in_group and not username and reply_target(update.message) is not None
+        target = reply_target(update.message)
+        reply_report = update.in_group and not argument and target is not None
         if update.update_id is None or (reply_report and reported_target(update) is None):
             return AppResponse(400, "invalid command")
+        set_name = sticker_set_name(target) if reply_report and target is not None else sticker_set_argument(argument)
+        replies = []
+        if set_name is not None:
+            now = int(time.time())
+            await self.store.save((self.actions.bot_id, update.update_id), update.raw_json, now, 0)
+            await self.store.add_sticker_set(self.actions.bot_id, set_name, now)
+            replies.append(f"Sticker set saved in D1: {set_name}")
+        username = argument.removeprefix("@")
         source = replied_source(update.message) if reply_report else username
-        identifier = await self._register_source(update.update_id, update.raw_json, source)
-        reply = "Could not resolve the account. Use /bs @username, or reply to an inline bot message with /bs."
+        identifier = (
+            await self._register_source(update.update_id, update.raw_json, source, evidence_saved=set_name is not None)
+            if reply_report or set_name is None
+            else None
+        )
         if identifier is not None:
             label = f": @{username}" if username else ""
-            reply = f"Source saved in D1{label}\nID: {identifier}"
+            replies.append(f"Source saved in D1{label}\nID: {identifier}")
+        reply = "\n".join(replies) or (
+            "Could not resolve the source. Use /bs @username or /bs https://t.me/addstickers/<set_name>, "
+            "or reply to a sticker or inline bot message with /bs. "
+            "To report only the sender, reply and mention this bot."
+        )
         response = AppResponse(200, "command handled")
-        if reply_report and identifier is not None:
-            response = await self.report(update, source_id=identifier)
+        if reply_report and replies:
+            response = await self.report(update, source_id=identifier, remove_report=False)
             if response.status != HTTPStatus.OK:
                 return response
         if response.needs_confirmation:
@@ -271,7 +288,9 @@ class Moderator:
                 return AppResponse(200, "command handled; command cleanup rejected; check deletion permissions")
         return response
 
-    async def _register_source(self, update_id: int, raw_json: str, source: str | int | None) -> int | None:
+    async def _register_source(
+        self, update_id: int, raw_json: str, source: str | int | None, *, evidence_saved: bool = False
+    ) -> int | None:
         """Pin the resolved source before registration so retries cannot switch accounts."""
         bot_id = self.actions.bot_id
         identifier = await self.store.command_source(bot_id, update_id)
@@ -281,7 +300,8 @@ class Moderator:
             )
         if identifier is None:
             return None
-        await self.store.save((bot_id, update_id), raw_json, int(time.time()), 0)
+        if not evidence_saved:
+            await self.store.save((bot_id, update_id), raw_json, int(time.time()), 0)
         await self.store.pin_command_source(bot_id, update_id, identifier)
         # Concurrent deliveries must use the first resolution stored for this update.
         identifier = await self.store.command_source(bot_id, update_id)
@@ -326,8 +346,16 @@ class Moderator:
             or isinstance(message.get("external_reply"), dict)
             or isinstance(message.get("quote"), dict)
         )
-        if not referenced and matches_spam_pattern(message):
-            return await self.actions.delete_and_mute(message, mute=mute)
+        if not referenced:
+            spam = matches_spam_pattern(message)
+            set_name = sticker_set_name(message)
+            if not spam and set_name is not None:
+                try:
+                    spam = await self.store.is_sticker_set_blacklisted(self.actions.bot_id, set_name)
+                except EvidenceError:
+                    return AppResponse(503, "sticker set list unavailable; retry pending")
+            if spam:
+                return await self.actions.delete_and_mute(message, mute=mute)
         if (
             (update.edited and not referenced)
             or user_id(message) is None
@@ -397,7 +425,9 @@ class Moderator:
             BanTarget(update.chat_id, identifier, update.message_id + 1), update, subject_id=subject_id
         )
 
-    async def report(self, update: TelegramUpdate, *, source_id: int | None = None) -> AppResponse:
+    async def report(
+        self, update: TelegramUpdate, *, source_id: int | None = None, remove_report: bool = True
+    ) -> AppResponse:
         """Moderate reported accounts with independent authority checks and retry progress."""
         target = reported_target(update)
         if target is None:
@@ -411,7 +441,7 @@ class Moderator:
         for subject, progress_id in subjects:
             try:
                 outcome = await self.actions.delete_history_and_ban(
-                    subject, update, subject_id=progress_id, remove_report=source_id is None
+                    subject, update, subject_id=progress_id, remove_report=remove_report
                 )
             except EvidenceError:
                 outcome = AppResponse(503, "report storage unavailable; retry pending")

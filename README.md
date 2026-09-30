@@ -112,11 +112,11 @@ Using an identity listed in `REPORTER_IDS`, choose **Reply** on the spam message
 
 In a supergroup, a report from any identity in `REPORTER_IDS` deletes the target message, bans its sender, and clears eligible indexed history, regardless of the reporter's group role. Human and bot accounts follow the same policy, with group owners and administrators protected from bans. The bot removes the report after cleanup succeeds. A reply report from an unlisted identity saves evidence only, even if that identity is a group administrator.
 
-If Telegram rejects the ban, for example because the bot lacks ban permission, the bot still deletes the target message. In a forum topic, reply to the spam message itself; a mention that replies to nothing does not report the topic's creator. An unlisted reply with a bot mention or bare `/bs` saves evidence without automatic punishment. An unlisted `/bs @username` cannot register a source and undergoes ordinary filtering.
+If Telegram rejects the ban, for example because the bot lacks ban permission, the bot still deletes the target message. In a forum topic, reply to the spam message itself; a mention that replies to nothing does not report the topic's creator. An unlisted reply with a bot mention or bare `/bs` saves evidence without automatic punishment. An unlisted `/bs` with a username or sticker-set URL cannot register a source and undergoes ordinary filtering.
 
 Confirmed bans add the sender to the account blacklist. When that account posts in another supergroup using this bot, the bot bans it there and clears eligible indexed messages.
 
-For an inline message sent by A through bot B, this reply report targets A only. It does not register or punish B.
+For an inline message sent by A through bot B, this reply report targets A only. It does not register or punish B. For a sticker, it likewise targets only the sender, human or bot, without registering the sticker set.
 
 ### Add a source
 
@@ -124,7 +124,7 @@ Send `/bs @example_bot` using a listed reporting identity, in private or in a gr
 
 The bot saves the resolved account ID in the source list and replies with that ID. It removes the group command after replying, including when lookup fails; private-chat commands and result replies remain. This named command does not ban the account or delete its history. Check the returned ID: Telegram cannot resolve every username, and the command does not check whether the account is a bot.
 
-To report both an inline message's sender A and its source bot B, reply to that message with `/bs` (or `/bs@your_moderation_bot`), without a username. The bot reads B's ID from the message and registers it as a source. For any listed reporting identity, it bans A and B and clears each account's eligible indexed history, protecting target administrators. An unlisted bare reply saves evidence only. The bot removes a listed group command after processing; temporary failures leave it pending retry.
+To report both an inline message's sender A and its source bot B, reply to that message with `/bs` (or `/bs@your_moderation_bot`), without an argument. The bot reads B's ID from the message and registers it as a source. For any listed reporting identity, it bans A and B and clears each account's eligible indexed history, protecting target administrators. An unlisted bare reply saves evidence only. The bot removes a listed group command after processing; temporary failures leave it pending retry.
 
 If a ban result is uncertain, the bot keeps the command and asks you to check membership before sending a new report. It does not repeat an unconfirmed ban automatically.
 
@@ -137,7 +137,17 @@ Copied text, hidden forwarding origins, and messages sent directly by an ordinar
 
 When someone replies to or quotes spam, the bot sends the available sender and reference details to Jev. Jev judges whether the reference advertises spam and the current sender intends to promote it; a warning or report does not count as promotion. These replies bypass local regex decisions, including regex matches in the sender's biography. A spam classification deletes the current message and permanently mutes its sender; it does not ban the quoted author or clean history. External replies may lack the original message body or author profile, so Jev receives only the fields Telegram provides.
 
-For messages without a reference, local regex rules first check the message, sender nickname, and shared contact card name. After a miss, the background task fetches the sender's biography and, if the card contains a Telegram user ID, tries to fetch that contact account's nickname and biography. The deferred regex checks the available profile fields, and Jev evaluates the complete available input. A contact card without a usable ID still supplies its displayed name; the bot does not send its phone number to Jev.
+For messages without a reference, local regex rules first check the message, sender nickname, and shared contact card name. After the regex and sticker-set checks miss, the background task fetches the sender's biography and, if the card contains a Telegram user ID, tries to fetch that contact account's nickname and biography. The deferred regex checks the available profile fields, and Jev evaluates the complete available input. A contact card without a usable ID still supplies its displayed name; the bot does not send its phone number to Jev.
+
+### Block a sticker set
+
+Use an identity listed in `REPORTER_IDS`. Reply to a sticker in a group with bare `/bs` to register its whole set and delete the reported message. In a supergroup, the bot also bans the sender and clears eligible indexed history. If the sticker has an inline source bot (`via_bot`), the command also registers and bans that bot and clears its eligible indexed history. Administrator protection applies to both accounts. A reply with a mention of the moderation bot reports only the sender.
+
+If the sticker has no usable set name, `/bs` uses a valid inline source bot instead. With neither source available, it gives usage help without registration or punishment.
+
+To register a whole set without punishing anyone, send `/bs https://t.me/addstickers/example_set` in private or in a group. Replace `example_set` with the set name from its sharing link. Use the complete HTTPS link with no extra path, query, or fragment. Even when sent as a reply, this form only registers the set. Unlisted bare replies save evidence only; see the [authorization and command contract](docs/behavior.md#inputs-and-reporting-authorization).
+
+New and edited group messages without a reference are checked against the set list after a local regex miss, without a model key. A match deletes the current message and permanently mutes a human sender in a supergroup; it does not clear history or add blacklist entries. Bots are not muted, basic groups support deletion only, and administrators remain protected. Replies and quotes bypass this set check; a forum topic's creation attachment does not. The rule covers the whole set, not individual sticker files.
 
 ### Administrator protection and history limits
 
@@ -147,11 +157,13 @@ History cleanup covers indexed messages received in the same group, up to the tr
 
 ### Inspect lists and remove a false positive
 
-In the Cloudflare dashboard, open **D1 → anti-fwd-spam-reports → Console**. Inspect the lists:
+In the Cloudflare dashboard, open **D1 → anti-fwd-spam-reports → Console**. Inspect the lists, replacing `123456789` with your moderation bot's numeric ID:
 
 ```sql
 SELECT source_id FROM blacklisted_sources ORDER BY source_id;
 SELECT bot_id, user_id FROM blacklisted_users ORDER BY bot_id, user_id;
+SELECT set_name, added_at FROM blacklisted_sticker_sets
+WHERE bot_id = 123456789 ORDER BY set_name;
 ```
 
 `blacklisted_sources` contains registered source IDs; `blacklisted_users` contains banned account IDs for each moderation bot. Copy the IDs to remove and replace the examples below. A source bot can appear in both lists; remove it from both to stop both kinds of filtering:
@@ -161,13 +173,24 @@ DELETE FROM blacklisted_sources WHERE source_id = 987654321;
 DELETE FROM blacklisted_users WHERE bot_id = 123456789 AND user_id = 987654321;
 ```
 
+Sticker sets are scoped to the moderation bot and stored as lowercase ASCII names. To inspect or remove one set, replace the bot ID and `example_set` with the normalized name from the list:
+
+```sql
+SELECT set_name, added_at FROM blacklisted_sticker_sets
+WHERE bot_id = 123456789 AND set_name = 'example_set';
+DELETE FROM blacklisted_sticker_sets
+WHERE bot_id = 123456789 AND set_name = 'example_set';
+```
+
+Removal takes effect on subsequent messages without redeploying. A sticker report may also have registered a source bot or blacklisted accounts; remove those entries separately when needed.
+
 Then lift any mute or ban in each affected group's Telegram member settings. Removing a database entry does not lift Telegram restrictions. An account left on the account blacklist will be banned again when it posts.
 
 ## Automatic text filtering
 
 Local rules check new and edited group messages without a reference before Jev, including messages from bots, without an API key. They search anywhere in text, captions, a shared contact card's name, or the sender's nickname for campaign markers, payment-QR-code income offers, sexual-solicitation offers, and runs of identical money-bag or red-circle emojis, allowing whitespace between emojis. Surrounding text or other emojis do not prevent a match. If no rule matches a message from a human sender, the bot checks the available sender and contact account profiles in the background before it asks Jev. The exact patterns are `SPAM_PATTERNS` in [policy.py](src/anti_fwd_spam/policy.py). Messages with a reference bypass these rules, including edits; Jev checks their context.
 
-A match deletes the current message and permanently mutes a human sender in a supergroup, preserving earlier messages and both blacklists. Bot senders are not muted. Group owners and administrators are protected. Private messages skip this check.
+A match deletes the current message and permanently mutes a human sender in a supergroup, preserving earlier messages and all blacklists. Bot senders are not muted. Group owners and administrators are protected. Private messages skip this check.
 
 ## Optional: enable Jev spam checks
 
@@ -191,7 +214,7 @@ For Vercel, run:
 mise exec -- uv run pywrangler secret put AI_GATEWAY_API_KEY
 ```
 
-Jev checks new user messages after the other moderation rules. A sufficiently high spam score deletes that message and permanently mutes its sender, preserving their earlier messages and leaving both blacklists unchanged. Group owners and administrators are protected. The threshold is `SPAM_THRESHOLD` in [model.py](src/anti_fwd_spam/model.py); a score is not an accuracy guarantee. Edited messages, service events, bot senders, and messages sent as a group or channel skip this check.
+Jev checks new user messages after the other moderation rules. A sufficiently high spam score deletes that message and permanently mutes its sender, preserving their earlier messages and leaving all blacklists unchanged. Group owners and administrators are protected. The threshold is `SPAM_THRESHOLD` in [model.py](src/anti_fwd_spam/model.py); a score is not an accuracy guarantee. Edited messages, service events, bot senders, and messages sent as a group or channel skip this check.
 
 Temporary model failures leave the message visible while scheduled retries run. Temporary deletion and mute failures also retry; a deleted message stays deleted while a mute is pending. Keep the scheduled trigger enabled. Each model request can incur charges and can send the same content to another configured provider.
 
@@ -230,4 +253,4 @@ In a fresh terminal, re-enter `BOT_TOKEN` using the command in step 4. Run `unse
 
 D1 retains report and source-moderation JSON, resolved command IDs, and temporary processing records for 3 days. The recent-message index stores IDs and timestamps, not message text. Model tasks retain submitted content while classification is pending, then keep only the identities needed to finish deletion and muting. The bot does not download media files.
 
-Source and account blacklists remain until manually removed. Scheduled cleanup removes expired records; outages or exhausted quotas can delay it. Cloudflare backups have separate [retention rules](https://developers.cloudflare.com/d1/reference/time-travel/). Keep member information private when viewing or exporting the database.
+Source, account, and sticker-set blacklists remain until manually removed. Scheduled cleanup removes expired records; outages or exhausted quotas can delay it. Cloudflare backups have separate [retention rules](https://developers.cloudflare.com/d1/reference/time-travel/). Keep member information private when viewing or exporting the database.

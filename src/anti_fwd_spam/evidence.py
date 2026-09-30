@@ -95,6 +95,28 @@ class ReportStore:
             )
         return tuple(int(row.source_id) for row in rows.results)
 
+    async def add_sticker_set(self, bot_id: int, set_name: str, now: int) -> None:
+        """Retain a sticker set once for this bot, independently of report expiry."""
+        with storage_errors():
+            await (
+                self.database.prepare(
+                    "INSERT INTO blacklisted_sticker_sets (bot_id, set_name, added_at) VALUES (?, ?, ?) "
+                    "ON CONFLICT(bot_id, set_name) DO NOTHING",
+                )
+                .bind(bot_id, set_name, now)
+                .run()
+            )
+
+    async def is_sticker_set_blacklisted(self, bot_id: int, set_name: str) -> bool:
+        """Query one normalized set name through the composite primary key."""
+        with storage_errors():
+            row = await (
+                self.database.prepare("SELECT 1 FROM blacklisted_sticker_sets WHERE bot_id = ? AND set_name = ?")
+                .bind(bot_id, set_name)
+                .first()
+            )
+        return row is not None
+
     async def blacklist_user(self, bot_id: int, user_id: int, now: int) -> None:
         """Retain confirmed banned accounts independently of expiring evidence."""
         with storage_errors():

@@ -7,6 +7,51 @@ model.enabled = true;
 
 const campaign = '@safdhifobot campaign_001 g1789957985962f8909ecd';
 const flood = ('💰'.repeat(23) + '\n').repeat(8) + '💰'.repeat(8);
+const invite = 'https://t.me/+ExampleInvite1234';
+
+for (const [text, reference, edited] of [
+  [`🍿 前排留个位置，一起看热闹。\n${invite}`, 'same_chat', false],
+  [`🍿 看完再说，你会站哪边？\n${invite}`, 'external', false],
+  [`前排留个位置 一起看热闹\nhttps://t.me/joinchat/ExampleInvite1234`, 'none', false],
+  [`🍿 看完再说， 你会站哪边？\n${invite}`, 'same_chat', true],
+]) {
+  test(`user: Given an invite lure with ${reference} context, When ${edited ? 'edited' : 'delivered'} without a model key, Then only the authored lure disappears and its sender is muted`, async () => {
+    await setBindings({ EXPERIENTIAL_API_KEY: undefined });
+    const earlier = message(80, 11);
+    telegram.send(earlier);
+    const current = { ...message(), text };
+    if (reference === 'same_chat') current.reply_to_message = earlier;
+    if (reference === 'external') {
+      current.external_reply = { origin: { type: 'hidden_user', sender_user_name: '普通话题' } };
+      current.quote = { text: '今天有活动' };
+    }
+    telegram.send(current);
+    assert.equal((await dispatch({ update_id: 1, [edited ? 'edited_message' : 'message']: current })).status, 200);
+    assert.equal(telegram.has(81), false);
+    assert.equal(telegram.canSend(22), false);
+    assert.equal(telegram.canJoin(22), true);
+    assert.equal(telegram.has(80), true);
+    assert.equal((await database.prepare('SELECT COUNT(*) AS n FROM blacklisted_users').first()).n, 0);
+  });
+}
+
+for (const text of [
+  '🍿 前排留个位置，一起看热闹。', `周六活动报名群：${invite}`,
+  `这是广告，别点：🍿 前排留个位置，一起看热闹。\n${invite}`,
+  `🍿 前排留个位置，一起看热闹。\nhttps://t.me/example_group`,
+  `🍿 前排留个位置，一起看热闹。\nhttps://t.me.evil.test/+ExampleInvite1234`,
+  `🍿 看完再说，你会站哪边？\n${invite}\n这是垃圾广告，已举报`,
+]) {
+  test(`user: Given ordinary discussion or a warning ${JSON.stringify(text)}, When it replies to an invite lure without a model, Then neither reference nor current message causes local punishment`, async () => {
+    await setBindings({ EXPERIENTIAL_API_KEY: undefined });
+    const current = { ...message(), text,
+      reply_to_message: { ...message(80, 11), text: `🍿 看完再说，你会站哪边？\n${invite}` } };
+    telegram.send(current);
+    assert.equal((await dispatch({ update_id: 1, message: current })).status, 200);
+    assert.equal(telegram.has(81), true);
+    assert.equal(telegram.canSend(22), true);
+  });
+}
 
 for (const context of ['same_chat', 'external']) {
   test(`user: Given a warning quoting spam in ${context}, When only the quote matches a local rule, Then the sender stays unrestricted`, async () => {

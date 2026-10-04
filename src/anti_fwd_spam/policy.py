@@ -21,6 +21,19 @@ SPAM_PATTERNS = (
     re.compile(r"(?:约炮|包夜|外围|楼凤)上门|看头像\s*加?\s*(?:[qQ]|扣扣?)(?![A-Za-z\u4e00-\u9fff])"),
 )
 
+INVITE_LURE_PATTERN = re.compile(
+    r"\s*🍿?\s*(?:前排留个位置[\s\uff0c,]*一起看热闹[\s。.!\uff01]*|看完再说[\s\uff0c,]*你会站哪边[\s\uff1f?]*)"
+    r"\s*https://t\.me/(?:\+|joinchat/)[A-Za-z0-9_-]{8,128}\s*",
+)
+
+
+def matches_invite_lure(message: dict[str, object]) -> bool:
+    """Match a complete authored invite lure, not reference text, warnings, or profile fields."""
+    return any(
+        isinstance(text := message.get(field), str) and INVITE_LURE_PATTERN.fullmatch(text) is not None
+        for field in ("text", "caption")
+    )
+
 
 def matches_spam_pattern(message: dict[str, object]) -> bool:
     """Search current text, captions, shared contact names, and the sender's nickname without inspecting replies."""
@@ -55,6 +68,13 @@ def sticker_set_name(message: dict[str, object]) -> str | None:
     """Read only the current sticker's set name, without inspecting replies."""
     sticker = message.get("sticker")
     return normalize_sticker_set(sticker.get("set_name")) if isinstance(sticker, dict) else None
+
+
+def sticker_unique_id(message: dict[str, object]) -> str | None:
+    """Read the current sticker's case-sensitive identity, not its file or thumbnail ID."""
+    sticker = message.get("sticker")
+    value = sticker.get("file_unique_id") if isinstance(sticker, dict) else None
+    return value if isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,128}", value) is not None else None
 
 
 def reply_target(message: dict[str, object]) -> dict[str, object] | None:

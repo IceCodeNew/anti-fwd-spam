@@ -11,7 +11,14 @@ from typing import TYPE_CHECKING
 from .actions import Actions, AppResponse, BanTarget, user_id
 from .evidence import MESSAGE_WINDOW_SECONDS, EvidenceError, ReportStore
 from .model import MODEL_CONTENT_FIELDS, model_input, profile_ids
-from .policy import matches_spam_pattern, parse_update, reply_target, sticker_set_name
+from .policy import (
+    matches_invite_lure,
+    matches_spam_pattern,
+    parse_update,
+    reply_target,
+    sticker_set_name,
+    sticker_unique_id,
+)
 from .reporting import Reporting, ReportingPlugin
 from .sources import replied_source, resolve_source, source_argument, sticker_set_argument
 from .tasks import ModelTasks
@@ -217,17 +224,19 @@ class Moderator:
         if update.update_id is None or (reply_report and reported_target(update) is None):
             return AppResponse(400, "invalid command")
         set_name = sticker_set_name(target) if reply_report and target is not None else sticker_set_argument(argument)
+        identity = set_name or (sticker_unique_id(target) if reply_report and target is not None else None)
         replies = []
-        if set_name is not None:
+        if identity is not None:
             now = int(time.time())
             await self.store.save((self.actions.bot_id, update.update_id), update.raw_json, now, 0)
-            await self.store.add_sticker_set(self.actions.bot_id, set_name, now)
-            replies.append(f"Sticker set saved in D1: {set_name}")
+            await self.store.add_sticker(self.actions.bot_id, identity, now, whole_set=set_name is not None)
+            label = "Sticker set" if set_name is not None else "Sticker"
+            replies.append(f"{label} saved in D1: {identity}")
         username = argument.removeprefix("@")
         source = replied_source(update.message) if reply_report else username
         identifier = (
-            await self._register_source(update.update_id, update.raw_json, source, evidence_saved=set_name is not None)
-            if reply_report or set_name is None
+            await self._register_source(update.update_id, update.raw_json, source, evidence_saved=identity is not None)
+            if reply_report or identity is None
             else None
         )
         if identifier is not None:
@@ -332,8 +341,18 @@ class Moderator:
             and self.reporting.denied((*self.command_plugins, *self.reply_plugins), update)
         )
 
+    async def matches_sticker(self, message: dict[str, object]) -> bool:
+        """Check the current set, then the individual sticker, without a list cache."""
+        set_name = sticker_set_name(message)
+        if set_name is not None and await self.store.is_sticker_blacklisted(
+            self.actions.bot_id, set_name, whole_set=True
+        ):
+            return True
+        unique_id = sticker_unique_id(message)
+        return unique_id is not None and await self.store.is_sticker_blacklisted(self.actions.bot_id, unique_id)
+
     async def check_content(self, update: TelegramUpdate) -> AppResponse:
-        """Apply local patterns to all messages; queue the biography check and Jev only for new messages.
+        """Apply local rules, then queue profile checks and Jev for new messages and referenced edits.
 
         A denied report on local-rule spam is deleted without a mute, so a member who quotes that spam keeps speaking.
         """
@@ -346,14 +365,13 @@ class Moderator:
             or isinstance(message.get("external_reply"), dict)
             or isinstance(message.get("quote"), dict)
         )
+        if matches_invite_lure(message):
+            return await self.actions.delete_and_mute(message, mute=mute)
         if not referenced:
-            spam = matches_spam_pattern(message)
-            set_name = sticker_set_name(message)
-            if not spam and set_name is not None:
-                try:
-                    spam = await self.store.is_sticker_set_blacklisted(self.actions.bot_id, set_name)
-                except EvidenceError:
-                    return AppResponse(503, "sticker set list unavailable; retry pending")
+            try:
+                spam = matches_spam_pattern(message) or await self.matches_sticker(message)
+            except EvidenceError:
+                return AppResponse(503, "sticker list unavailable; retry pending")
             if spam:
                 return await self.actions.delete_and_mute(message, mute=mute)
         if (

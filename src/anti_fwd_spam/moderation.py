@@ -12,7 +12,6 @@ from .actions import Actions, AppResponse, BanTarget, user_id
 from .evidence import MESSAGE_WINDOW_SECONDS, EvidenceError, ReportStore
 from .model import MODEL_CONTENT_FIELDS, model_input, profile_ids
 from .policy import (
-    matches_invite_lure,
     matches_spam_pattern,
     parse_update,
     reply_target,
@@ -365,8 +364,6 @@ class Moderator:
             or isinstance(message.get("external_reply"), dict)
             or isinstance(message.get("quote"), dict)
         )
-        if matches_invite_lure(message):
-            return await self.actions.delete_and_mute(message, mute=mute)
         if not referenced:
             try:
                 spam = matches_spam_pattern(message) or await self.matches_sticker(message)

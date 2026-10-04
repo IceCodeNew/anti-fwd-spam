@@ -119,7 +119,7 @@ class ModelStreamTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await spam_probability(fetcher, CONFIG, state), 0.99)
         self.assertEqual(requests[0]["state"]["message"]["text"], "Join my paid promotion group")
         # The provider task is a separate contract; a fixed fake score cannot prove its interpretation.
-        self.assertIn("regardless of whether the reference is spam", requests[0]["questions"]["spam"]["instructions"])
+        self.assertIn("普通引用不能使当前正文的广告免责", requests[0]["questions"]["spam"]["instructions"])
 
     async def test_user_closes_the_stream_after_http_rejection(self) -> None:
         """user: Given rejected credentials and a stalled body, When headers arrive, Then the stream closes."""

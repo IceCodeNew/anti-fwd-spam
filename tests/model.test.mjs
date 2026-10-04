@@ -11,7 +11,7 @@ test('user: Given a spam probability at the threshold, When a new message arrive
   target.from.last_name = 'Example';
   target.text = 'Contact me for paid promotions';
   model.profile = { bio: 'Advertising service' };
-  model.probability = 0.95;
+  model.probability = 0.90;
   telegram.send(message(80));
   telegram.send(target);
   assert.equal((await dispatch({ update_id: 1, message: target })).status, 200);
@@ -40,7 +40,7 @@ for (const status of ['creator', 'administrator', 'kicked']) {
 
 test('user: Given a probability below the threshold or an invalid answer, When classified, Then the message remains', async () => {
   let id = 81;
-  for (const probability of [0.9499, null, '0.99', true, -1, 1.01]) {
+  for (const probability of [0.8999, null, '0.99', true, -1, 1.01]) {
     model.probability = probability;
     const target = message(id++);
     telegram.send(target);

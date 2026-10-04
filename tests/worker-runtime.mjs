@@ -20,6 +20,10 @@ before(async () => {
   const root = resolve('.wrangler/test-build');
   const paths = (await readdir(root, { recursive: true })).filter(path => path.endsWith('.py') && path !== 'entry.py');
   const { workerOptions } = unstable_getMiniflareWorkerOptions('wrangler.jsonc');
+  // Local secrets must not enable providers outside a scenario's fake configuration.
+  for (const key of ['TYPESAFE_AI_API_KEY', 'EXPERIENTIAL_API_KEY', 'OPENCODE_API_KEY', 'CMD_API_KEY', 'AI_GATEWAY_API_KEY']) {
+    delete workerOptions.bindings[key];
+  }
   runtimeOptions = {
     ...workerOptions,
     modulesRoot: root,

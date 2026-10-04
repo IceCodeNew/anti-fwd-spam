@@ -16,23 +16,9 @@ SUPPORTED_FORWARD_ORIGINS = frozenset({"user", "hidden_user", "chat", "channel"}
 SPAM_PATTERNS = (
     re.compile(r"@[A-Za-z0-9_]{5,32}\s+campaign_[0-9]+"),
     re.compile(r"([💰🔴])(?:\s*\1){3,}"),
-    re.compile(r"收款码.{0,12}?(?:[天日].{0,2}?[赚挣]|日入).{0,6}?(?:[0-9]{4,}|[千万wW])"),
     re.compile(r"(?:极品|新人|童颜|嫩)小?萝莉(?!塔)|萝莉(?:上门|包夜|资源)"),
     re.compile(r"(?:约炮|包夜|外围|楼凤)上门|看头像\s*加?\s*(?:[qQ]|扣扣?)(?![A-Za-z\u4e00-\u9fff])"),
 )
-
-INVITE_LURE_PATTERN = re.compile(
-    r"\s*🍿?\s*(?:前排留个位置[\s\uff0c,]*一起看热闹[\s。.!\uff01]*|看完再说[\s\uff0c,]*你会站哪边[\s\uff1f?]*)"
-    r"\s*https://t\.me/(?:\+|joinchat/)[A-Za-z0-9_-]{8,128}\s*",
-)
-
-
-def matches_invite_lure(message: dict[str, object]) -> bool:
-    """Match a complete authored invite lure, not reference text, warnings, or profile fields."""
-    return any(
-        isinstance(text := message.get(field), str) and INVITE_LURE_PATTERN.fullmatch(text) is not None
-        for field in ("text", "caption")
-    )
 
 
 def matches_spam_pattern(message: dict[str, object]) -> bool:

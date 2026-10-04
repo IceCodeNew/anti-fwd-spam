@@ -11,23 +11,30 @@ const invite = 'https://t.me/+ExampleInvite1234';
 
 for (const [text, reference, edited] of [
   [`🍿 前排留个位置，一起看热闹。\n${invite}`, 'same_chat', false],
-  [`🍿 看完再说，你会站哪边？\n${invite}`, 'external', false],
-  [`前排留个位置 一起看热闹\nhttps://t.me/joinchat/ExampleInvite1234`, 'none', false],
-  [`🍿 看完再说， 你会站哪边？\n${invite}`, 'same_chat', true],
+  [`🍉 来看看，有没有你漏掉的细节。\n${invite}`, 'external', true],
 ]) {
-  test(`user: Given an invite lure with ${reference} context, When ${edited ? 'edited' : 'delivered'} without a model key, Then only the authored lure disappears and its sender is muted`, async () => {
-    await setBindings({ EXPERIENTIAL_API_KEY: undefined });
+  test(`user: Given an authored invite with ${reference} context, When ${edited ? 'edited' : 'delivered'}, Then Jev receives it and its decision controls only the current sender`, async () => {
     const earlier = message(80, 11);
     telegram.send(earlier);
     const current = { ...message(), text };
     if (reference === 'same_chat') current.reply_to_message = earlier;
-    if (reference === 'external') {
+    else {
       current.external_reply = { origin: { type: 'hidden_user', sender_user_name: '普通话题' } };
       current.quote = { text: '今天有活动' };
     }
+    model.probability = 0;
     telegram.send(current);
-    assert.equal((await dispatch({ update_id: 1, [edited ? 'edited_message' : 'message']: current })).status, 200);
-    assert.equal(telegram.has(81), false);
+    const field = edited ? 'edited_message' : 'message';
+    assert.equal((await dispatch({ update_id: 1, [field]: current })).status, 200);
+    assert.notEqual(model.state, null, 'the current invite must reach Jev rather than a local phrase rule');
+    assert.equal(model.state.message.text, text);
+    assert.equal(telegram.has(81), true);
+    assert.equal(telegram.canSend(22), true);
+    model.probability = 0.99;
+    const later = { ...current, message_id: 83 };
+    telegram.send(later);
+    assert.equal((await dispatch({ update_id: 2, [field]: later })).status, 200);
+    assert.equal(telegram.has(83), false);
     assert.equal(telegram.canSend(22), false);
     assert.equal(telegram.canJoin(22), true);
     assert.equal(telegram.has(80), true);
@@ -36,13 +43,14 @@ for (const [text, reference, edited] of [
 }
 
 for (const text of [
-  '🍿 前排留个位置，一起看热闹。', `周六活动报名群：${invite}`,
+  `🍿 前排留个位置，一起看热闹。\n${invite}`, `🍉 来看看，有没有你漏掉的细节。\n${invite}`,
+  `周六活动报名群：${invite}`,
   `这是广告，别点：🍿 前排留个位置，一起看热闹。\n${invite}`,
   `🍿 前排留个位置，一起看热闹。\nhttps://t.me/example_group`,
   `🍿 前排留个位置，一起看热闹。\nhttps://t.me.evil.test/+ExampleInvite1234`,
   `🍿 看完再说，你会站哪边？\n${invite}\n这是垃圾广告，已举报`,
 ]) {
-  test(`user: Given ordinary discussion or a warning ${JSON.stringify(text)}, When it replies to an invite lure without a model, Then neither reference nor current message causes local punishment`, async () => {
+  test(`user: Given invite or discussion text ${JSON.stringify(text)}, When it replies to an invite lure without a model, Then neither reference nor current message causes local punishment`, async () => {
     await setBindings({ EXPERIENTIAL_API_KEY: undefined });
     const current = { ...message(), text,
       reply_to_message: { ...message(80, 11), text: `🍿 看完再说，你会站哪边？\n${invite}` } };
@@ -72,7 +80,7 @@ for (const context of ['same_chat', 'external']) {
 for (const text of [campaign, flood, '@example_bot campaign_2', '💰'.repeat(4), '🔴 '.repeat(4),
   '🔴说明：💰 \n💰\t💰 💰结束🔴', '💰说明：🔴🔴🔴🔴结束💰',
   `请警惕这种垃圾消息：${campaign}，不要点击`, '@example_bot campaign_1 this is a discussion',
-  '@example_bot campaign_1a', '有收款码的来，每天赚 5000，私聊', '极品新人小萝莉 ms7N', '萝莉资源私聊',
+  '@example_bot campaign_1a', '极品新人小萝莉 ms7N', '萝莉资源私聊',
   '达达妹🌼（约课上门）看头像q Jai', '看头像扣扣 12345', '看头像加q 123', '看头像q', '小雅 包夜上门']) {
   for (const field of ['text', 'caption', 'nickname', 'biography']) {
     test(`user: Given ${field} containing ${text === flood ? 'the screenshot flood' : JSON.stringify(text)}, When Jev would accept it, Then only that message is deleted and its sender muted`, async () => {
@@ -106,15 +114,25 @@ for (const [name, contact] of [
   ['the screenshot contact card', { first_name: '有收款码一天赚一万', phone_number: '6285198277256', user_id: 8247255987 }],
   ['a contact name split across first and last name', { first_name: '有收款码', last_name: '日入3000+', phone_number: '6285198277256' }],
 ]) {
-  test(`user: Given ${name}, When Jev would accept it, Then only that message is deleted and its sender muted`, async () => {
+  test(`user: Given ${name}, When Jev classifies its income offer, Then only its spam decision deletes and mutes`, async () => {
     const target = message();
     delete target.text;
     target.contact = contact;
     telegram.send(target);
     assert.equal((await dispatch({ update_id: 1, message: target })).status, 200);
-    assert.equal(telegram.has(81), false);
+    assert.equal(telegram.has(81), true);
+    assert.equal(telegram.canSend(22), true);
+    assert.equal(model.state.contact.card_name, [contact.first_name, contact.last_name].filter(Boolean).join(" "));
+    assert.equal(JSON.stringify(model.state).includes(contact.phone_number), false);
+    model.probability = 0.90;
+    const later = { ...target, message_id: 83 };
+    telegram.send(later);
+    assert.equal((await dispatch({ update_id: 2, message: later })).status, 200);
+    assert.equal(telegram.has(83), false);
+    assert.equal(telegram.has(81), true);
     assert.equal(telegram.canSend(22), false);
-    assert.equal(telegram.members.get(22).until_date, 0);
+    assert.equal(telegram.canJoin(22), true);
+    assert.equal((await database.prepare("SELECT COUNT(*) AS n FROM blacklisted_users").first()).n, 0);
   });
 }
 
@@ -140,7 +158,7 @@ test('user: Given a contact whose account biography matches a rule, When the car
   await setBindings({ EXPERIENTIAL_API_KEY: undefined });
   const target = { ...message(), contact: { first_name: '王小明', user_id: 55, phone_number: '8613800000000' } };
   delete target.text;
-  model.profiles.set(55, { first_name: '王小明', bio: '收款码一天赚一万' });
+  model.profiles.set(55, { first_name: '王小明', bio: '极品新人小萝莉' });
   telegram.send(target);
   assert.equal((await dispatch({ update_id: 1, message: target })).status, 200);
   assert.equal(telegram.has(81), false);

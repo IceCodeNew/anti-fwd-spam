@@ -96,6 +96,31 @@ class ModelDeadlineTests(unittest.TestCase):
 
 
 class ModelStreamTests(unittest.IsolatedAsyncioTestCase):
+    async def test_user_requests_independent_spam_detection_for_a_reply(self) -> None:
+        """user: Given an ad under a normal reply, When sent to Jev, Then the task includes independent sender spam."""
+        cancelled = asyncio.Event()
+        requests = []
+
+        async def fetcher(url, *, method, headers, body) -> StreamingResponse:
+            requests.append(json.loads(body))
+
+            async def read_body() -> bytes:
+                return b'{"answers":{"spam":{"type":"noul","noul":0.99}}}'
+
+            return StreamingResponse(read_body, cancelled)
+
+        state = model_input(
+            {
+                "from": {"id": 22, "first_name": "User"},
+                "text": "Join my paid promotion group",
+                "reply_to_message": {"from": {"id": 11, "first_name": "Member"}, "text": "Today is Saturday"},
+            }
+        )
+        self.assertEqual(await spam_probability(fetcher, CONFIG, state), 0.99)
+        self.assertEqual(requests[0]["state"]["message"]["text"], "Join my paid promotion group")
+        # The provider task is a separate contract; a fixed fake score cannot prove its interpretation.
+        self.assertIn("普通引用不能使当前正文的广告免责", requests[0]["questions"]["spam"]["instructions"])
+
     async def test_user_closes_the_stream_after_http_rejection(self) -> None:
         """user: Given rejected credentials and a stalled body, When headers arrive, Then the stream closes."""
         cancelled = asyncio.Event()

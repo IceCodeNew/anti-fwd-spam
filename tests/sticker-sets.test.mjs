@@ -83,6 +83,97 @@ test('user: Given a sticker delivered through an inline bot, When a reporter rep
   assert.equal((await database.prepare('SELECT source_id FROM blacklisted_sources WHERE source_id=777').first()).source_id, 777);
 });
 
+test('user: Given a registered individual sticker, When its ID differs only in case or the message has a reference, Then unrelated or contextual stickers remain visible', async () => {
+  const target = sticker();
+  delete target.sticker.set_name;
+  target.sticker.file_unique_id = 'Unique-81';
+  telegram.send(target);
+  await deliver(command('/bs', target));
+  telegram.members.set(33, { status: 'member' });
+  for (const [index, metadata, reference] of [
+    [0, { file_unique_id: 'unique-81' }, false],
+    [1, { file_unique_id: 'Unique-81', set_name: 'Ordinary_Pack' }, true],
+    [2, { file_id: 'file-81' }, false],
+  ]) {
+    const current = sticker(90 + index, 33);
+    current.sticker = metadata;
+    if (reference) current.reply_to_message = message(70, 11);
+    assert.equal((await deliver({ message: current })).status, 200);
+    assert.equal(telegram.has(current.message_id), true);
+    assert.equal(telegram.canSend(33), true);
+  }
+  const current = sticker(94, 33, 'Ordinary_Pack');
+  current.sticker.file_unique_id = 'Unique-81';
+  assert.equal((await deliver({ message: current })).status, 200);
+  assert.equal(telegram.has(94), false);
+  assert.equal(telegram.canSend(33), false);
+});
+
+for (const identity of ['unlisted', 'administrator target', 'other bot list', 'expired', 'external quote']) {
+  test(`user: Given an individual sticker and ${identity}, When registration or filtering occurs, Then shared authorization and protection stay intact`, async () => {
+    const target = sticker();
+    delete target.sticker.set_name;
+    telegram.send(target);
+    const update = command('/bs', target);
+    if (identity === 'unlisted') update.message.from.id = 33;
+    if (identity === 'administrator target') telegram.members.set(22, { status: 'administrator' });
+    assert.equal((await deliver(update)).status, 200);
+    assert.equal(telegram.canJoin(22), identity === 'unlisted' || identity === 'administrator target');
+    telegram.members.set(33, { status: 'member' });
+    if (identity === 'other bot list') {
+      await database.prepare('UPDATE blacklisted_stickers SET bot_id=456').run();
+    }
+    const current = sticker(83, 33);
+    delete current.sticker.set_name;
+    current.sticker.file_unique_id = 'unique-81';
+    if (identity === 'expired') current.date -= 49 * 3600;
+    if (identity === 'external quote') current.quote = { text: 'This sticker is an ad' };
+    const filtered = identity === 'administrator target';
+    assert.equal((await deliver({ message: current })).status, 200);
+    assert.equal(telegram.has(83), !filtered);
+    assert.equal(telegram.canSend(33), !filtered);
+  });
+}
+
+for (const uniqueId of [undefined, '', 123, 'bad id', 'x'.repeat(129)]) {
+  test(`user: Given no pack and unusable sticker identity ${JSON.stringify(uniqueId)}, When bare bs replies, Then usage does not register or punish`, async () => {
+    const target = sticker();
+    target.sticker = { file_id: 'file-81', file_unique_id: uniqueId };
+    telegram.send(target);
+    assert.equal((await deliver(command('/bs', target))).status, 200);
+    assert.equal(telegram.canJoin(22), true);
+    assert.equal(telegram.has(81), true);
+    assert.equal((await database.prepare('SELECT COUNT(*) AS n FROM blacklisted_stickers').first()).n, 0);
+  });
+}
+
+for (const failure of ['registration', 'lookup']) {
+  test(`user: Given unavailable individual sticker ${failure} storage, When delivery retries after recovery, Then no punishment precedes durable registration or lookup`, async () => {
+    const target = sticker();
+    delete target.sticker.set_name;
+    telegram.send(target);
+    const update = command('/bs', target);
+    if (failure === 'lookup') {
+      await deliver(update);
+      telegram.members.set(22, { status: 'member' });
+      telegram.send(target);
+    }
+    telegram.members.set(33, { status: 'member' });
+    const probe = sticker(83, 33);
+    delete probe.sticker.set_name;
+    probe.sticker.file_unique_id = 'unique-81';
+    const pending = failure === 'registration' ? update : { update_id: 83, message: probe };
+    await unavailable('blacklisted_stickers', async () => {
+      assert.equal((await deliver(pending)).status, 503);
+      assert.equal(telegram.has(failure === 'registration' ? 81 : 83), true);
+      assert.equal(telegram.canSend(failure === 'registration' ? 22 : 33), true);
+    });
+    assert.equal((await dispatch(pending)).status, 200);
+    assert.equal(telegram.has(failure === 'registration' ? 81 : 83), false);
+    assert.equal(failure === 'registration' ? telegram.canJoin(22) : telegram.canSend(33), false);
+  });
+}
+
 async function registerPack() {
   assert.equal((await deliver(command(`/bs ${packUrl}`, undefined, 300))).status, 200);
 }
@@ -210,7 +301,7 @@ for (const argument of [
 }
 
 for (const viaBot of [false, true]) {
-  test(`user: Given a sticker without a pack ${viaBot ? 'and a valid inline source' : 'or inline source'}, When bare bs reports it, Then ${viaBot ? 'the bot source is still registered and both accounts banned' : 'usage is returned without using file identifiers as a source'}`, async () => {
+  test(`user: Given a sticker without a pack ${viaBot ? 'and a valid inline source' : 'or inline source'}, When bare bs reports it, Then ${viaBot ? 'the sticker and bot source are registered and both accounts banned' : 'the individual sticker is registered and its sender banned'}`, async () => {
     const target = sticker();
     delete target.sticker.set_name;
     if (viaBot) {
@@ -219,15 +310,45 @@ for (const viaBot of [false, true]) {
     }
     telegram.send(target);
     assert.equal((await deliver(command('/bs', target))).status, 200);
-    assert.equal(telegram.canJoin(22), !viaBot);
-    assert.equal(telegram.has(81), !viaBot);
+    assert.equal(telegram.canJoin(22), false);
+    assert.equal(telegram.has(81), false);
     await noPacks();
     if (viaBot) {
       assert.equal(telegram.canJoin(777), false);
       assert.equal((await database.prepare('SELECT source_id FROM blacklisted_sources WHERE source_id=777').first()).source_id, 777);
-    } else assert.match(telegram.replies.at(-1).text, /\/bs/);
+    }
+    telegram.members.set(33, { status: 'member' });
+    const repeated = sticker(83, 33);
+    delete repeated.sticker.set_name;
+    repeated.sticker.file_unique_id = target.sticker.file_unique_id;
+    assert.equal((await deliver({ message: repeated })).status, 200);
+    assert.equal(telegram.has(83), false, 'a different file_id must not bypass the individual sticker list');
+    assert.equal(telegram.canSend(33), false);
+    assert.equal(telegram.canJoin(33), true);
+    assert.deepEqual((await database.prepare('SELECT bot_id, file_unique_id FROM blacklisted_stickers').all()).results,
+      [{ bot_id: 123, file_unique_id: 'unique-81' }]);
   });
 }
+
+test('user: Given a permanent individual sticker entry, When reports repeat, evidence expires, and the entry is removed, Then its first timestamp survives until removal and subsequent stickers become allowed', async () => {
+  const target = sticker();
+  delete target.sticker.set_name;
+  telegram.send(target);
+  await deliver(command('/bs', target));
+  await database.prepare('UPDATE blacklisted_stickers SET added_at=1').run();
+  await deliver(command('/bs', target, 301));
+  await tick(Math.floor(Date.now() / 1000) + 73 * 3600);
+  assert.deepEqual((await database.prepare('SELECT added_at FROM blacklisted_stickers').all()).results, [{ added_at: 1 }]);
+  assert.equal((await database.prepare('SELECT COUNT(*) AS n FROM reports').first()).n, 0);
+  await database.prepare('DELETE FROM blacklisted_stickers WHERE bot_id=123').run();
+  telegram.members.set(33, { status: 'member' });
+  const current = sticker(83, 33);
+  delete current.sticker.set_name;
+  current.sticker.file_unique_id = 'unique-81';
+  assert.equal((await deliver({ message: current })).status, 200);
+  assert.equal(telegram.has(83), true);
+  assert.equal(telegram.canSend(33), true);
+});
 
 test('user: Given a scoped pack registration, When its record is removed, Then subsequent messages are immediately allowed even if another bot still blocks the same pack', async () => {
   await registerPack();

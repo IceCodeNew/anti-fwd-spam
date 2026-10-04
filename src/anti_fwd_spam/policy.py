@@ -16,7 +16,6 @@ SUPPORTED_FORWARD_ORIGINS = frozenset({"user", "hidden_user", "chat", "channel"}
 SPAM_PATTERNS = (
     re.compile(r"@[A-Za-z0-9_]{5,32}\s+campaign_[0-9]+"),
     re.compile(r"([💰🔴])(?:\s*\1){3,}"),
-    re.compile(r"收款码.{0,12}?(?:[天日].{0,2}?[赚挣]|日入).{0,6}?(?:[0-9]{4,}|[千万wW])"),
     re.compile(r"(?:极品|新人|童颜|嫩)小?萝莉(?!塔)|萝莉(?:上门|包夜|资源)"),
     re.compile(r"(?:约炮|包夜|外围|楼凤)上门|看头像\s*加?\s*(?:[qQ]|扣扣?)(?![A-Za-z\u4e00-\u9fff])"),
 )
@@ -55,6 +54,13 @@ def sticker_set_name(message: dict[str, object]) -> str | None:
     """Read only the current sticker's set name, without inspecting replies."""
     sticker = message.get("sticker")
     return normalize_sticker_set(sticker.get("set_name")) if isinstance(sticker, dict) else None
+
+
+def sticker_unique_id(message: dict[str, object]) -> str | None:
+    """Read the current sticker's case-sensitive identity, not its file or thumbnail ID."""
+    sticker = message.get("sticker")
+    value = sticker.get("file_unique_id") if isinstance(sticker, dict) else None
+    return value if isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,128}", value) is not None else None
 
 
 def reply_target(message: dict[str, object]) -> dict[str, object] | None:

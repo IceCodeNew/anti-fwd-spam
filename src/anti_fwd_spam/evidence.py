@@ -95,26 +95,27 @@ class ReportStore:
             )
         return tuple(int(row.source_id) for row in rows.results)
 
-    async def add_sticker_set(self, bot_id: int, set_name: str, now: int) -> None:
-        """Retain a sticker set once for this bot, independently of report expiry."""
+    async def add_sticker(self, bot_id: int, identity: str, now: int, *, whole_set: bool = False) -> None:
+        """Retain a whole set or one sticker for this bot, independently of report expiry."""
+        sql = (
+            "INSERT INTO blacklisted_sticker_sets (bot_id, set_name, added_at) VALUES (?, ?, ?) "
+            "ON CONFLICT(bot_id, set_name) DO NOTHING"
+            if whole_set
+            else "INSERT INTO blacklisted_stickers (bot_id, file_unique_id, added_at) VALUES (?, ?, ?) "
+            "ON CONFLICT(bot_id, file_unique_id) DO NOTHING"
+        )
         with storage_errors():
-            await (
-                self.database.prepare(
-                    "INSERT INTO blacklisted_sticker_sets (bot_id, set_name, added_at) VALUES (?, ?, ?) "
-                    "ON CONFLICT(bot_id, set_name) DO NOTHING",
-                )
-                .bind(bot_id, set_name, now)
-                .run()
-            )
+            await self.database.prepare(sql).bind(bot_id, identity, now).run()
 
-    async def is_sticker_set_blacklisted(self, bot_id: int, set_name: str) -> bool:
-        """Query one normalized set name through the composite primary key."""
+    async def is_sticker_blacklisted(self, bot_id: int, identity: str, *, whole_set: bool = False) -> bool:
+        """Query one set name or case-sensitive sticker ID through its composite primary key."""
+        sql = (
+            "SELECT 1 FROM blacklisted_sticker_sets WHERE bot_id = ? AND set_name = ?"
+            if whole_set
+            else "SELECT 1 FROM blacklisted_stickers WHERE bot_id = ? AND file_unique_id = ?"
+        )
         with storage_errors():
-            row = await (
-                self.database.prepare("SELECT 1 FROM blacklisted_sticker_sets WHERE bot_id = ? AND set_name = ?")
-                .bind(bot_id, set_name)
-                .first()
-            )
+            row = await self.database.prepare(sql).bind(bot_id, identity).first()
         return row is not None
 
     async def blacklist_user(self, bot_id: int, user_id: int, now: int) -> None:

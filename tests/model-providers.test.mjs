@@ -17,7 +17,7 @@ async function dispatchNow(update) {
 for (const key of keys) {
   test(`user: Given only ${key}, When Jev returns a threshold score, Then the sender is muted and only the current message disappears`, async () => {
     await setModelKeys(configured([key]));
-    model.probability = 0.95;
+    model.probability = 0.90;
     telegram.send(message());
     telegram.send(message(80));
     assert.equal((await dispatch({ update_id: 1, message: message() })).status, 200);
@@ -85,7 +85,7 @@ test('user: Given all five provider keys, When the first four fail, Then the ret
 test('user: Given a valid non-spam or invalid Experiential answer, When another provider would delete it, Then no further classification occurs', async () => {
   await setModelKeys(configured(['EXPERIENTIAL_API_KEY', 'AI_GATEWAY_API_KEY']));
   let id = 81;
-  for (const answer of [{ type: 'noul', noul: 0.9499 }, { type: 'noul', noul: '0.99' },
+  for (const answer of [{ type: 'noul', noul: 0.8999 }, { type: 'noul', noul: '0.99' },
     { type: 'boolean', probability: 1 }, { type: 'noul', noul: true }, { type: 'noul', noul: 1.1 }]) {
     model.response = url => Response.json({ answers: { spam: url.includes('api.experientiallabs.ai')
       ? answer : { type: 'boolean', probability: 1 } } });

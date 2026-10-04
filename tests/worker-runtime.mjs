@@ -20,6 +20,10 @@ before(async () => {
   const root = resolve('.wrangler/test-build');
   const paths = (await readdir(root, { recursive: true })).filter(path => path.endsWith('.py') && path !== 'entry.py');
   const { workerOptions } = unstable_getMiniflareWorkerOptions('wrangler.jsonc');
+  // Local secrets must not enable providers outside a scenario's fake configuration.
+  for (const key of ['TYPESAFE_AI_API_KEY', 'EXPERIENTIAL_API_KEY', 'OPENCODE_API_KEY', 'CMD_API_KEY', 'AI_GATEWAY_API_KEY']) {
+    delete workerOptions.bindings[key];
+  }
   runtimeOptions = {
     ...workerOptions,
     modulesRoot: root,
@@ -90,6 +94,7 @@ beforeEach(async () => {
   await database.prepare('DELETE FROM automatic_mutes').run();
   await database.prepare('DELETE FROM blacklisted_users').run();
   await database.prepare('DELETE FROM blacklisted_sticker_sets').run();
+  await database.prepare('DELETE FROM blacklisted_stickers').run();
   await database.prepare('DELETE FROM model_tasks').run();
   await database.prepare('DELETE FROM blacklisted_sources').run();
   await database.prepare('INSERT INTO blacklisted_sources (source_id) VALUES (273234066)').run();

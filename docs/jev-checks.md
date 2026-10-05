@@ -1,0 +1,21 @@
+# Live Jev acceptance checks
+
+The [advertising contract](behavior.md#blacklists-and-content-checks-connect-to-two-actions) defines the expected classification. `tests/jev-cases.json` contains advertising samples and normal controls.
+
+Each case records its source PR, sample type, and reconstruction limits in `source`.
+
+The screenshot samples contain visible text and names. They omit unreadable nickname decorations and unavailable biographies. The contact samples omit phone numbers. Historical invite samples use example links and partial reference text.
+
+Cases with a nonempty `skip` reason retain samples assigned to local regex rules. The test reports them as skipped without a provider request. Payment-code samples remain active because PR #30 removed their dedicated regex. Reference cases remain active because references bypass regex.
+
+Add recoverable missed text and normal controls to the same collection. Keep unknown fields absent. Mark synthetic controls and reconstructed context explicitly. Do not add a skip reason to hide a new model regression. Sticker images and blocked source identities are not text-classification cases.
+
+Export a key from `MODEL_PROVIDERS` in [model.py](../src/anti_fwd_spam/model.py) into your shell. Keep the key outside the repository. Run:
+
+```bash
+JEV_LIVE_TEST=1 PYTHONPATH=src uv run python -m unittest tests.test_jev -v
+```
+
+The test uses the first configured provider and the production prompt, input formatter, response parser, deadline, and threshold. It reports each case separately and sends each active sample once. It does not retry a failed request. A timeout can leave a charged request with an unknown result.
+
+These requests send sample content to the provider and can incur charges. The test does not access Telegram or D1. Ordinary unit tests skip this live check. A skip does not prove classification accuracy. Fixed scores in Worker tests verify moderation behavior, not model accuracy.

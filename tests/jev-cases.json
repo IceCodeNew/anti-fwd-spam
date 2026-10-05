@@ -1,0 +1,366 @@
+[
+  {
+    "name": "payment-code-obfuscated-amount",
+    "spam": true,
+    "message": {"from": {"first_name": "Sherry", "last_name": "Nolan"}, "text": "收款1ooo+码"},
+    "source": {
+      "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/32",
+      "kind": "screenshot transcription",
+      "notes": "Visible text and readable names only; biography unknown; unreadable nickname decorations omitted. Contact phone numbers omitted."
+    }
+  },
+  {
+    "name": "payment-code-recruitment-slang",
+    "spam": true,
+    "message": {"from": {"first_name": "Caleb", "last_name": "Hoffman"}, "text": "带码收米莱 @DI88o"},
+    "source": {
+      "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/32",
+      "kind": "screenshot transcription",
+      "notes": "Visible text and readable names only; biography unknown; unreadable nickname decorations omitted. Contact phone numbers omitted."
+    }
+  },
+  {
+    "name": "contact-easy-income",
+    "spam": true,
+    "message": {"from": {"first_name": "Bradley", "last_name": "Buttram"}, "contact": {"first_name": "兼职一天赚5k."}},
+    "source": {
+      "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/32",
+      "kind": "screenshot transcription",
+      "notes": "Visible text and readable names only; biography unknown; unreadable nickname decorations omitted. Contact phone numbers omitted."
+    }
+  },
+  {
+    "name": "contact-pinhole-placement-income",
+    "spam": true,
+    "message": {"from": {"first_name": "Rafael", "last_name": "Fore"}, "contact": {"first_name": "针孔投放日入五位数"}},
+    "source": {
+      "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/32",
+      "kind": "screenshot transcription",
+      "notes": "Visible text and readable names only; biography unknown; unreadable nickname decorations omitted. Contact phone numbers omitted."
+    }
+  },
+  {
+    "name": "sexual-offer-no-deposit",
+    "spam": true,
+    "message": {"from": {"first_name": "🔥诗悦2 s09年🎀无定 面付🎊"}, "text": "🌸粉嫩爽滑， ✨缅附， ⚡无锭金！\n@mmsao O"},
+    "source": {
+      "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/32",
+      "kind": "screenshot transcription",
+      "notes": "Visible text and readable names only; biography unknown; unreadable nickname decorations omitted. Contact phone numbers omitted."
+    }
+  },
+  {
+    "name": "sexual-offer-payment-euphemisms",
+    "spam": true,
+    "message": {"from": {"first_name": "🔥诗悦2 s09年🎀无定 面付🎊"}, "text": "🩵柔软嫩滑， 💙无锭金， 💜缅附！\n@mmsao D"},
+    "source": {
+      "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/32",
+      "kind": "screenshot transcription",
+      "notes": "Visible text and readable names only; biography unknown; unreadable nickname decorations omitted. Contact phone numbers omitted."
+    }
+  },
+  {
+    "name": "private-invite-spectator",
+    "spam": true,
+    "message": {"from": {"first_name": "Member"}, "text": "🍿 前排留个位置， 一起看热闹。\nhttps://t.me/+exampleInvite", "reply_to_message": {"from": {"first_name": "Member"}, "text": "别问为什么 1 号的事 2 号才来吐槽，问就是被气晕过…"}},
+    "source": {
+      "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/30",
+      "kind": "screenshot reconstruction",
+      "notes": "Example invite and reference URLs; truncated reference text; synthetic reply wrapper and Member names. Complete original payload and profiles unavailable."
+    }
+  },
+  {
+    "name": "private-invite-detail",
+    "spam": true,
+    "message": {"from": {"first_name": "Member"}, "text": "🍉 来看看，有没有你漏掉的细节。\nhttps://t.me/+exampleInvite", "reply_to_message": {"from": {"first_name": "Member"}, "text": "#晚安世界 https://www.youtube.com/watch?v=example"}},
+    "source": {
+      "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/30",
+      "kind": "screenshot reconstruction",
+      "notes": "Example invite and reference URLs; truncated reference text; synthetic reply wrapper and Member names. Complete original payload and profiles unavailable."
+    }
+  },
+  {
+    "name": "private-invite-sides",
+    "spam": true,
+    "message": {"from": {"first_name": "Member"}, "text": "🍿 看完再说，你会站哪边？\nhttps://t.me/+exampleInvite", "reply_to_message": {"from": {"first_name": "Member"}, "text": "今天是 Ingress First Saturday，我们很高兴迎来了…"}},
+    "source": {
+      "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/30",
+      "kind": "screenshot reconstruction",
+      "notes": "Example invite and reference URLs; truncated reference text; synthetic reply wrapper and Member names. Complete original payload and profiles unavailable."
+    }
+  },
+  {
+    "name": "private-invite-conclusion",
+    "spam": true,
+    "message": {"from": {"first_name": "Member"}, "text": "📸 细节值得看，结论先别急。\nhttps://t.me/+exampleInvite", "reply_to_message": {"from": {"first_name": "Member"}, "text": "So today was Ingress First Saturday, and we ha…"}},
+    "source": {
+      "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/30",
+      "kind": "screenshot reconstruction",
+      "notes": "Example invite and reference URLs; truncated reference text; synthetic reply wrapper and Member names. Complete original payload and profiles unavailable."
+    }
+  },
+  {
+    "name": "private-invite-curiosity",
+    "spam": true,
+    "message": {"from": {"first_name": "Member"}, "text": "🍉 带上你的好奇心，来围观。\nhttps://t.me/+exampleInvite", "reply_to_message": {"from": {"first_name": "Member"}, "text": "https://example.com/discussion"}},
+    "source": {
+      "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/30",
+      "kind": "screenshot reconstruction",
+      "notes": "Example invite and reference URLs; truncated reference text; synthetic reply wrapper and Member names. Complete original payload and profiles unavailable."
+    }
+  },
+  {
+    "name": "payment-contact-explicit-income",
+    "spam": true,
+    "message": {"from": {"first_name": "Member"}, "contact": {"first_name": "有收款码一天赚一万"}},
+    "source": {
+      "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/22",
+      "kind": "reported contact name",
+      "notes": "Exact reported card name; synthetic sender name; phone and account identifiers omitted. PR #30 removed its dedicated regex and assigned it to Jev."
+    }
+  },
+  {
+    "name": "payment-code-support",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "收款码怎么申请？今天店里收款1000多，怎么查账单？"},
+    "source": {
+      "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/32",
+      "kind": "synthetic negative control",
+      "notes": "Representative discussion or warning; not a recovered missed message."
+    }
+  },
+  {
+    "name": "payment-code-warning",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "有人发“带码收米莱”，这是招募跑分的广告，别联系，已经举报了。"},
+    "source": {
+      "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/32",
+      "kind": "synthetic negative control",
+      "notes": "Representative discussion or warning; not a recovered missed message."
+    }
+  },
+  {
+    "name": "ordinary-job-discussion",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "我这份兼职一个月赚5k，周末去图书馆上班。"},
+    "source": {
+      "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/32",
+      "kind": "synthetic negative control",
+      "notes": "Representative discussion or warning; not a recovered missed message."
+    }
+  },
+  {
+    "name": "ordinary-contact",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "contact": {"first_name": "兼职咨询", "last_name": "图书馆招聘处"}},
+    "source": {
+      "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/32",
+      "kind": "synthetic negative control",
+      "notes": "Representative discussion or warning; not a recovered missed message."
+    }
+  },
+  {
+    "name": "camera-discussion",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "旅馆里发现针孔摄像头，已经报警了。"},
+    "source": {
+      "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/32",
+      "kind": "synthetic negative control",
+      "notes": "Representative discussion or warning; not a recovered missed message."
+    }
+  },
+  {
+    "name": "dessert-texture",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "这款草莓布丁粉嫩爽滑，蛋糕柔软嫩滑，下次一起做。"},
+    "source": {
+      "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/32",
+      "kind": "synthetic negative control",
+      "notes": "Representative discussion or warning; not a recovered missed message."
+    }
+  },
+  {
+    "name": "ordinary-service-payment",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "搬家师傅不用定金，当面付，联系电话在名片里。"},
+    "source": {
+      "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/32",
+      "kind": "synthetic negative control",
+      "notes": "Representative discussion or warning; not a recovered missed message."
+    }
+  },
+  {
+    "name": "sexual-ad-report-reference",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "这是色情广告，别联系，我已经举报了。", "reply_to_message": {"from": {"first_name": "🔥诗悦2 s09年🎀无定 面付🎊"}, "text": "🌸粉嫩爽滑， ✨缅附， ⚡无锭金！\n@mmsao O"}},
+    "source": {
+      "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/32",
+      "kind": "synthetic negative control",
+      "notes": "Representative discussion or warning; not a recovered missed message."
+    }
+  },
+  {
+    "name": "income-contact-warning-reference",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "不要联系这张名片，日入五位数是招募广告，我已举报。", "reply_to_message": {"from": {"first_name": "Member"}, "contact": {"first_name": "针孔投放日入五位数"}}},
+    "source": {
+      "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/32",
+      "kind": "synthetic negative control",
+      "notes": "Representative discussion or warning; not a recovered missed message."
+    }
+  },
+  {
+    "name": "topic-related-event-invite",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "周六 Ingress First Saturday 活动报名群：https://t.me/+exampleInvite", "reply_to_message": {"from": {"first_name": "Member"}, "text": "今天是 Ingress First Saturday，我们欢迎大家参加活动。"}},
+    "source": {
+      "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/30",
+      "kind": "synthetic negative control",
+      "notes": "Representative discussion or warning; not a recovered missed message."
+    }
+  },
+  {
+    "name": "private-invite-warning",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "这是垃圾广告，别点链接，我已举报。", "reply_to_message": {"from": {"first_name": "Member"}, "text": "🍿 前排留个位置， 一起看热闹。\nhttps://t.me/+exampleInvite"}},
+    "source": {
+      "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/30",
+      "kind": "synthetic negative control",
+      "notes": "Representative discussion or warning; not a recovered missed message."
+    }
+  },
+  {
+    "name": "campaign-marker-screenshot",
+    "spam": true,
+    "message": {"from": {"first_name": "Member"}, "text": "@safdhifobot campaign_001 g1789957985962f8909ecd"},
+    "source": {
+      "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/17",
+      "kind": "historical screenshot fixture",
+      "notes": "Text preserved in tests/patterns.test.mjs at c8ebe34; synthetic sender; original profiles unavailable."
+    },
+    "skip": "PR #17 campaign-marker regex remains; this sample is not a Jev acceptance requirement."
+  },
+  {
+    "name": "money-bag-flood-screenshot",
+    "spam": true,
+    "message": {"from": {"first_name": "Member"}, "text": "💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰\n💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰\n💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰\n💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰\n💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰\n💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰\n💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰\n💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰\n💰💰💰💰💰💰💰💰"},
+    "source": {
+      "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/17",
+      "kind": "historical screenshot fixture",
+      "notes": "Emoji layout preserved in tests/patterns.test.mjs at c8ebe34; synthetic sender; original profiles unavailable."
+    },
+    "skip": "PR #17 repeated-emoji regex remains; this sample is not a Jev acceptance requirement."
+  },
+  {
+    "name": "sexual-text-and-nickname-screenshot",
+    "spam": true,
+    "message": {"from": {"first_name": "达达妹🌼（约课上门）看头像q Jai"}, "text": "极品新人小萝莉 ms7N"},
+    "source": {
+      "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/26",
+      "kind": "reported text and nickname",
+      "notes": "Exact text and nickname from the PR body; biography unavailable. PR #30 recorded a Jev miss at 0.71."
+    },
+    "skip": "PR #26 sexual-solicitation and avatar-contact regex rules remain; PR #30 confirmed this model miss."
+  },
+  {
+    "name": "home-visit-sexual-offer",
+    "spam": true,
+    "message": {"from": {"first_name": "Member"}, "text": "小雅 包夜上门"},
+    "source": {
+      "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/26",
+      "kind": "synthetic positive control",
+      "notes": "Representative behavior fixture, not a reported original. PR #30 evaluated it at 0.95 but retained the mixed regex."
+    },
+    "skip": "PR #26 home-visit regex remains; one passing model sample does not replace the retained rule."
+  },
+  {
+    "name": "fashion-discussion",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "新人萝莉塔爱好者，分享萝莉塔服装资源；看头像q版。"},
+    "source": {
+      "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/26",
+      "kind": "synthetic negative control",
+      "notes": "Representative normal text from the PR body, behavior fixtures, or PR #30 live evaluation; not a recovered missed message."
+    }
+  },
+  {
+    "name": "ordinary-tutoring",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "可以约课上门辅导吗"},
+    "source": {
+      "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/26",
+      "kind": "synthetic negative control",
+      "notes": "Representative normal text from the PR body, behavior fixtures, or PR #30 live evaluation; not a recovered missed message."
+    }
+  },
+  {
+    "name": "ordinary-installation",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "全套上门安装"},
+    "source": {
+      "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/26",
+      "kind": "synthetic negative control",
+      "notes": "Representative normal text from the PR body, behavior fixtures, or PR #30 live evaluation; not a recovered missed message."
+    }
+  },
+  {
+    "name": "avatar-art-discussion",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "你看头像q版的挺可爱"},
+    "source": {
+      "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/26",
+      "kind": "synthetic negative control",
+      "notes": "Representative normal text from the PR body, behavior fixtures, or PR #30 live evaluation; not a recovered missed message."
+    }
+  },
+  {
+    "name": "avatar-queen-discussion",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "看头像Queen"},
+    "source": {
+      "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/26",
+      "kind": "synthetic negative control",
+      "notes": "Representative normal text from the PR body, behavior fixtures, or PR #30 live evaluation; not a recovered missed message."
+    }
+  },
+  {
+    "name": "contextual-event-invite",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "报名群在这里，欢迎大家参加：https://t.me/+exampleInvite", "reply_to_message": {"from": {"first_name": "Member"}, "text": "周六 Ingress First Saturday 活动，谁有这次活动的报名群链接？"}},
+    "source": {
+      "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/30",
+      "kind": "synthetic negative control",
+      "notes": "PR #30 live control: the reference supplies the event purpose; example link and sender names."
+    }
+  },
+  {
+    "name": "avatar-ad-warning-reference",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "看头像q Jai 这是广告，别点", "reply_to_message": {"from": {"first_name": "Member"}, "text": "看头像q Jai"}},
+    "source": {
+      "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/28",
+      "kind": "synthetic negative control",
+      "notes": "Based on tests/model.test.mjs warning scenario; biographies omitted, not reconstructed. Referenced messages bypass regex."
+    }
+  },
+  {
+    "name": "avatar-ad-promotion-reference",
+    "spam": true,
+    "message": {"from": {"first_name": "Member"}, "text": "真的羡慕，联系这个号", "reply_to_message": {"from": {"first_name": "Member"}, "text": "看头像q Jai"}},
+    "source": {
+      "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/28",
+      "kind": "synthetic positive control",
+      "notes": "Based on tests/model.test.mjs promotion scenario; synthetic sender names; biographies unknown. Reference bypasses regex, so Jev must decide promotion."
+    }
+  },
+  {
+    "name": "payment-ad-promotion-external-quote",
+    "spam": true,
+    "message": {"from": {"first_name": "Member"}, "text": "推荐这个", "external_reply": {"origin": {"type": "hidden_user"}}, "quote": {"text": "收款码一天赚一万"}},
+    "source": {
+      "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/28",
+      "kind": "synthetic positive control",
+      "notes": "Representative external-quote promotion from tests/model.test.mjs; unavailable origin identity and biography omitted."
+    }
+  }
+]

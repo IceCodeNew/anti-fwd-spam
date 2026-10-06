@@ -225,6 +225,8 @@ mise exec -- uv run pywrangler secret put AI_GATEWAY_API_KEY
 
 Jev checks new user messages and referenced edits after the other moderation rules. A sufficiently high spam score deletes that message and permanently mutes its sender, preserving their earlier messages and leaving all blacklists unchanged. Group owners and administrators are protected. The threshold is `SPAM_THRESHOLD` in [model.py](src/anti_fwd_spam/model.py); a score is not an accuracy guarantee. Edits without a reference, service events, bot senders, and messages sent as a group or channel skip this check.
 
+See the [advertising criteria](docs/behavior.md#blacklists-and-content-checks-connect-to-two-actions) and [live Jev acceptance checks](docs/jev-checks.md).
+
 Temporary model failures leave the message visible while scheduled retries run. Temporary deletion and mute failures also retry; a deleted message stays deleted while a mute is pending. Keep the scheduled trigger enabled. Each model request can incur charges and can send the same content to another configured provider.
 
 To disable checks and pause pending model tasks, delete every configured model secret. For a Vercel-only setup:

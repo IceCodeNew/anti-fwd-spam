@@ -280,7 +280,7 @@ for (const [label, configure, status] of [
 }
 
 for (const argument of [
-  'http://t.me/addstickers/Valid_Pack', 'https://t.me.evil.test/addstickers/Valid_Pack',
+  'http://t.me/addstickers/Valid_Pack', 'https://t.me.example.invalid/addstickers/Valid_Pack',
   'https://t.me/addstickers/Valid_Pack/extra', 'https://t.me/addstickers/Valid_Pack?x=1',
   'https://t.me/addstickers/Valid_Pack#x', '@https://t.me/addstickers/Valid_Pack',
   'https://t.me/addstickers/', 'https://t.me/addstickers/Invalid-Name',

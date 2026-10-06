@@ -4,7 +4,9 @@ The [advertising contract](behavior.md#blacklists-and-content-checks-connect-to-
 
 Each case records its source PR, sample type, and reconstruction limits in `source`.
 
-The screenshot samples contain visible text and names. They omit unreadable nickname decorations and unavailable biographies. The contact samples omit phone numbers. Historical invite samples use example links and partial reference text.
+The screenshot samples retain advertising text and context. Names, contact destinations, and campaign identifiers use synthetic placeholders. Unreadable nickname decorations and unavailable biographies remain absent. Invite samples use non-routable `https://t.me/+<invite>` placeholders and partial reference text.
+
+Do not store real advertising destinations in source, tests, or documentation. Use `@<contact>` and `https://example.invalid/` for contact placeholders. Syntax-sensitive parser fixtures use synthetic handles, IDs, and sticker names. Keep the protocol syntax that each fixture tests. Preserve official service endpoints and project links.
 
 Cases with a nonempty `skip` reason retain samples assigned to local regex rules. The test reports them as skipped without a provider request. Payment-code samples remain active because PR #30 removed their dedicated regex. Reference cases remain active because references bypass regex.
 

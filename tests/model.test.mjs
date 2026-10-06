@@ -74,7 +74,7 @@ test('user: Given a media caption and unavailable biography, When classified, Th
 });
 
 test('user: Given a same-chat reply that endorses a spam message, When Jev flags the new sender, Then the reply is muted with one quoted context', async () => {
-  const spam = { ...message(80, 11), text: '看头像q Jai', reply_to_message: message(79, 11) };
+  const spam = { ...message(80, 11), text: '看头像q <contact>', reply_to_message: message(79, 11) };
   const current = { ...message(), text: '真的羡慕，联系这个号', reply_to_message: spam };
   model.probability = 0.96;
   telegram.send(current);
@@ -89,16 +89,16 @@ test('user: Given a same-chat reply that endorses a spam message, When Jev flags
 });
 
 test('user: Given a quoted ad with a sender whose biography matches a rule, When Jev rejects promotion, Then the quote and sender remain', async () => {
-  const current = { ...message(), text: '看头像q Jai 这是广告，别点',
-    reply_to_message: { ...message(80, 11), text: '看头像q Jai' } };
-  model.profiles.set(22, { bio: '看头像q Jai' });
+  const current = { ...message(), text: '看头像q <contact> 这是广告，别点',
+    reply_to_message: { ...message(80, 11), text: '看头像q <contact>' } };
+  model.profiles.set(22, { bio: '看头像q <contact>' });
   model.profiles.set(11, { bio: '收款码一天赚一万' });
   model.probability = 0;
   telegram.send(current);
   assert.equal((await dispatch({ update_id: 8, message: current })).status, 200);
   assert.equal(telegram.has(81), true);
   assert.equal(telegram.canSend(22), true);
-  assert.equal(model.state.bio, '看头像q Jai');
+  assert.equal(model.state.bio, '看头像q <contact>');
   assert.equal(model.state.context.reply_bio, '收款码一天赚一万');
 });
 
@@ -131,7 +131,7 @@ test('user: Given a contact with a resolvable account, When Jev classifies it, T
 
 test('user: Given an external quote, When Jev flags an endorsing sender, Then only the sender is muted and the bounded quote is context', async () => {
   const current = { ...message(), text: '真的羡慕，联系这个号', external_reply: { origin: { type: 'hidden_user' } },
-    quote: { text: '看头像q Jai'.repeat(200) } };
+    quote: { text: '看头像q <contact>'.repeat(200) } };
   model.probability = 0.96;
   telegram.send(current);
   assert.equal((await dispatch({ update_id: 7, message: current })).status, 200);

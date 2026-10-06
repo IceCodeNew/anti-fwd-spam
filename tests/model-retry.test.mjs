@@ -167,7 +167,7 @@ test('user: Given model moderation cancelled before muting, When a later edit ma
   await delivery;
   assert.equal(telegram.has(81), true);
   assert.equal(telegram.canSend(22), true);
-  const sourced = { ...message(), via_bot: { id: 273234066, is_bot: true, first_name: 'Source' } };
+  const sourced = { ...message(), via_bot: { id: 7788, is_bot: true, first_name: 'Source' } };
   telegram.send(sourced);
   await dispatch({ update_id: 3, edited_message: sourced });
   assert.equal(telegram.has(81), false);

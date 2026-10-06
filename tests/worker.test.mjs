@@ -48,7 +48,7 @@ test('user: Given a pending model task, When a listed reporter edits that messag
 
 for (const outcome of ['confirmed', 'response lost']) {
   test(`user keeps an administrative unmute after ${outcome}: Given an automatic mute took effect, When an administrator unmutes before redelivery, Then the user remains able to send and new spam is still moderated`, async () => {
-    const update = { update_id: 900, message: { ...message(), via_bot: { id: 273234066, is_bot: true } } };
+    const update = { update_id: 900, message: { ...message(), via_bot: { id: 7788, is_bot: true } } };
     telegram.send(update.message);
     if (outcome === 'response lost') {
       telegram.faults.set('restrictChatMember', async () => {
@@ -79,7 +79,7 @@ for (const outcome of ['confirmed', 'response lost']) {
 }
 
 test('user recovers automatic moderation: Given unavailable storage followed by a temporary Telegram rejection, When delivery resumes after recovery, Then the message stays deleted and muting eventually succeeds', async () => {
-  const update = { update_id: 1, message: { ...message(), via_bot: { id: 273234066, is_bot: true } } };
+  const update = { update_id: 1, message: { ...message(), via_bot: { id: 7788, is_bot: true } } };
   telegram.send(update.message);
   await database.prepare('ALTER TABLE automatic_mutes RENAME TO unavailable_mutes').run();
   try {
@@ -99,7 +99,7 @@ test('user recovers automatic moderation: Given unavailable storage followed by 
 
 test('user keeps an unmute across overlapping automatic deliveries: Given a delayed membership lookup, When another delivery finishes and an administrator unmutes, Then the late delivery preserves that permission', async () => {
   const entered = Promise.withResolvers(), release = Promise.withResolvers();
-  const update = { update_id: 1, message: { ...message(), via_bot: { id: 273234066, is_bot: true } } };
+  const update = { update_id: 1, message: { ...message(), via_bot: { id: 7788, is_bot: true } } };
   telegram.send(update.message);
   telegram.faults.set('getChatMember:22', () => { entered.resolve(); return release.promise; });
   const pending = dispatch(update);
@@ -118,7 +118,7 @@ test('user keeps an unmute across overlapping automatic deliveries: Given a dela
 });
 
 test('user expires mute identifiers: Given an automatic restriction, When redelivery and scheduled cleanup run, Then identifiers retain their original three-day expiry without storing content', async () => {
-  const update = { update_id: 1, message: { ...message(), via_bot: { id: 273234066, is_bot: true } } };
+  const update = { update_id: 1, message: { ...message(), via_bot: { id: 7788, is_bot: true } } };
   telegram.send(update.message);
   const before = Math.floor(Date.now() / 1000);
   assert.equal((await dispatch(update)).status, 200);
@@ -167,7 +167,7 @@ test('user clears recent history: Given observed messages from different senders
 });
 
 test('user keeps history: Given an old message, When a blacklisted inline message arrives, Then only the new message disappears and the sender is permanently muted', async () => {
-  const spam = { ...message(), via_bot: { id: 273234066, is_bot: true, first_name: 'Source' } };
+  const spam = { ...message(), via_bot: { id: 7788, is_bot: true, first_name: 'Source' } };
   const history = { ...message(80), date: Math.floor(Date.now() / 1000) - 3600 };
   telegram.send(history);
   assert.equal((await dispatch({ message: history })).status, 200);
@@ -386,7 +386,7 @@ test('user recovers indexing: Given unavailable index storage, When delivery res
   try {
     assert.equal((await dispatch({ message: recent })).status, 503);
     assert.equal(telegram.has(70), true);
-    const spam = { ...message(71), via_bot: { id: 273234066, is_bot: true } };
+    const spam = { ...message(71), via_bot: { id: 7788, is_bot: true } };
     telegram.send(spam);
     assert.equal((await dispatch({ update_id: 71, message: spam })).status, 503);
     assert.equal(telegram.has(71), false);
@@ -447,7 +447,7 @@ for (const status of ['creator', 'administrator']) {
       telegram.members.set(22, { status });
       const target = message();
       const update = automatic
-        ? { update_id: 71, message: { ...target, via_bot: { id: 273234066, is_bot: true } } }
+        ? { update_id: 71, message: { ...target, via_bot: { id: 7788, is_bot: true } } }
         : report(target);
       telegram.send(target);
       const history = { ...message(80), date: Math.floor(Date.now() / 1000) - 60 };
@@ -481,7 +481,7 @@ test('user protects anonymous senders: Given a target sent as a chat, When an ad
 test('user mutes a non-member commenter: Given a commenter with left status, When a rule matches their message, Then they are muted without losing history', async () => {
   telegram.members.set(22, { status: 'left' });
   telegram.send(message(80));
-  const spam = { ...message(), via_bot: { id: 273234066, is_bot: true } };
+  const spam = { ...message(), via_bot: { id: 7788, is_bot: true } };
   telegram.send(spam);
 
   assert.equal((await dispatch({ update_id: 1, message: spam })).status, 200);
@@ -558,11 +558,11 @@ test('user retains evidence during failure: Given unavailable report storage, Wh
     assert.equal((await dispatch(update)).status, 503);
     assert.equal(telegram.has(81), true);
     assert.equal(telegram.canSend(22), true);
-    update.message = { ...message(), via_bot: { id: 273234066, is_bot: true } };
+    update.message = { ...message(), via_bot: { id: 7788, is_bot: true } };
     assert.equal((await dispatch(update)).status, 503);
     assert.equal(telegram.has(81), false);
     assert.equal(telegram.canSend(22), false);
-    assert.equal(telegram.canJoin(273234066), true);
+    assert.equal(telegram.canJoin(7788), true);
   } finally {
     await database.prepare('ALTER TABLE unavailable_reports RENAME TO reports').run();
   }
@@ -642,14 +642,14 @@ test('user chooses the reported bot: Given username entities and UTF-16 offsets,
 
 test('user filters provenance: Given bot IDs and lookalike usernames, When messages arrive, Then only explicit blacklisted inline or forwarded bot origins are deleted', async () => {
   const cases = [
-    [{ via_bot: { id: 273234066, is_bot: true, username: 'renamed_bot' } }, true],
-    [{ via_bot: { id: 273234067, is_bot: true, username: 'PostBot' } }, false],
-    [{ forward_origin: { type: 'user', sender_user: { id: 273234066, is_bot: true } } }, true],
-    [{ forward_origin: { type: 'user', sender_user: { id: 273234066, is_bot: false } } }, false],
-    [{ forward_origin: { type: 'hidden_user', sender_user_name: 'PostBot' } }, false],
-    [{ forward_origin: { type: 'channel', chat: { id: -273234066, type: 'channel' } } }, false],
-    [{ text: '@PostBot', reply_to_message: { via_bot: { id: 273234066, is_bot: true } } }, false],
-    [{ from: { id: 273234066, is_bot: true } }, false],
+    [{ via_bot: { id: 7788, is_bot: true, username: 'renamed_bot' } }, true],
+    [{ via_bot: { id: 7789, is_bot: true, username: 'SyntheticSourceBot' } }, false],
+    [{ forward_origin: { type: 'user', sender_user: { id: 7788, is_bot: true } } }, true],
+    [{ forward_origin: { type: 'user', sender_user: { id: 7788, is_bot: false } } }, false],
+    [{ forward_origin: { type: 'hidden_user', sender_user_name: 'SyntheticSourceBot' } }, false],
+    [{ forward_origin: { type: 'channel', chat: { id: -7788, type: 'channel' } } }, false],
+    [{ text: '@synthetic_source_bot', reply_to_message: { via_bot: { id: 7788, is_bot: true } } }, false],
+    [{ from: { id: 7788, is_bot: true } }, false],
   ];
   for (const [index, [fields, expected]] of cases.entries()) {
     telegram.reset();
@@ -663,7 +663,7 @@ test('user filters provenance: Given bot IDs and lookalike usernames, When messa
 
 test('user limits filtering to groups: Given a private chat, channel or basic group, When a rule matches, Then only group messages are deleted and no member is restricted', async () => {
   for (const type of ['private', 'channel', 'group']) {
-    const target = { ...message(), chat: { ...chat, type }, via_bot: { id: 273234066, is_bot: true } };
+    const target = { ...message(), chat: { ...chat, type }, via_bot: { id: 7788, is_bot: true } };
     telegram.send(target);
     assert.equal((await dispatch({ update_id: 1, message: target })).status, 200);
     assert.equal(telegram.has(81), type !== 'group');
@@ -694,8 +694,8 @@ test('user rejects malformed updates: Given invalid identifiers or cross-chat re
     { message: { ...target, message_id: true } },
     { message: { ...target, chat: { id: 0, type: 'group' } } },
     { message: { ...target, chat: { id: -1, type: [] } } },
-    { message: { ...target, via_bot: { id: '273234066', is_bot: true } } },
-    { message: { ...target, via_bot: { id: 273234066, is_bot: false } } },
+    { message: { ...target, via_bot: { id: '7788', is_bot: true } } },
+    { message: { ...target, via_bot: { id: 7788, is_bot: false } } },
     { message: { ...target, forward_origin: { type: [] } } },
     report({ ...target, chat: { ...chat, id: -999 } }),
     report({ ...target, message_id: false }),
@@ -788,7 +788,7 @@ test('user keeps history when deletion fails: Given rejected or malformed Telegr
   for (const [index, [status, body, expected]] of cases.entries()) {
     telegram.send(message());
     telegram.faults.set('deleteMessage', () => new Response(body, { status }));
-    const response = await dispatch({ update_id: index, message: { ...message(), via_bot: { id: 273234066, is_bot: true } } });
+    const response = await dispatch({ update_id: index, message: { ...message(), via_bot: { id: 7788, is_bot: true } } });
     assert.equal(response.status, expected);
     assert.equal(telegram.has(81), true);
     assert.equal(telegram.canSend(22), true);

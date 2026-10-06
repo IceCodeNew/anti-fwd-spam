@@ -39,7 +39,7 @@ test('user protects administrators and other bots: Given protected senders and a
 
 test('user resumes indexed cleanup: Given a blacklisted inline sender and rejected batch deletion, When the update retries after manual unban, Then cleanup finishes without re-banning or falling back to single deletion', async () => {
   await database.exec('INSERT INTO blacklisted_users VALUES (123, 22, 1)');
-  const target = { ...message(), via_bot: { id: 273234066, is_bot: true, first_name: 'Source' } };
+  const target = { ...message(), via_bot: { id: 7788, is_bot: true, first_name: 'Source' } };
   const update = { update_id: 901, message: target };
   telegram.send(target);
   telegram.faults.set('deleteMessages', () => Response.json({ ok: false, error_code: 429 }, { status: 429 }));
@@ -131,12 +131,12 @@ test('user retries blacklist persistence without re-banning: Given storage fails
 });
 
 test('user excludes automatic mutes from shared bans: Given an inline source match, When automatic filtering mutes the sender, Then only the source bot enters the account blacklist', async () => {
-  const target = { ...message(), via_bot: { id: 273234066, is_bot: true, first_name: 'Source' } };
+  const target = { ...message(), via_bot: { id: 7788, is_bot: true, first_name: 'Source' } };
   telegram.send(target);
   assert.equal((await dispatch({ update_id: 1, message: target })).status, 200);
   assert.equal(telegram.canSend(22), false);
   assert.equal(telegram.canJoin(22), true);
-  assert.deepEqual((await database.prepare('SELECT user_id FROM blacklisted_users').all()).results, [{ user_id: 273234066 }]);
+  assert.deepEqual((await database.prepare('SELECT user_id FROM blacklisted_users').all()).results, [{ user_id: 7788 }]);
 });
 
 test('user: Given a blacklisted account, When only an edit of its message arrives, Then the account keeps its membership and message', async () => {
@@ -181,7 +181,7 @@ for (const mode of ['automatic source match', 'administrator report']) {
     const target = { ...message(), chat: { ...chat, type: 'group' } };
     const update = mode === 'administrator report' ? report(target) : {
       update_id: 901,
-      message: { ...target, via_bot: { id: 273234066, is_bot: true, first_name: 'Source' } },
+      message: { ...target, via_bot: { id: 7788, is_bot: true, first_name: 'Source' } },
     };
     update.message.chat = { ...target.chat };
     telegram.send({ ...message(70), chat: { ...target.chat } });

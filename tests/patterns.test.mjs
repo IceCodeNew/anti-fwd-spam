@@ -5,9 +5,9 @@ import { message } from './telegram-fake.mjs';
 
 model.enabled = true;
 
-const campaign = '@safdhifobot campaign_001 g1789957985962f8909ecd';
+const campaign = '@synthetic_campaign_bot campaign_001 synthetic_marker_001';
 const flood = ('💰'.repeat(23) + '\n').repeat(8) + '💰'.repeat(8);
-const invite = 'https://t.me/+ExampleInvite1234';
+const invite = 'https://t.me/+<invite>';
 
 for (const [text, reference, edited] of [
   [`🍿 前排留个位置，一起看热闹。\n${invite}`, 'same_chat', false],
@@ -46,8 +46,8 @@ for (const text of [
   `🍿 前排留个位置，一起看热闹。\n${invite}`, `🍉 来看看，有没有你漏掉的细节。\n${invite}`,
   `周六活动报名群：${invite}`,
   `这是广告，别点：🍿 前排留个位置，一起看热闹。\n${invite}`,
-  `🍿 前排留个位置，一起看热闹。\nhttps://t.me/example_group`,
-  `🍿 前排留个位置，一起看热闹。\nhttps://t.me.evil.test/+ExampleInvite1234`,
+  `🍿 前排留个位置，一起看热闹。\nhttps://example.invalid/group`,
+  `🍿 前排留个位置，一起看热闹。\nhttps://t.me.example.invalid/+ExampleInvite1234`,
   `🍿 看完再说，你会站哪边？\n${invite}\n这是垃圾广告，已举报`,
 ]) {
   test(`user: Given invite or discussion text ${JSON.stringify(text)}, When it replies to an invite lure without a model, Then neither reference nor current message causes local punishment`, async () => {
@@ -80,8 +80,8 @@ for (const context of ['same_chat', 'external']) {
 for (const text of [campaign, flood, '@example_bot campaign_2', '💰'.repeat(4), '🔴 '.repeat(4),
   '🔴说明：💰 \n💰\t💰 💰结束🔴', '💰说明：🔴🔴🔴🔴结束💰',
   `请警惕这种垃圾消息：${campaign}，不要点击`, '@example_bot campaign_1 this is a discussion',
-  '@example_bot campaign_1a', '极品新人小萝莉 ms7N', '萝莉资源私聊',
-  '达达妹🌼（约课上门）看头像q Jai', '看头像扣扣 12345', '看头像加q 123', '看头像q', '小雅 包夜上门']) {
+  '@example_bot campaign_1a', '极品新人小萝莉 <contact>', '萝莉资源私聊',
+  '示例昵称🌼（约课上门）看头像q <contact>', '看头像扣扣 12345', '看头像加q 123', '看头像q', '小雅 包夜上门']) {
   for (const field of ['text', 'caption', 'nickname', 'biography']) {
     test(`user: Given ${field} containing ${text === flood ? 'the screenshot flood' : JSON.stringify(text)}, When Jev would accept it, Then only that message is deleted and its sender muted`, async () => {
       const previous = message(80);
@@ -104,15 +104,15 @@ for (const text of [campaign, flood, '@example_bot campaign_2', '💰'.repeat(4)
       assert.equal(telegram.canJoin(22), true);
       assert.equal((await database.prepare('SELECT COUNT(*) AS n FROM blacklisted_users').first()).n, 0);
       assert.deepEqual((await database.prepare('SELECT source_id FROM blacklisted_sources').all()).results,
-        [{ source_id: 273234066 }]);
+        [{ source_id: 7788 }]);
       assert.equal(model.state, null);
     });
   }
 }
 
 for (const [name, contact] of [
-  ['the screenshot contact card', { first_name: '有收款码一天赚一万', phone_number: '6285198277256', user_id: 8247255987 }],
-  ['a contact name split across first and last name', { first_name: '有收款码', last_name: '日入3000+', phone_number: '6285198277256' }],
+  ['the screenshot contact card', { first_name: '有收款码一天赚一万', phone_number: '<phone>', user_id: 55 }],
+  ['a contact name split across first and last name', { first_name: '有收款码', last_name: '日入3000+', phone_number: '<phone>' }],
 ]) {
   test(`user: Given ${name}, When Jev classifies its income offer, Then only its spam decision deletes and mutes`, async () => {
     const target = message();
@@ -138,7 +138,7 @@ for (const [name, contact] of [
 
 test('user: Given a spam phrase split across first and last name, When Jev would accept it, Then only that message is deleted and its sender muted', async () => {
   const target = message();
-  target.from = { ...target.from, first_name: '看头像q', last_name: 'Jai' };
+  target.from = { ...target.from, first_name: '看头像q', last_name: '<contact>' };
   telegram.send(target);
   assert.equal((await dispatch({ update_id: 1, message: target })).status, 200);
   assert.equal(telegram.has(81), false);
@@ -166,9 +166,9 @@ test('user: Given a contact whose account biography matches a rule, When the car
 });
 
 test('user: Given an external quote whose own text matches a rule, When Jev finds no promotion, Then regex does not decide punishment', async () => {
-  const target = { ...message(), text: '看头像q Jai 这是广告，别点',
+  const target = { ...message(), text: '看头像q <contact> 这是广告，别点',
     external_reply: { origin: { type: 'hidden_user', sender_user_name: '未知' } },
-    quote: { text: '看头像q Jai' } };
+    quote: { text: '看头像q <contact>' } };
   model.probability = 0;
   telegram.send(target);
   assert.equal((await dispatch({ update_id: 1, message: target })).status, 200);
@@ -219,7 +219,7 @@ test('user: Given ordinary nicknames and biographies, When Jev accepts their mes
   const profiles = [
     ['明天约课', null], ['约课上门辅导 李老师', null], ['张师傅 上门服务', null], ['看头像', null],
     ['看头像Queen', null], ['萝莉塔裙子爱好者', null], ['User 22', '热爱萝莉塔和摄影'],
-    ['User 22', '频道 @example_channel 客服 @example_support'],
+    ['User 22', '频道 @<channel> 客服 @<support>'],
   ];
   for (const [index, [nickname, bio]] of profiles.entries()) {
     model.profile = bio === null ? null : { bio };

@@ -26,7 +26,7 @@ test('user: Given an unlisted member, When their reply mentions the bot and carr
   await setBindings({ REPORTER_IDS: '11' });
   const update = report(message(80, 11));
   update.message.from = message(82, 22).from;
-  update.message.text = '😀 @test_gate_bot @safdhifobot campaign_001';
+  update.message.text = '😀 @test_gate_bot @synthetic_campaign_bot campaign_001';
   telegram.send(update.message);
   telegram.send(update.message.reply_to_message);
   assert.equal((await dispatch(update)).status, 200);
@@ -126,10 +126,10 @@ for (const status of ['member', 'kicked', 'administrator', 'creator']) {
 
 test('user: Given an unlisted member, When their report quotes a campaign marker, Then evidence is saved and the member keeps speaking', async () => {
   await setBindings({ REPORTER_IDS: '33' });
-  const spam = { ...message(80, 11), text: '@safdhifobot campaign_001' };
+  const spam = { ...message(80, 11), text: '@synthetic_campaign_bot campaign_001' };
   const update = report(spam);
   update.message.from = message(82, 22).from;
-  update.message.text = '😀 @test_gate_bot @safdhifobot campaign_001';
+  update.message.text = '😀 @test_gate_bot @synthetic_campaign_bot campaign_001';
   telegram.send(update.message);
   assert.equal((await dispatch(update)).status, 200);
   assert.equal(telegram.has(82), true);
@@ -140,7 +140,7 @@ test('user: Given an unlisted member, When their report quotes a campaign marker
 test('user: Given an unlisted member, When Jev would flag their report, Then evidence is saved without a model task', async () => {
   await setBindings({ REPORTER_IDS: '33', EXPERIENTIAL_API_KEY: 'test-model-key' });
   model.probability = 1;
-  const update = report({ ...message(80, 11), text: '@safdhifobot campaign_001' });
+  const update = report({ ...message(80, 11), text: '@synthetic_campaign_bot campaign_001' });
   update.message.from = message(82, 22).from;
   update.message.text = '😀 @test_gate_bot 福利推广，联系我购买';
   telegram.send(update.message);

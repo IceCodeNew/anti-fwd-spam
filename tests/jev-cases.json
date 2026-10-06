@@ -2,17 +2,17 @@
   {
     "name": "energy-rental-agent-screenshot",
     "spam": true,
-    "message": {"from": {"first_name": "Kena", "last_name": "Berg"}, "text": "免费找能量代理！闪租低至1T 笔数2T\n机器人 @lcctrx2bot\n客服 @trx8119"},
+    "message": {"from": {"first_name": "Member"}, "text": "免费找能量代理！闪租低至1T 笔数2T\n机器人 @<energy_bot>\n客服 @<support>"},
     "source": {
       "date": "2026-10-06",
       "kind": "screenshot transcription",
-      "notes": "Visible body and name only; biography unknown. Bot handle appears to start with lowercase l. Display wrapping is omitted."
+      "notes": "Advertising text and context retained; names, contacts and campaign identifiers use synthetic placeholders. Unavailable profiles and unreadable decorations omitted."
     }
   },
   {
     "name": "energy-rental-agent-handle-variant",
     "spam": true,
-    "message": {"from": {"first_name": "Member"}, "text": "免费找能量代理! 闪租低至 1 T，笔数 2 T。机器人 @energy_example_bot 客服 @support_example"},
+    "message": {"from": {"first_name": "Member"}, "text": "免费找能量代理! 闪租低至 1 T，笔数 2 T。机器人 @<rental_bot> 客服 @<agent_contact>"},
     "source": {
       "date": "2026-10-06",
       "kind": "synthetic positive control",
@@ -22,7 +22,7 @@
   {
     "name": "energy-rental-own-ad-reference",
     "spam": true,
-    "message": {"from": {"first_name": "Member"}, "text": "TRON能量出租，闪租1TRX起，招代理，联系 @energy_example_bot", "reply_to_message": {"from": {"first_name": "Member"}, "text": "今天更新了钱包，转账时提示能量不足。"}},
+    "message": {"from": {"first_name": "Member"}, "text": "TRON能量出租，闪租1TRX起，招代理，联系 @<energy_bot>", "reply_to_message": {"from": {"first_name": "Member"}, "text": "今天更新了钱包，转账时提示能量不足。"}},
     "source": {
       "date": "2026-10-06",
       "kind": "synthetic positive control",
@@ -52,7 +52,7 @@
   {
     "name": "energy-rental-bot-support-question",
     "spam": false,
-    "message": {"from": {"first_name": "Member"}, "text": "我在 @energy_example_bot 租了能量但没到账，找客服 @support_example 能退款吗？"},
+    "message": {"from": {"first_name": "Member"}, "text": "我在 @<energy_bot> 租了能量但没到账，找客服 @<support> 能退款吗？"},
     "source": {
       "date": "2026-10-06",
       "kind": "synthetic negative control",
@@ -62,131 +62,131 @@
   {
     "name": "energy-rental-ad-warning-reference",
     "spam": false,
-    "message": {"from": {"first_name": "Member"}, "text": "这是能量租赁广告，别联系这些账号，我已经举报了。", "reply_to_message": {"from": {"first_name": "Kena", "last_name": "Berg"}, "text": "免费找能量代理！闪租低至1T 笔数2T\n机器人 @lcctrx2bot\n客服 @trx8119"}},
+    "message": {"from": {"first_name": "Member"}, "text": "这是能量租赁广告，别联系这些账号，我已经举报了。", "reply_to_message": {"from": {"first_name": "Member"}, "text": "免费找能量代理！闪租低至1T 笔数2T\n机器人 @<energy_bot>\n客服 @<support>"}},
     "source": {
       "date": "2026-10-06",
       "kind": "synthetic negative control",
-      "notes": "Warning about the observed ad; only the current sender is a moderation target."
+      "notes": "Synthetic intent control with a sanitized advertisement; unavailable profiles omitted."
     }
   },
   {
     "name": "energy-rental-copied-ad-report",
     "spam": false,
-    "message": {"from": {"first_name": "Member"}, "text": "举报这条广告：免费找能量代理！闪租低至1T 笔数2T，机器人 @lcctrx2bot，客服 @trx8119。请管理员处理，不要联系。"},
+    "message": {"from": {"first_name": "Member"}, "text": "举报这条广告：免费找能量代理！闪租低至1T 笔数2T，机器人 @<energy_bot>，客服 @<support>。请管理员处理，不要联系。"},
     "source": {
       "date": "2026-10-06",
       "kind": "synthetic negative control",
-      "notes": "Copied ad in an explicit report without reply metadata; protects warnings from text-only false positives."
+      "notes": "Synthetic intent control with a sanitized advertisement; unavailable profiles omitted."
     }
   },
   {
     "name": "payment-code-obfuscated-amount",
     "spam": true,
-    "message": {"from": {"first_name": "Sherry", "last_name": "Nolan"}, "text": "收款1ooo+码"},
+    "message": {"from": {"first_name": "Member"}, "text": "收款1ooo+码"},
     "source": {
       "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/32",
       "kind": "screenshot transcription",
-      "notes": "Visible text and readable names only; biography unknown; unreadable nickname decorations omitted. Contact phone numbers omitted."
+      "notes": "Advertising text and context retained; names, contacts and campaign identifiers use synthetic placeholders. Unavailable profiles and unreadable decorations omitted."
     }
   },
   {
     "name": "payment-code-recruitment-slang",
     "spam": true,
-    "message": {"from": {"first_name": "Caleb", "last_name": "Hoffman"}, "text": "带码收米莱 @DI88o"},
+    "message": {"from": {"first_name": "Member"}, "text": "带码收米莱 @<payment_contact>"},
     "source": {
       "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/32",
       "kind": "screenshot transcription",
-      "notes": "Visible text and readable names only; biography unknown; unreadable nickname decorations omitted. Contact phone numbers omitted."
+      "notes": "Advertising text and context retained; names, contacts and campaign identifiers use synthetic placeholders. Unavailable profiles and unreadable decorations omitted."
     }
   },
   {
     "name": "contact-easy-income",
     "spam": true,
-    "message": {"from": {"first_name": "Bradley", "last_name": "Buttram"}, "contact": {"first_name": "兼职一天赚5k."}},
+    "message": {"from": {"first_name": "Member"}, "contact": {"first_name": "兼职一天赚5k."}},
     "source": {
       "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/32",
       "kind": "screenshot transcription",
-      "notes": "Visible text and readable names only; biography unknown; unreadable nickname decorations omitted. Contact phone numbers omitted."
+      "notes": "Advertising text and context retained; names, contacts and campaign identifiers use synthetic placeholders. Unavailable profiles and unreadable decorations omitted."
     }
   },
   {
     "name": "contact-pinhole-placement-income",
     "spam": true,
-    "message": {"from": {"first_name": "Rafael", "last_name": "Fore"}, "contact": {"first_name": "针孔投放日入五位数"}},
+    "message": {"from": {"first_name": "Member"}, "contact": {"first_name": "针孔投放日入五位数"}},
     "source": {
       "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/32",
       "kind": "screenshot transcription",
-      "notes": "Visible text and readable names only; biography unknown; unreadable nickname decorations omitted. Contact phone numbers omitted."
+      "notes": "Advertising text and context retained; names, contacts and campaign identifiers use synthetic placeholders. Unavailable profiles and unreadable decorations omitted."
     }
   },
   {
     "name": "sexual-offer-no-deposit",
     "spam": true,
-    "message": {"from": {"first_name": "🔥诗悦2 s09年🎀无定 面付🎊"}, "text": "🌸粉嫩爽滑， ✨缅附， ⚡无锭金！\n@mmsao O"},
+    "message": {"from": {"first_name": "🔥示例昵称 s09年🎀无定 面付🎊"}, "text": "🌸粉嫩爽滑， ✨缅附， ⚡无锭金！\n@<service_contact> O"},
     "source": {
       "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/32",
       "kind": "screenshot transcription",
-      "notes": "Visible text and readable names only; biography unknown; unreadable nickname decorations omitted. Contact phone numbers omitted."
+      "notes": "Advertising text and context retained; names, contacts and campaign identifiers use synthetic placeholders. Unavailable profiles and unreadable decorations omitted."
     }
   },
   {
     "name": "sexual-offer-payment-euphemisms",
     "spam": true,
-    "message": {"from": {"first_name": "🔥诗悦2 s09年🎀无定 面付🎊"}, "text": "🩵柔软嫩滑， 💙无锭金， 💜缅附！\n@mmsao D"},
+    "message": {"from": {"first_name": "🔥示例昵称 s09年🎀无定 面付🎊"}, "text": "🩵柔软嫩滑， 💙无锭金， 💜缅附！\n@<service_contact> D"},
     "source": {
       "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/32",
       "kind": "screenshot transcription",
-      "notes": "Visible text and readable names only; biography unknown; unreadable nickname decorations omitted. Contact phone numbers omitted."
+      "notes": "Advertising text and context retained; names, contacts and campaign identifiers use synthetic placeholders. Unavailable profiles and unreadable decorations omitted."
     }
   },
   {
     "name": "private-invite-spectator",
     "spam": true,
-    "message": {"from": {"first_name": "Member"}, "text": "🍿 前排留个位置， 一起看热闹。\nhttps://t.me/+exampleInvite", "reply_to_message": {"from": {"first_name": "Member"}, "text": "别问为什么 1 号的事 2 号才来吐槽，问就是被气晕过…"}},
+    "message": {"from": {"first_name": "Member"}, "text": "🍿 前排留个位置， 一起看热闹。\nhttps://t.me/+<invite>", "reply_to_message": {"from": {"first_name": "Member"}, "text": "别问为什么 1 号的事 2 号才来吐槽，问就是被气晕过…"}},
     "source": {
       "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/30",
       "kind": "screenshot reconstruction",
-      "notes": "Example invite and reference URLs; truncated reference text; synthetic reply wrapper and Member names. Complete original payload and profiles unavailable."
+      "notes": "Advertising text and context retained; names, contacts and campaign identifiers use synthetic placeholders. Unavailable profiles and unreadable decorations omitted."
     }
   },
   {
     "name": "private-invite-detail",
     "spam": true,
-    "message": {"from": {"first_name": "Member"}, "text": "🍉 来看看，有没有你漏掉的细节。\nhttps://t.me/+exampleInvite", "reply_to_message": {"from": {"first_name": "Member"}, "text": "#晚安世界 https://www.youtube.com/watch?v=example"}},
+    "message": {"from": {"first_name": "Member"}, "text": "🍉 来看看，有没有你漏掉的细节。\nhttps://t.me/+<invite>", "reply_to_message": {"from": {"first_name": "Member"}, "text": "#晚安世界 https://example.invalid/video/example"}},
     "source": {
       "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/30",
       "kind": "screenshot reconstruction",
-      "notes": "Example invite and reference URLs; truncated reference text; synthetic reply wrapper and Member names. Complete original payload and profiles unavailable."
+      "notes": "Advertising text and context retained; names, contacts and campaign identifiers use synthetic placeholders. Unavailable profiles and unreadable decorations omitted."
     }
   },
   {
     "name": "private-invite-sides",
     "spam": true,
-    "message": {"from": {"first_name": "Member"}, "text": "🍿 看完再说，你会站哪边？\nhttps://t.me/+exampleInvite", "reply_to_message": {"from": {"first_name": "Member"}, "text": "今天是 Ingress First Saturday，我们很高兴迎来了…"}},
+    "message": {"from": {"first_name": "Member"}, "text": "🍿 看完再说，你会站哪边？\nhttps://t.me/+<invite>", "reply_to_message": {"from": {"first_name": "Member"}, "text": "今天是 Ingress First Saturday，我们很高兴迎来了…"}},
     "source": {
       "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/30",
       "kind": "screenshot reconstruction",
-      "notes": "Example invite and reference URLs; truncated reference text; synthetic reply wrapper and Member names. Complete original payload and profiles unavailable."
+      "notes": "Advertising text and context retained; names, contacts and campaign identifiers use synthetic placeholders. Unavailable profiles and unreadable decorations omitted."
     }
   },
   {
     "name": "private-invite-conclusion",
     "spam": true,
-    "message": {"from": {"first_name": "Member"}, "text": "📸 细节值得看，结论先别急。\nhttps://t.me/+exampleInvite", "reply_to_message": {"from": {"first_name": "Member"}, "text": "So today was Ingress First Saturday, and we ha…"}},
+    "message": {"from": {"first_name": "Member"}, "text": "📸 细节值得看，结论先别急。\nhttps://t.me/+<invite>", "reply_to_message": {"from": {"first_name": "Member"}, "text": "So today was Ingress First Saturday, and we ha…"}},
     "source": {
       "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/30",
       "kind": "screenshot reconstruction",
-      "notes": "Example invite and reference URLs; truncated reference text; synthetic reply wrapper and Member names. Complete original payload and profiles unavailable."
+      "notes": "Advertising text and context retained; names, contacts and campaign identifiers use synthetic placeholders. Unavailable profiles and unreadable decorations omitted."
     }
   },
   {
     "name": "private-invite-curiosity",
     "spam": true,
-    "message": {"from": {"first_name": "Member"}, "text": "🍉 带上你的好奇心，来围观。\nhttps://t.me/+exampleInvite", "reply_to_message": {"from": {"first_name": "Member"}, "text": "https://example.com/discussion"}},
+    "message": {"from": {"first_name": "Member"}, "text": "🍉 带上你的好奇心，来围观。\nhttps://t.me/+<invite>", "reply_to_message": {"from": {"first_name": "Member"}, "text": "https://example.invalid/discussion"}},
     "source": {
       "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/30",
       "kind": "screenshot reconstruction",
-      "notes": "Example invite and reference URLs; truncated reference text; synthetic reply wrapper and Member names. Complete original payload and profiles unavailable."
+      "notes": "Advertising text and context retained; names, contacts and campaign identifiers use synthetic placeholders. Unavailable profiles and unreadable decorations omitted."
     }
   },
   {
@@ -272,11 +272,11 @@
   {
     "name": "sexual-ad-report-reference",
     "spam": false,
-    "message": {"from": {"first_name": "Member"}, "text": "这是色情广告，别联系，我已经举报了。", "reply_to_message": {"from": {"first_name": "🔥诗悦2 s09年🎀无定 面付🎊"}, "text": "🌸粉嫩爽滑， ✨缅附， ⚡无锭金！\n@mmsao O"}},
+    "message": {"from": {"first_name": "Member"}, "text": "这是色情广告，别联系，我已经举报了。", "reply_to_message": {"from": {"first_name": "🔥示例昵称 s09年🎀无定 面付🎊"}, "text": "🌸粉嫩爽滑， ✨缅附， ⚡无锭金！\n@<service_contact> O"}},
     "source": {
       "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/32",
       "kind": "synthetic negative control",
-      "notes": "Representative discussion or warning; not a recovered missed message."
+      "notes": "Synthetic intent control with a sanitized advertisement; unavailable profiles omitted."
     }
   },
   {
@@ -292,7 +292,7 @@
   {
     "name": "topic-related-event-invite",
     "spam": false,
-    "message": {"from": {"first_name": "Member"}, "text": "周六 Ingress First Saturday 活动报名群：https://t.me/+exampleInvite", "reply_to_message": {"from": {"first_name": "Member"}, "text": "今天是 Ingress First Saturday，我们欢迎大家参加活动。"}},
+    "message": {"from": {"first_name": "Member"}, "text": "周六 Ingress First Saturday 活动报名群：https://t.me/+<invite>", "reply_to_message": {"from": {"first_name": "Member"}, "text": "今天是 Ingress First Saturday，我们欢迎大家参加活动。"}},
     "source": {
       "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/30",
       "kind": "synthetic negative control",
@@ -302,7 +302,7 @@
   {
     "name": "private-invite-warning",
     "spam": false,
-    "message": {"from": {"first_name": "Member"}, "text": "这是垃圾广告，别点链接，我已举报。", "reply_to_message": {"from": {"first_name": "Member"}, "text": "🍿 前排留个位置， 一起看热闹。\nhttps://t.me/+exampleInvite"}},
+    "message": {"from": {"first_name": "Member"}, "text": "这是垃圾广告，别点链接，我已举报。", "reply_to_message": {"from": {"first_name": "Member"}, "text": "🍿 前排留个位置， 一起看热闹。\nhttps://t.me/+<invite>"}},
     "source": {
       "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/30",
       "kind": "synthetic negative control",
@@ -312,11 +312,11 @@
   {
     "name": "campaign-marker-screenshot",
     "spam": true,
-    "message": {"from": {"first_name": "Member"}, "text": "@safdhifobot campaign_001 g1789957985962f8909ecd"},
+    "message": {"from": {"first_name": "Member"}, "text": "@synthetic_campaign_bot campaign_001 synthetic_marker_001"},
     "source": {
       "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/17",
       "kind": "historical screenshot fixture",
-      "notes": "Text preserved in tests/patterns.test.mjs at c8ebe34; synthetic sender; original profiles unavailable."
+      "notes": "Advertising text and context retained; names, contacts and campaign identifiers use synthetic placeholders. Unavailable profiles and unreadable decorations omitted."
     },
     "skip": "PR #17 campaign-marker regex remains; this sample is not a Jev acceptance requirement."
   },
@@ -327,18 +327,18 @@
     "source": {
       "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/17",
       "kind": "historical screenshot fixture",
-      "notes": "Emoji layout preserved in tests/patterns.test.mjs at c8ebe34; synthetic sender; original profiles unavailable."
+      "notes": "Advertising text and context retained; names, contacts and campaign identifiers use synthetic placeholders. Unavailable profiles and unreadable decorations omitted."
     },
     "skip": "PR #17 repeated-emoji regex remains; this sample is not a Jev acceptance requirement."
   },
   {
     "name": "sexual-text-and-nickname-screenshot",
     "spam": true,
-    "message": {"from": {"first_name": "达达妹🌼（约课上门）看头像q Jai"}, "text": "极品新人小萝莉 ms7N"},
+    "message": {"from": {"first_name": "示例昵称🌼（约课上门）看头像q <contact>"}, "text": "极品新人小萝莉 <contact>"},
     "source": {
       "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/26",
       "kind": "reported text and nickname",
-      "notes": "Exact text and nickname from the PR body; biography unavailable. PR #30 recorded a Jev miss at 0.71."
+      "notes": "Advertising text and context retained; names, contacts and campaign identifiers use synthetic placeholders. Unavailable profiles and unreadable decorations omitted."
     },
     "skip": "PR #26 sexual-solicitation and avatar-contact regex rules remain; PR #30 confirmed this model miss."
   },
@@ -406,7 +406,7 @@
   {
     "name": "contextual-event-invite",
     "spam": false,
-    "message": {"from": {"first_name": "Member"}, "text": "报名群在这里，欢迎大家参加：https://t.me/+exampleInvite", "reply_to_message": {"from": {"first_name": "Member"}, "text": "周六 Ingress First Saturday 活动，谁有这次活动的报名群链接？"}},
+    "message": {"from": {"first_name": "Member"}, "text": "报名群在这里，欢迎大家参加：https://t.me/+<invite>", "reply_to_message": {"from": {"first_name": "Member"}, "text": "周六 Ingress First Saturday 活动，谁有这次活动的报名群链接？"}},
     "source": {
       "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/30",
       "kind": "synthetic negative control",
@@ -416,21 +416,21 @@
   {
     "name": "avatar-ad-warning-reference",
     "spam": false,
-    "message": {"from": {"first_name": "Member"}, "text": "看头像q Jai 这是广告，别点", "reply_to_message": {"from": {"first_name": "Member"}, "text": "看头像q Jai"}},
+    "message": {"from": {"first_name": "Member"}, "text": "看头像q <contact> 这是广告，别点", "reply_to_message": {"from": {"first_name": "Member"}, "text": "看头像q <contact>"}},
     "source": {
       "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/28",
       "kind": "synthetic negative control",
-      "notes": "Based on tests/model.test.mjs warning scenario; biographies omitted, not reconstructed. Referenced messages bypass regex."
+      "notes": "Synthetic intent control with a sanitized advertisement; unavailable profiles omitted."
     }
   },
   {
     "name": "avatar-ad-promotion-reference",
     "spam": true,
-    "message": {"from": {"first_name": "Member"}, "text": "真的羡慕，联系这个号", "reply_to_message": {"from": {"first_name": "Member"}, "text": "看头像q Jai"}},
+    "message": {"from": {"first_name": "Member"}, "text": "真的羡慕，联系这个号", "reply_to_message": {"from": {"first_name": "Member"}, "text": "看头像q <contact>"}},
     "source": {
       "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/28",
       "kind": "synthetic positive control",
-      "notes": "Based on tests/model.test.mjs promotion scenario; synthetic sender names; biographies unknown. Reference bypasses regex, so Jev must decide promotion."
+      "notes": "Synthetic intent control with a sanitized advertisement; unavailable profiles omitted."
     }
   },
   {
@@ -441,6 +441,196 @@
       "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/28",
       "kind": "synthetic positive control",
       "notes": "Representative external-quote promotion from tests/model.test.mjs; unavailable origin identity and biography omitted."
+    }
+  },
+  {
+    "name": "crypto-btc-exchange-offer",
+    "spam": true,
+    "message": {"from": {"first_name": "Member"}, "text": "BTC比特币现货兑换，低手续费，大额优惠，买卖找 @<contact>"},
+    "source": {
+      "date": "2026-10-06",
+      "kind": "synthetic positive control",
+      "notes": "Cryptocurrency advertising boundary; non-routable contact and reserved-domain placeholders."
+    }
+  },
+  {
+    "name": "crypto-eth-investment-offer",
+    "spam": true,
+    "message": {"from": {"first_name": "Member"}, "text": "ETH以太坊投资带单，跟我每天稳赚，进群领策略 https://example.invalid/crypto"},
+    "source": {
+      "date": "2026-10-06",
+      "kind": "synthetic positive control",
+      "notes": "Cryptocurrency advertising boundary; non-routable contact and reserved-domain placeholders."
+    }
+  },
+  {
+    "name": "crypto-sol-agent-recruitment",
+    "spam": true,
+    "message": {"from": {"first_name": "Member"}, "text": "SOL索拉纳交易平台招代理，开户返佣，客户越多收入越高，联系 @<contact>"},
+    "source": {
+      "date": "2026-10-06",
+      "kind": "synthetic positive control",
+      "notes": "Cryptocurrency advertising boundary; non-routable contact and reserved-domain placeholders."
+    }
+  },
+  {
+    "name": "crypto-usdt-otc-offer",
+    "spam": true,
+    "message": {"from": {"first_name": "Member"}, "text": "USDT泰达币场外收售，量大价优，全天接单，联系 @<contact>"},
+    "source": {
+      "date": "2026-10-06",
+      "kind": "synthetic positive control",
+      "notes": "Cryptocurrency advertising boundary; non-routable contact and reserved-domain placeholders."
+    }
+  },
+  {
+    "name": "crypto-usdc-yield-offer",
+    "spam": true,
+    "message": {"from": {"first_name": "Member"}, "text": "USDC稳定币理财，保本高收益，立即转入领取奖励 https://example.invalid/yield"},
+    "source": {
+      "date": "2026-10-06",
+      "kind": "synthetic positive control",
+      "notes": "Cryptocurrency advertising boundary; non-routable contact and reserved-domain placeholders."
+    }
+  },
+  {
+    "name": "crypto-bnb-airdrop-offer",
+    "spam": true,
+    "message": {"from": {"first_name": "Member"}, "text": "BNB免费空投，马上连接钱包领币，名额有限 https://example.invalid/airdrop"},
+    "source": {
+      "date": "2026-10-06",
+      "kind": "synthetic positive control",
+      "notes": "Cryptocurrency advertising boundary; non-routable contact and reserved-domain placeholders."
+    }
+  },
+  {
+    "name": "crypto-doge-mining-offer",
+    "spam": true,
+    "message": {"from": {"first_name": "Member"}, "text": "DOGE狗狗币云挖矿套餐热卖，免费试用，招代理 @<contact>"},
+    "source": {
+      "date": "2026-10-06",
+      "kind": "synthetic positive control",
+      "notes": "Cryptocurrency advertising boundary; non-routable contact and reserved-domain placeholders."
+    }
+  },
+  {
+    "name": "crypto-xrp-english-offer",
+    "spam": true,
+    "message": {"from": {"first_name": "Member"}, "text": "Buy XRP here at low fees! Join our trading signals group for guaranteed daily returns: https://example.invalid/signals"},
+    "source": {
+      "date": "2026-10-06",
+      "kind": "synthetic positive control",
+      "notes": "Cryptocurrency advertising boundary; non-routable contact and reserved-domain placeholders."
+    }
+  },
+  {
+    "name": "crypto-wallet-service-offer",
+    "spam": true,
+    "message": {"from": {"first_name": "Member"}, "text": "多链钱包代开，转账手续费代付，ETH和SOL都支持，低价接单 @<contact>"},
+    "source": {
+      "date": "2026-10-06",
+      "kind": "synthetic positive control",
+      "notes": "Cryptocurrency advertising boundary; non-routable contact and reserved-domain placeholders."
+    }
+  },
+  {
+    "name": "crypto-token-only",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "BTC ETH SOL USDT USDC BNB XRP DOGE"},
+    "source": {
+      "date": "2026-10-06",
+      "kind": "synthetic negative control",
+      "notes": "Cryptocurrency advertising boundary; non-routable contact and reserved-domain placeholders."
+    }
+  },
+  {
+    "name": "crypto-price-discussion",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "比特币BTC和ETH最近的价格变化有什么原因？SOL和BNB手续费哪个便宜？"},
+    "source": {
+      "date": "2026-10-06",
+      "kind": "synthetic negative control",
+      "notes": "Cryptocurrency advertising boundary; non-routable contact and reserved-domain placeholders."
+    }
+  },
+  {
+    "name": "crypto-wallet-technical-question",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "USDC跨链转账为什么没到账？ETH gas费和SOL手续费怎么算，钱包如何检查交易状态？"},
+    "source": {
+      "date": "2026-10-06",
+      "kind": "synthetic negative control",
+      "notes": "Cryptocurrency advertising boundary; non-routable contact and reserved-domain placeholders."
+    }
+  },
+  {
+    "name": "crypto-defi-technical-discussion",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "质押、流动性挖矿和空投有什么区别？怎么识别USDT和USDC假合约？"},
+    "source": {
+      "date": "2026-10-06",
+      "kind": "synthetic negative control",
+      "notes": "Cryptocurrency advertising boundary; non-routable contact and reserved-domain placeholders."
+    }
+  },
+  {
+    "name": "crypto-order-support",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "我兑换的BTC还没到账，订单客服 @<contact> 说确认数不足，应该怎么看交易记录？"},
+    "source": {
+      "date": "2026-10-06",
+      "kind": "synthetic negative control",
+      "notes": "Cryptocurrency advertising boundary; non-routable contact and reserved-domain placeholders."
+    }
+  },
+  {
+    "name": "crypto-airdrop-warning",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "有人让连接钱包领BNB空投：https://example.invalid/airdrop，别点，这是广告，我已举报。"},
+    "source": {
+      "date": "2026-10-06",
+      "kind": "synthetic negative control",
+      "notes": "Cryptocurrency advertising boundary; non-routable contact and reserved-domain placeholders."
+    }
+  },
+  {
+    "name": "crypto-own-ad-normal-reference",
+    "spam": true,
+    "message": {"from": {"first_name": "Member"}, "text": "ETH投资带单，保本稳赚，联系 @<contact>", "reply_to_message": {"from": {"first_name": "Member"}, "text": "以太坊转账的gas费怎么算？"}},
+    "source": {
+      "date": "2026-10-06",
+      "kind": "synthetic positive control",
+      "notes": "Current-sender intent with a reference; non-routable contact placeholder."
+    }
+  },
+  {
+    "name": "crypto-ad-promotion-reference",
+    "spam": true,
+    "message": {"from": {"first_name": "Member"}, "text": "这个兑换服务便宜，大家快联系下单！", "reply_to_message": {"from": {"first_name": "Member"}, "text": "低价收售USDT，立即下单 @<contact>"}},
+    "source": {
+      "date": "2026-10-06",
+      "kind": "synthetic positive control",
+      "notes": "Current-sender intent with a reference; non-routable contact placeholder."
+    }
+  },
+  {
+    "name": "crypto-ad-warning-reference",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "这是加密货币广告，别联系，已经举报了。", "reply_to_message": {"from": {"first_name": "Member"}, "text": "低价收售USDT，立即下单 @<contact>"}},
+    "source": {
+      "date": "2026-10-06",
+      "kind": "synthetic negative control",
+      "notes": "Current-sender intent with a reference; non-routable contact placeholder."
+    }
+  },
+  {
+    "name": "crypto-normal-reference-discussion",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "我也想知道如何查询链上确认数。", "reply_to_message": {"from": {"first_name": "Member"}, "text": "BTC转账多久能确认？"}},
+    "source": {
+      "date": "2026-10-06",
+      "kind": "synthetic negative control",
+      "notes": "Current-sender intent with a reference; non-routable contact placeholder."
     }
   }
 ]

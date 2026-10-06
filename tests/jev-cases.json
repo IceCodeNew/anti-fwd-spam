@@ -1,5 +1,85 @@
 [
   {
+    "name": "energy-rental-agent-screenshot",
+    "spam": true,
+    "message": {"from": {"first_name": "Kena", "last_name": "Berg"}, "text": "免费找能量代理！闪租低至1T 笔数2T\n机器人 @lcctrx2bot\n客服 @trx8119"},
+    "source": {
+      "date": "2026-10-06",
+      "kind": "screenshot transcription",
+      "notes": "Visible body and name only; biography unknown. Bot handle appears to start with lowercase l. Display wrapping is omitted."
+    }
+  },
+  {
+    "name": "energy-rental-agent-handle-variant",
+    "spam": true,
+    "message": {"from": {"first_name": "Member"}, "text": "免费找能量代理! 闪租低至 1 T，笔数 2 T。机器人 @energy_example_bot 客服 @support_example"},
+    "source": {
+      "date": "2026-10-06",
+      "kind": "synthetic positive control",
+      "notes": "Changed contact handles and spacing; verifies the advertising offer without a fixed account identity."
+    }
+  },
+  {
+    "name": "energy-rental-own-ad-reference",
+    "spam": true,
+    "message": {"from": {"first_name": "Member"}, "text": "TRON能量出租，闪租1TRX起，招代理，联系 @energy_example_bot", "reply_to_message": {"from": {"first_name": "Member"}, "text": "今天更新了钱包，转账时提示能量不足。"}},
+    "source": {
+      "date": "2026-10-06",
+      "kind": "synthetic positive control",
+      "notes": "Sender-authored commercial solicitation attached to an ordinary technical reference."
+    }
+  },
+  {
+    "name": "energy-technical-discussion",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "TRON转USDT为什么消耗能量？质押TRX获得的能量和带宽有什么区别？"},
+    "source": {
+      "date": "2026-10-06",
+      "kind": "synthetic negative control",
+      "notes": "Technical resource discussion without a commercial offer."
+    }
+  },
+  {
+    "name": "energy-rental-price-question",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "能量闪租一笔1T、两笔2T是什么意思？租能量和直接烧TRX哪个便宜？"},
+    "source": {
+      "date": "2026-10-06",
+      "kind": "synthetic negative control",
+      "notes": "Rental-price question with the campaign's price vocabulary but no solicitation."
+    }
+  },
+  {
+    "name": "energy-rental-bot-support-question",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "我在 @energy_example_bot 租了能量但没到账，找客服 @support_example 能退款吗？"},
+    "source": {
+      "date": "2026-10-06",
+      "kind": "synthetic negative control",
+      "notes": "Customer support question with bot and support handles; not an offer to readers."
+    }
+  },
+  {
+    "name": "energy-rental-ad-warning-reference",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "这是能量租赁广告，别联系这些账号，我已经举报了。", "reply_to_message": {"from": {"first_name": "Kena", "last_name": "Berg"}, "text": "免费找能量代理！闪租低至1T 笔数2T\n机器人 @lcctrx2bot\n客服 @trx8119"}},
+    "source": {
+      "date": "2026-10-06",
+      "kind": "synthetic negative control",
+      "notes": "Warning about the observed ad; only the current sender is a moderation target."
+    }
+  },
+  {
+    "name": "energy-rental-copied-ad-report",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "举报这条广告：免费找能量代理！闪租低至1T 笔数2T，机器人 @lcctrx2bot，客服 @trx8119。请管理员处理，不要联系。"},
+    "source": {
+      "date": "2026-10-06",
+      "kind": "synthetic negative control",
+      "notes": "Copied ad in an explicit report without reply metadata; protects warnings from text-only false positives."
+    }
+  },
+  {
     "name": "payment-code-obfuscated-amount",
     "spam": true,
     "message": {"from": {"first_name": "Sherry", "last_name": "Nolan"}, "text": "收款1ooo+码"},

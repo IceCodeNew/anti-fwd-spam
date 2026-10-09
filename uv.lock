@@ -23,8 +23,8 @@ dev = [
 [package.metadata.requires-dev]
 dev = [
     { name = "ruff", specifier = "==0.16.10" },
-    { name = "workers-py", specifier = "==1.17.6" },
-    { name = "workers-runtime-sdk", specifier = "==1.9.2" },
+    { name = "workers-py", specifier = "==1.17.7" },
+    { name = "workers-runtime-sdk", specifier = "==1.9.3" },
 ]
 
 [[package]]
@@ -231,7 +231,7 @@ wheels = [
 
 [[package]]
 name = "workers-py"
-version = "1.17.6"
+version = "1.17.7"
 source = { registry = "https://pypi.flatt.tech/simple/" }
 dependencies = [
     { name = "click" },
@@ -242,16 +242,16 @@ dependencies = [
     { name = "rich" },
     { name = "workers-runtime-sdk" },
 ]
-sdist = { url = "https://pypi.flatt.tech/files/packages/48/2c/0dbb651b2e1f7b01439ab2cda6a0364613fb7e0f46e6cc82bb20c493506a/workers_py-1.17.6.tar.gz", hash = "sha256:867064b0c20a26d3a5ba0f22c0a0fb8ad159f5b55b4ec137927ce4a8539f8060", size = 73645, upload-time = "2026-10-01T04:58:59.723Z" }
+sdist = { url = "https://pypi.flatt.tech/files/packages/e6/fc/d99e4347840561c9b462e77fa91956b3960f6f95abc188a6b9132070c817/workers_py-1.17.7.tar.gz", hash = "sha256:b937f9c8ccde216ecbb2ba96e2cc7b0dd388947b855413c9e1d8a6f84606cccc", size = 74386, upload-time = "2026-10-06T04:01:18.502Z" }
 wheels = [
-    { url = "https://pypi.flatt.tech/files/packages/cd/c8/d214f46bbdecf92c783be63f92c35646ccd8461e913b9e184dabedf4f3b3/workers_py-1.17.6-py3-none-any.whl", hash = "sha256:4fe51890f4edb9232fdc37dac07abd032394b68c67f8faea009f523c55dc6d01", size = 18633, upload-time = "2026-10-01T04:58:58.194Z" },
+    { url = "https://pypi.flatt.tech/files/packages/27/e3/7d98af900d3db0f53befe3acf9c40badc237a5e4447ebce3f8570206e25a/workers_py-1.17.7-py3-none-any.whl", hash = "sha256:4bb9253798f7098fb5dc68f5d5f6ccaa267d1a205bc323fd4ebf4d4beeb2ffb1", size = 19506, upload-time = "2026-10-06T04:01:15.16Z" },
 ]
 
 [[package]]
 name = "workers-runtime-sdk"
-version = "1.9.2"
+version = "1.9.3"
 source = { registry = "https://pypi.flatt.tech/simple/" }
-sdist = { url = "https://pypi.flatt.tech/files/packages/5e/3e/28c37cda1158708d2f4495e974d357291213a1aff90e035492ed84a26e3a/workers_runtime_sdk-1.9.2.tar.gz", hash = "sha256:f8cd0dcc3f2d00c44e80a1f1aa57746ba824ab018e913d9129d86bd60a8eb725", size = 142757, upload-time = "2026-09-30T13:34:07.848Z" }
+sdist = { url = "https://pypi.flatt.tech/files/packages/c9/26/2616d75278d21004c0ea11d104f8f81c5ad94a9aeb6d2f4bf129419d47a5/workers_runtime_sdk-1.9.3.tar.gz", hash = "sha256:f2c043fb8a0385a9e3a2ec80d2f4ac4a742af4f5e69652e4df55714e29deaa2e", size = 143213, upload-time = "2026-10-06T04:01:19.461Z" }
 wheels = [
-    { url = "https://pypi.flatt.tech/files/packages/60/71/5a3f9e9832a92672ef2794161ad0fa3de5c58b482d6b4da853736ce9e762/workers_runtime_sdk-1.9.2-py3-none-any.whl", hash = "sha256:f928e20afddaaf01f216b3ced8884ca1e7675681bb44692add753317fc9ce89d", size = 38653, upload-time = "2026-09-30T13:34:06.19Z" },
+    { url = "https://pypi.flatt.tech/files/packages/aa/06/9472faa56bf7f3925d1128fda0532a9ec8adf3291a6003a4cf9c9d7972d0/workers_runtime_sdk-1.9.3-py3-none-any.whl", hash = "sha256:b3982ef01b824703258bbdd2c65980b8acc64f9dc5797f6b193eaf4f0808860f", size = 39541, upload-time = "2026-10-06T04:01:16.427Z" },
 ]

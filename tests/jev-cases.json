@@ -632,5 +632,155 @@
       "kind": "synthetic negative control",
       "notes": "Current-sender intent with a reference; non-routable contact placeholder."
     }
+  },
+  {
+    "name": "sim-screenshot-til-reply",
+    "spam": true,
+    "message": {"from": {"first_name": "Member"}, "text": "🇯🇵日本电话卡，支持esim｜三大运营商支持国际漫游，有质保。", "reply_to_message": {"from": {"first_name": "Member"}, "text": "#TIL https://example.invalid/status/1"}},
+    "source": {
+      "date": "2026-10-09",
+      "kind": "screenshot reconstruction",
+      "notes": "Advertising body matches the retained D1 report target. Partial reference text comes from the screenshot, not D1. Names and URLs use placeholders; profiles and hidden media remain unknown. Screenshot-to-message-ID mapping is not established."
+    }
+  },
+  {
+    "name": "sim-screenshot-concern-reply",
+    "spam": true,
+    "message": {"from": {"first_name": "Member"}, "text": "🇯🇵日本电话卡，支持esim｜三大运营商支持国际漫游，有质保。", "reply_to_message": {"from": {"first_name": "Member"}, "text": "🤔 说实话这有点可怕 https://example.invalid/status/2"}},
+    "source": {
+      "date": "2026-10-09",
+      "kind": "screenshot reconstruction",
+      "notes": "Advertising body matches the retained D1 report target. Partial reference text comes from the screenshot, not D1. Names and URLs use placeholders; profiles and hidden media remain unknown. Screenshot-to-message-ID mapping is not established."
+    }
+  },
+  {
+    "name": "sim-d1-report-target",
+    "spam": true,
+    "message": {"from": {"first_name": "Member"}, "text": "🇯🇵日本电话卡，支持esim｜三大运营商支持国际漫游，有质保。"},
+    "source": {
+      "date": "2026-10-08",
+      "kind": "D1 report target",
+      "notes": "Exact target body recovered from report 29049 referencing message 29048. Sender identity replaced; nested reply and biographies unavailable. Missing reference is a reconstruction limit, not evidence of an original standalone message."
+    }
+  },
+  {
+    "name": "sim-offer-related-reply",
+    "spam": true,
+    "message": {"from": {"first_name": "Member"}, "text": "🇯🇵日本电话卡，支持 esim | 三大运营商支持国际漫游，有质保。", "reply_to_message": {"from": {"first_name": "Member"}, "text": "去日本旅游时怎么让手机联网？"}},
+    "source": {
+      "date": "2026-10-09",
+      "kind": "synthetic positive control",
+      "notes": "Product and service solicitation boundary with reply context; synthetic identities and reserved-domain URLs."
+    }
+  },
+  {
+    "name": "sim-explicit-offer",
+    "spam": true,
+    "message": {"from": {"first_name": "Member"}, "text": "日本电话卡现货，支持eSIM和国际漫游，售后质保，需要的私聊。", "reply_to_message": {"from": {"first_name": "Member"}, "text": "去日本旅游时怎么让手机联网？"}},
+    "source": {
+      "date": "2026-10-09",
+      "kind": "synthetic positive control",
+      "notes": "Product and service solicitation boundary with reply context; synthetic identities and reserved-domain URLs."
+    }
+  },
+  {
+    "name": "sim-price-question",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "日本电话卡支持eSIM吗？三大运营商哪家国际漫游划算？", "reply_to_message": {"from": {"first_name": "Member"}, "text": "去日本旅游时怎么让手机联网？"}},
+    "source": {
+      "date": "2026-10-09",
+      "kind": "synthetic negative control",
+      "notes": "Product and service solicitation boundary with reply context; synthetic identities and reserved-domain URLs."
+    }
+  },
+  {
+    "name": "sim-own-experience",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "我上次去日本用了eSIM，回国后国际漫游正常，没找过售后。", "reply_to_message": {"from": {"first_name": "Member"}, "text": "去日本旅游时怎么让手机联网？"}},
+    "source": {
+      "date": "2026-10-09",
+      "kind": "synthetic negative control",
+      "notes": "Product and service solicitation boundary with reply context; synthetic identities and reserved-domain URLs."
+    }
+  },
+  {
+    "name": "sim-factual-answer",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "日本三大运营商都提供国际漫游，eSIM是否可用取决于手机和套餐。", "reply_to_message": {"from": {"first_name": "Member"}, "text": "日本电话卡能在国外用吗？"}},
+    "source": {
+      "date": "2026-10-09",
+      "kind": "synthetic negative control",
+      "notes": "Product and service solicitation boundary with reply context; synthetic identities and reserved-domain URLs."
+    }
+  },
+  {
+    "name": "sim-personal-support",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "我买的日本电话卡开不了国际漫游，卖家说有质保，怎么处理？", "reply_to_message": {"from": {"first_name": "Member"}, "text": "你那张卡现在能用吗？"}},
+    "source": {
+      "date": "2026-10-09",
+      "kind": "synthetic negative control",
+      "notes": "Product and service solicitation boundary with reply context; synthetic identities and reserved-domain URLs."
+    }
+  },
+  {
+    "name": "sim-benign-offtopic",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "突然想到，我的日本eSIM还没注销。", "reply_to_message": {"from": {"first_name": "Member"}, "text": "#TIL https://example.invalid/status/1"}},
+    "source": {
+      "date": "2026-10-09",
+      "kind": "synthetic negative control",
+      "notes": "Product and service solicitation boundary with reply context; synthetic identities and reserved-domain URLs."
+    }
+  },
+  {
+    "name": "sim-warning",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "这是电话卡推销广告，别联系，已举报。", "reply_to_message": {"from": {"first_name": "Member"}, "text": "🇯🇵日本电话卡，支持 esim | 三大运营商支持国际漫游，有质保。"}},
+    "source": {
+      "date": "2026-10-09",
+      "kind": "synthetic negative control",
+      "notes": "Product and service solicitation boundary with reply context; synthetic identities and reserved-domain URLs."
+    }
+  },
+  {
+    "name": "sim-quote-analysis",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "“🇯🇵日本电话卡，支持 esim | 三大运营商支持国际漫游，有质保。”这段文案是不是广告？", "reply_to_message": {"from": {"first_name": "Member"}, "text": "#TIL https://example.invalid/status/1"}},
+    "source": {
+      "date": "2026-10-09",
+      "kind": "synthetic negative control",
+      "notes": "Product and service solicitation boundary with reply context; synthetic identities and reserved-domain URLs."
+    }
+  },
+  {
+    "name": "sim-requested-recommendation",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "我上次用的eSIM可以漫游，你可以比较运营商的覆盖和资费。", "reply_to_message": {"from": {"first_name": "Member"}, "text": "去日本旅游求推荐上网方案。"}},
+    "source": {
+      "date": "2026-10-09",
+      "kind": "synthetic negative control",
+      "notes": "Product and service solicitation boundary with reply context; synthetic identities and reserved-domain URLs."
+    }
+  },
+  {
+    "name": "service-offtopic-offer",
+    "spam": true,
+    "message": {"from": {"first_name": "Member"}, "text": "笔记本维修，原厂配件，当天修好，保修一年。", "reply_to_message": {"from": {"first_name": "Member"}, "text": "今晚大家打什么游戏？"}},
+    "source": {
+      "date": "2026-10-09",
+      "kind": "synthetic positive control",
+      "notes": "Product and service solicitation boundary with reply context; synthetic identities and reserved-domain URLs."
+    }
+  },
+  {
+    "name": "service-own-experience",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "我上周修了笔记本，换了原厂配件，维修店给一年保修。", "reply_to_message": {"from": {"first_name": "Member"}, "text": "今晚大家打什么游戏？"}},
+    "source": {
+      "date": "2026-10-09",
+      "kind": "synthetic negative control",
+      "notes": "Product and service solicitation boundary with reply context; synthetic identities and reserved-domain URLs."
+    }
   }
 ]

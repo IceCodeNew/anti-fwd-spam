@@ -310,6 +310,25 @@
     }
   },
   {
+    "name": "profile-only-channel-promotion",
+    "spam": false,
+    "bio": "欢迎加入我的频道和我一起聊天 https://example.invalid/channel",
+    "message": {"from": {"first_name": "Member"}, "text": "来个样本捏"},
+    "source": {
+      "kind": "sanitized screenshot reconstruction",
+      "notes": "The sender biography contains a channel invitation, but the current message only requests a sample. The identity and destination are synthetic placeholders."
+    }
+  },
+  {
+    "name": "quoted-channel-promotion-discussion",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "好像是有点广告嫌疑，但这种就是会被封。", "reply_to_message": {"from": {"first_name": "Member"}, "text": "来个样本捏\n欢迎加入我的频道和我一起聊天 https://example.invalid/channel"}},
+    "source": {
+      "kind": "sanitized screenshot reconstruction",
+      "notes": "The current sender discusses the quoted message and explains the moderation risk; the current sender does not endorse or distribute the quoted promotion. The identity and destination are synthetic placeholders."
+    }
+  },
+  {
     "name": "campaign-marker-screenshot",
     "spam": true,
     "message": {"from": {"first_name": "Member"}, "text": "@synthetic_campaign_bot campaign_001 synthetic_marker_001"},

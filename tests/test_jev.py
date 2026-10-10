@@ -28,7 +28,8 @@ class JevAcceptanceTests(unittest.IsolatedAsyncioTestCase):
         config = ModelConfig(url, model, os.environ[provider])
         message = case["message"]
         assert isinstance(message, dict)
-        state = {**model_input(message), "bio": None}
+        bio = case.get("bio")
+        state = {**model_input(message), "bio": bio if isinstance(bio, str) else None}
         probability = await spam_probability(self.fetcher, config, state)
         self.assertIsNotNone(probability, "Jev must return a valid score")
         if probability is not None:

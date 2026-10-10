@@ -12,7 +12,7 @@ Cases with a nonempty `skip` reason retain samples assigned to local regex rules
 
 D1 report evidence can preserve a reported message without its nested reply. Completed model tasks discard their input, and the message index stores identifiers only. Use screenshot text for recoverable reply context, label that reconstruction, and leave unavailable profiles absent. Do not infer a historical model score from completed task status.
 
-Add recoverable missed text and normal controls to the same collection. Keep unknown fields absent. Mark synthetic controls and reconstructed context explicitly. Do not add a skip reason to hide a new model regression. Sticker images and blocked source identities are not text-classification cases.
+Add recoverable missed text and normal controls to the same collection. Keep unknown fields absent. Mark synthetic controls and reconstructed context explicitly. Profile-only invitations and replies that request, verify, discuss, warn about, or report quoted advertising are negative controls; they must not become spam solely because a biography or referenced message contains an invitation. Do not add a skip reason to hide a new model regression. Sticker images and blocked source identities are not text-classification cases.
 
 Export a key from `MODEL_PROVIDERS` in [model.py](../src/anti_fwd_spam/model.py) into your shell. Keep the key outside the repository. Run:
 

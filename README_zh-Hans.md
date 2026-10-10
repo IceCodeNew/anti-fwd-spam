@@ -223,7 +223,7 @@ mise exec -- uv run pywrangler secret put AI_GATEWAY_API_KEY
 
 bot 在其他管理规则之后，用 Jev 检查用户新消息及有引用的编辑消息。垃圾消息分数达到阈值时，bot 删除该条消息并永久禁言发送者，保留其历史消息，不加入任何黑名单。群主和管理员受保护。阈值见 [model.py](src/anti_fwd_spam/model.py) 中的 `SPAM_THRESHOLD`；分数不代表准确率。没有引用的编辑消息、服务事件、bot 消息及以群组或频道身份发送的消息不参与模型检查。
 
-商品、服务推销和加密货币招揽由 Jev 检查，没有专用本地正则。Jev 以当前消息作为意图的主要证据，简介和被引用的广告只提供上下文，不能单独构成推销。广告判定范围见[行为契约](docs/behavior.md#blacklists-and-content-checks-connect-to-two-actions)。修改 prompt 时，运行[真实 Jev 验收](docs/jev-checks.md)。
+商品、服务推销、加密货币招揽和群组/频道导流由 Jev 检查，没有专用本地正则。Jev 以当前消息作为意图的主要证据，简介和被引用的广告只提供上下文，不能单独构成推销。广告判定范围见[行为契约](docs/behavior.md#blacklists-and-content-checks-connect-to-two-actions)。修改 prompt 时，运行[真实 Jev 验收](docs/jev-checks.md)。
 
 模型请求临时失败时，bot 保留消息，等待定时重试。删除和禁言临时失败也会重试；消息已经删除时，bot 只继续处理待完成的禁言。请保留定时任务。每次模型请求都可能产生费用，也可能向另一个已配置平台发送相同内容。
 

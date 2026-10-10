@@ -300,6 +300,33 @@
     }
   },
   {
+    "name": "generic-group-migration-invite",
+    "spam": true,
+    "message": {"from": {"first_name": "Member"}, "text": "本群已停用，请加入新群一起聊天：https://example.invalid/new-group"},
+    "source": {
+      "kind": "sanitized screenshot reconstruction",
+      "notes": "Generic group replacement invitation without a concrete discussion, event, learning, or collaboration purpose; destination is a placeholder."
+    }
+  },
+  {
+    "name": "topic-related-group-migration",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "本群停用后请加入新群，继续讨论这个项目：https://example.invalid/group", "reply_to_message": {"from": {"first_name": "Member"}, "text": "这里讨论这个项目的进展。"}},
+    "source": {
+      "kind": "synthetic negative control",
+      "notes": "A concrete group migration keeps the same discussion purpose; the destination is a placeholder."
+    }
+  },
+  {
+    "name": "bare-public-group-link",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "https://example.invalid/group"},
+    "source": {
+      "kind": "synthetic negative control",
+      "notes": "A destination link without invitation, benefit, or purpose is insufficient by itself."
+    }
+  },
+  {
     "name": "private-invite-warning",
     "spam": false,
     "message": {"from": {"first_name": "Member"}, "text": "这是垃圾广告，别点链接，我已举报。", "reply_to_message": {"from": {"first_name": "Member"}, "text": "🍿 前排留个位置， 一起看热闹。\nhttps://t.me/+<invite>"}},
@@ -310,6 +337,42 @@
     }
   },
   {
+    "name": "public-channel-invite",
+    "spam": true,
+    "message": {"from": {"first_name": "Member"}, "text": "欢迎加入我的频道和我一起聊天 https://example.invalid/channel"},
+    "source": {
+      "kind": "synthetic positive control",
+      "notes": "Direct channel invitation with no concrete discussion, event, warning, or report purpose. The destination is a placeholder."
+    }
+  },
+  {
+    "name": "public-group-invite",
+    "spam": true,
+    "message": {"from": {"first_name": "Member"}, "text": "欢迎加入新群，进来一起聊天 https://example.invalid/group"},
+    "source": {
+      "kind": "synthetic positive control",
+      "notes": "Direct group invitation with no concrete discussion, event, warning, or report purpose. The destination is a placeholder."
+    }
+  },
+  {
+    "name": "public-channel-exclusive-content-invite",
+    "spam": true,
+    "message": {"from": {"first_name": "Member"}, "text": "频道每天分享独家内容，欢迎加入 https://example.invalid/channel"},
+    "source": {
+      "kind": "synthetic positive control",
+      "notes": "Channel invitation paired with a generic content promise and no concrete discussion purpose. The destination is a placeholder."
+    }
+  },
+  {
+    "name": "quoted-public-channel-promotion",
+    "spam": true,
+    "message": {"from": {"first_name": "Member"}, "text": "推荐这个频道，快加入一起聊天 https://example.invalid/channel", "reply_to_message": {"from": {"first_name": "Member"}, "text": "欢迎加入我的频道和我一起聊天 https://example.invalid/channel"}},
+    "source": {
+      "kind": "synthetic positive control",
+      "notes": "The current sender actively promotes a quoted channel invitation; the destination is a placeholder."
+    }
+  },
+  {
     "name": "profile-only-channel-promotion",
     "spam": false,
     "bio": "欢迎加入我的频道和我一起聊天 https://example.invalid/channel",
@@ -317,6 +380,16 @@
     "source": {
       "kind": "sanitized screenshot reconstruction",
       "notes": "The sender biography contains a channel invitation, but the current message only requests a sample. The identity and destination are synthetic placeholders."
+    }
+  },
+  {
+    "name": "profile-only-sexual-promotion",
+    "spam": false,
+    "bio": "提供色情资源和性服务 @<service_contact>",
+    "message": {"from": {"first_name": "Member"}, "text": "来个样本捏"},
+    "source": {
+      "kind": "synthetic negative control",
+      "notes": "The sender biography contains a sexual-service offer, but the current message only requests a sample; identity and contact are placeholders."
     }
   },
   {

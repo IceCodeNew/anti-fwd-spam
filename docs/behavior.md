@@ -27,7 +27,49 @@ For a new group message, processing follows this order:
 7. Queue Jev classification for the remaining eligible input.
 8. Leave the message unchanged when no rule or model decision reaches the configured threshold.
 
+```mermaid
+flowchart TD
+    A[Authenticated Telegram update] --> B{Supported command?}
+    B -->|Listed /bs| C[Authorize and handle command]
+    B -->|No| D{Group message?}
+    D -->|No| E[Ignore, except commands]
+    D -->|Yes| F[Match source and account blacklists]
+    F -->|Source match| G[Action 1 on sender and Action 2 on source]
+    F -->|Account match| H[Action 2 on account]
+    F -->|No blacklist match| I[Index eligible message]
+    I --> J{Reply report?}
+    J -->|Trusted| K[Action 2 on reported sender]
+    J -->|Unlisted| L[Save evidence only]
+    J -->|No report| M{Reference present?}
+    M -->|Yes| N[Jev with bounded reference context]
+    M -->|No| O[Local text/profile/sticker rules]
+    O -->|Match| P[Action 1 on current sender]
+    O -->|No match| N
+    N -->|Spam at threshold| P
+    N -->|Below threshold or unavailable| Q[Leave message unchanged]
+```
+
 A message with a same-chat reply, external reply, or quote bypasses local regex and sticker-list checks. Jev receives only the bounded fields Telegram supplied for the current message and its reference. A forum topic attachment that is not an explicit reply does not count as a reference.
+
+## Moderation decision map
+
+The two moderation actions have different targets. A source match handles the sender and source independently; a trusted report handles the explicitly reported account; an automatic content match handles only the current sender.
+
+```mermaid
+flowchart LR
+    A[Moderation trigger] --> B{Trigger type}
+    B -->|Registered source| C[Current sender A: Action 1]
+    B -->|Registered source| D[Source bot B: Action 2]
+    B -->|Trusted reply report| E[Reported account A: Action 2]
+    B -->|Local rule, sticker, or Jev| F[Current sender A: Action 1]
+    G[Unlisted report] --> H[Evidence only]
+    C --> I{Protected administrator or owner?}
+    F --> I
+    I -->|Yes| J[Keep message/account protected]
+    I -->|No| K[Delete current message and mute when supported]
+    D --> L[Ban and clean eligible indexed history]
+    E --> L
+```
 
 ## Moderation outcomes
 

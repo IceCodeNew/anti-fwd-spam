@@ -6,7 +6,14 @@ import unittest
 from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
-from anti_fwd_spam.model import ModelConfig, ModelRetryError, model_input, sender_bio, spam_probability
+from anti_fwd_spam.model import (
+    ModelConfig,
+    ModelRetryError,
+    extract_profile_handles,
+    model_input,
+    sender_bio,
+    spam_probability,
+)
 from tests.test_telegram import ClockLoop
 
 if TYPE_CHECKING:
@@ -14,6 +21,25 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
 CONFIG = ModelConfig("https://api.experientiallabs.ai/v1/systemone", "jev-latest", "test-key")
+
+
+class ProfileHandleTests(unittest.TestCase):
+    def test_user_extracts_only_bounded_public_handles(self) -> None:
+        """user: Given profile links, When parsed, Then unique public handles remain."""
+        self.assertEqual(
+            extract_profile_handles(
+                "频道 @Example_Channel https://t.me/Example_Channel https://telegram.me/Other_Group "
+                "https://t.me/+private https://example.invalid/public @Example_Channel"
+            ),
+            ("example_channel", "other_group"),
+        )
+
+    def test_user_rejects_non_public_or_oversized_profile_targets(self) -> None:
+        """user: Given private links or oversized profile text, When parsed, Then no targets are returned."""
+        self.assertEqual(
+            extract_profile_handles("https://t.me/+invite https://t.me/joinchat/hash https://t.me/c/1/2"), ()
+        )
+        self.assertEqual(extract_profile_handles("x" * 4097), ())
 
 
 class StreamingResponse:

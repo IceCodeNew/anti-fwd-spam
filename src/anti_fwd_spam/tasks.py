@@ -11,7 +11,14 @@ from typing import TYPE_CHECKING
 
 from .actions import Actions
 from .evidence import MESSAGE_WINDOW_SECONDS, RETENTION_SECONDS, storage_errors
-from .model import SPAM_THRESHOLD, ModelRetryError, spam_probability, user_profile
+from .model import (
+    SPAM_THRESHOLD,
+    ModelRetryError,
+    extract_profile_handles,
+    public_profile,
+    spam_probability,
+    user_profile,
+)
 from .policy import matches_spam_text
 
 if TYPE_CHECKING:
@@ -35,10 +42,9 @@ class Task:
     generation: int
 
 
-async def enrich_profiles(
+async def _fetch_account_profiles(
     state: dict[str, object], identifiers: object, sender_id: int | None, fetcher: Fetch, token: str
-) -> None:
-    """Fetch independent private profiles concurrently within the task lease."""
+) -> dict[str, str | None]:
     ids = identifiers if isinstance(identifiers, dict) else {}
     context = state.get("context")
     contact = state.get("contact")
@@ -50,8 +56,9 @@ async def enrich_profiles(
     if isinstance(contact, dict) and type(ids.get("contact")) is int:
         pending.append(("contact", ids["contact"]))
     profiles = await asyncio.gather(*(user_profile(fetcher, token, identifier) for _, identifier in pending))
-    state["bio"] = None
+    bios: dict[str, str | None] = {}
     for (role, _), (nickname, biography) in zip(pending, profiles, strict=True):
+        bios[role] = biography
         if role == "sender":
             state["bio"] = biography
         elif role == "reply" and isinstance(context, dict) and biography is not None:
@@ -61,6 +68,33 @@ async def enrich_profiles(
                 contact["nickname"] = nickname
             if biography is not None:
                 contact["bio"] = biography
+    return bios
+
+
+async def _enrich_public_targets(
+    state: dict[str, object], bios: dict[str, str | None], fetcher: Fetch, token: str
+) -> None:
+    candidates = [(role, handle) for role, bio in bios.items() for handle in extract_profile_handles(bio)]
+    unique: list[tuple[str, str]] = []
+    for candidate in candidates:
+        if candidate not in unique:
+            unique.append(candidate)
+    profiles = await asyncio.gather(*(public_profile(fetcher, token, handle) for _, handle in unique[:3]))
+    destinations: dict[str, list[dict[str, str]]] = {}
+    for (role, _), profile in zip(unique[:3], profiles, strict=True):
+        if profile is not None:
+            destinations.setdefault(role, []).append(profile)
+    if destinations:
+        state["profile_targets"] = destinations
+
+
+async def enrich_profiles(
+    state: dict[str, object], identifiers: object, sender_id: int | None, fetcher: Fetch, token: str
+) -> None:
+    """Fetch independent profiles and public bio targets concurrently within the task lease."""
+    state["bio"] = None
+    bios = await _fetch_account_profiles(state, identifiers, sender_id, fetcher, token)
+    await _enrich_public_targets(state, bios, fetcher, token)
 
 
 def deferred_regex_match(state: dict[str, object]) -> bool:

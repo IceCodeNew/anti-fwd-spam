@@ -115,6 +115,45 @@ test('user: Given an external quote with an identifiable sender, When classified
   assert.equal(JSON.stringify(model.state).includes('"id":44'), false);
 });
 
+test('user: Given public targets in sender and referenced profiles, When Jev classifies the message, Then sanitized source profiles reach Jev without identifiers', async () => {
+  model.profile = { bio: '我的频道 @Example_Channel https://t.me/Example_Channel' };
+  telegram.accounts.set('@example_channel', {
+    id: -10055, type: 'channel', username: 'Example_Channel', title: 'Example Channel',
+    description: 'Public description', invite_link: 'https://t.me/+private', permissions: { can_send_messages: false },
+  });
+  const current = { ...message(), text: '来个样本捏', reply_to_message: { ...message(80, 11), text: '普通讨论' } };
+  model.profiles.set(11, { bio: '引用作者的群 @Example_Group' });
+  telegram.accounts.set('@example_group', {
+    id: -10056, type: 'supergroup', username: 'Example_Group', title: 'Example Group', description: 'Group description',
+  });
+  model.probability = 0;
+  telegram.send(current);
+  assert.equal((await dispatch({ update_id: 13, message: current })).status, 200);
+  assert.deepEqual(telegram.getChatCalls.sort(), ['@example_channel', '@example_group']);
+  assert.deepEqual(model.state.profile_targets.sender, [
+    { type: 'channel', title: 'Example Channel', username: 'Example_Channel', description: 'Public description' },
+  ]);
+  assert.deepEqual(model.state.profile_targets.reply, [
+    { type: 'supergroup', title: 'Example Group', username: 'Example_Group', description: 'Group description' },
+  ]);
+  assert.equal(JSON.stringify(model.state).includes('10055'), false);
+  assert.equal(JSON.stringify(model.state).includes('private'), false);
+  assert.equal(JSON.stringify(model.state).includes('permissions'), false);
+});
+
+test('user: Given an unresolved or private bio target, When Jev classifies the message, Then it stays unknown and Jev still runs once', async () => {
+  model.profile = { bio: '个人频道 @Unknown_Channel https://t.me/+private' };
+  telegram.faults.set('getChat', () => Response.json({ ok: false, error_code: 400 }, { status: 400 }));
+  let requests = 0;
+  model.response = () => { requests += 1; return Response.json({ model: 'jev-latest', answers: { spam: { type: 'noul', noul: 0 } } }); };
+  const current = message();
+  telegram.send(current);
+  assert.equal((await dispatch({ update_id: 14, message: current })).status, 200);
+  assert.deepEqual(telegram.getChatCalls, ['@unknown_channel']);
+  assert.equal(requests, 1);
+  assert.equal(model.state.profile_targets, undefined);
+});
+
 test('user: Given a contact with a resolvable account, When Jev classifies it, Then the card name and account profile are supplied without the phone number', async () => {
   const current = { ...message(), contact: { first_name: '普通名字', user_id: 55, phone_number: '8613800000000' } };
   delete current.text;

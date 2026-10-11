@@ -312,11 +312,11 @@
   {
     "name": "profile-only-channel-promotion",
     "spam": false,
-    "bio": "欢迎加入我的频道和我一起聊天 https://example.invalid/channel",
+    "bio": "我的频道：@<channel>",
     "message": {"from": {"first_name": "Member"}, "text": "来个样本捏"},
     "source": {
       "kind": "sanitized screenshot reconstruction",
-      "notes": "The sender biography contains a channel invitation, but the current message only requests a sample. The identity and destination are synthetic placeholders."
+      "notes": "The sender biography names a personal channel without an invitation; the current message only requests a sample. The identity and destination are synthetic placeholders."
     }
   },
   {

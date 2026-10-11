@@ -300,6 +300,15 @@
     }
   },
   {
+    "name": "generic-group-replacement-invite",
+    "spam": true,
+    "message": {"from": {"first_name": "Member"}, "text": "本群已停用，请加入新群一起聊天：https://example.invalid/new-group"},
+    "source": {
+      "kind": "sanitized screenshot reconstruction",
+      "notes": "Generic replacement-group invitation without a concrete discussion, event, learning, or collaboration purpose; destination is a placeholder."
+    }
+  },
+  {
     "name": "private-invite-warning",
     "spam": false,
     "message": {"from": {"first_name": "Member"}, "text": "这是垃圾广告，别点链接，我已举报。", "reply_to_message": {"from": {"first_name": "Member"}, "text": "🍿 前排留个位置， 一起看热闹。\nhttps://t.me/+<invite>"}},
@@ -445,21 +454,21 @@
   {
     "name": "avatar-ad-promotion-reference",
     "spam": true,
-    "message": {"from": {"first_name": "Member"}, "text": "真的羡慕，联系这个号", "reply_to_message": {"from": {"first_name": "Member"}, "text": "看头像q <contact>"}},
+    "message": {"from": {"first_name": "Member"}, "text": "这是好东西，欢迎联系这个账号，直接私聊下单", "reply_to_message": {"from": {"first_name": "Member"}, "text": "看头像q <contact>"}},
     "source": {
       "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/28",
       "kind": "synthetic positive control",
-      "notes": "Synthetic intent control with a sanitized advertisement; unavailable profiles omitted."
+      "notes": "The current reply explicitly endorses and directs readers to the referenced contact; all identity fields are placeholders."
     }
   },
   {
     "name": "payment-ad-promotion-external-quote",
     "spam": true,
-    "message": {"from": {"first_name": "Member"}, "text": "推荐这个", "external_reply": {"origin": {"type": "hidden_user"}}, "quote": {"text": "收款码一天赚一万"}},
+    "message": {"from": {"first_name": "Member"}, "text": "这是靠谱的招募，大家直接联系并加入", "external_reply": {"origin": {"type": "hidden_user"}}, "quote": {"text": "收款码一天赚一万"}},
     "source": {
       "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/28",
       "kind": "synthetic positive control",
-      "notes": "Representative external-quote promotion from tests/model.test.mjs; unavailable origin identity and biography omitted."
+      "notes": "The current reply explicitly endorses the quoted recruitment and directs readers to join/contact it; origin identity is unavailable."
     }
   },
   {

@@ -324,6 +324,18 @@ test('user: Given an unreferenced disabled-group replacement notice from an admi
   assert.equal(telegram.members.get(22).status, 'administrator');
 });
 
+test('user: Given a referenced disabled-group notice, When received, Then local maintenance filtering is bypassed and Jev receives it', async () => {
+  model.probability = 0;
+  const target = { ...message(), text: '本群已停用，请加入新群继续讨论：https://example.invalid/new-group',
+    reply_to_message: { ...message(80), text: '群里正在讨论活动安排' } };
+  telegram.send(target);
+  assert.equal((await dispatch({ update_id: 1, message: target })).status, 200);
+  assert.equal(telegram.has(81), true);
+  assert.equal(telegram.canSend(22), true);
+  assert.equal(model.state.message.text, target.text);
+  assert.equal(model.state.context.reply.text, target.reply_to_message.text);
+});
+
 test('user: Given spam outside local patterns, When Jev flags it, Then model moderation still deletes and mutes', async () => {
   model.probability = 1;
   const target = { ...message(), text: '福利推广，联系我购买' };

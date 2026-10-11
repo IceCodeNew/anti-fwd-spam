@@ -50,7 +50,7 @@ Reporting identity, administrator protection, source attribution, sticker handli
 
 Jev is used after local rules, blacklist checks, sticker checks, and report handling. It receives the bounded message context selected by the bot; media is not downloaded or inspected. A provider may charge for requests and may receive user-provided text and profile data, so review its terms before enabling the feature.
 
-The model uses the current sender's intent as the primary evidence. Referenced content and profile data remain source-separated. A narrow project-recruitment hint is added only when the current message and sender biography both support that interpretation. The inclusive threshold is maintained in `SPAM_THRESHOLD` in `src/anti_fwd_spam/constants.py` and is currently `0.90`.
+The model uses the current sender's intent as the primary evidence. Referenced content and profile data remain source-separated. A narrow project-recruitment hint is added only when the current message and sender biography both support that interpretation. A score at or above the configured inclusive threshold triggers the same current-message moderation action; see [Jev checks](docs/jev-checks.md) for the validation procedure.
 
 Read [Jev checks](docs/jev-checks.md) before running live model tests. Provider configuration belongs in deployment secrets, not in repository files.
 

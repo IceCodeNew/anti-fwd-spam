@@ -6,8 +6,10 @@ import asyncio
 import dataclasses
 import json
 import logging
+import re
 from http import HTTPMethod, HTTPStatus
 from typing import TYPE_CHECKING
+from urllib.parse import urlsplit
 
 from .policy import MAX_TELEGRAM_ID, display_name, reply_target
 from .telegram import TelegramError, call_method
@@ -68,26 +70,81 @@ MODEL_CONTENT_FIELDS = MEDIA_FIELDS | frozenset(
         "giveaway",
     }
 )
+PROFILE_HANDLE_RE = re.compile(r"(?<![A-Za-z0-9_/@])@([A-Za-z0-9_]{1,32})(?![A-Za-z0-9_])")
+PUBLIC_PROFILE_HOSTS = frozenset({"t.me", "telegram.me"})
+MAX_PROFILE_HANDLES = 3
+MAX_PROFILE_BIO_BYTES = 4096
+MAX_PROFILE_TEXT = 512
+
+
+def extract_profile_handles(bio: object) -> tuple[str, ...]:
+    """Extract a few public Telegram handles from untrusted profile text."""
+    if not isinstance(bio, str) or len(bio.encode()) > MAX_PROFILE_BIO_BYTES:
+        return ()
+    found: list[str] = []
+    for match in PROFILE_HANDLE_RE.finditer(bio):
+        handle = match.group(1).casefold()
+        if handle not in found:
+            found.append(handle)
+    for token in bio.split():
+        candidate = token.strip("()[]{}<>.,!?;\"'")
+        parsed = urlsplit(candidate)
+        if parsed.scheme != "https" or parsed.hostname not in PUBLIC_PROFILE_HOSTS:
+            continue
+        if parsed.username or parsed.password or parsed.port or parsed.query or parsed.fragment:
+            continue
+        parts = parsed.path.strip("/").split("/")
+        if len(parts) != 1 or not PROFILE_HANDLE_RE.fullmatch("@" + parts[0]):
+            continue
+        handle = parts[0].casefold()
+        if handle not in found:
+            found.append(handle)
+    return tuple(found[:MAX_PROFILE_HANDLES])
+
+
+def _profile_text(value: object) -> str | None:
+    return value[:MAX_PROFILE_TEXT] if isinstance(value, str) and value else None
+
+
+async def public_profile(fetcher: Fetch, token: str, handle: str) -> dict[str, str] | None:
+    """Fetch and sanitize one public group or channel profile."""
+    try:
+        profile = await call_method(fetcher, token, "getChat", {"chat_id": f"@{handle}"})
+    except TelegramError:
+        return None
+    if not isinstance(profile, dict) or profile.get("type") not in {"group", "supergroup", "channel"}:
+        return None
+    identifier = profile.get("id")
+    if type(identifier) is not int or not 0 > identifier >= -MAX_TELEGRAM_ID:
+        return None
+    names = profile.get("active_usernames", [])
+    if not isinstance(names, list):
+        names = []
+    returned = [profile.get("username"), *names]
+    if not any(isinstance(name, str) and name.casefold() == handle for name in returned):
+        return None
+    result = {"type": profile["type"]}
+    for key in ("title", "username", "description"):
+        value = _profile_text(profile.get(key))
+        if value is not None:
+            result[key] = value
+    return result
+
+
 INSTRUCTIONS = (
     "判断当前发送者是否发布群聊垃圾广告\uff0c返回概率。广告不要求诈骗、收费、危险链接或恶意历史。\n"
-    "私群导流\uff1a当前正文以泛泛的好奇、围观、看细节或看过再判断为理由\uff0c招呼读者进入附带的 "
-    "Telegram 私群\uff0c却不说明具体相关的活动、内容或用途\uff0c这属于垃圾广告。招呼入群本身就是推广\uff0c"
-    "不要求买卖、收费或诈骗。不要因为文案听起来温和\uff0c或因为它回复了正常消息\uff0c就把导流当成普通讨论。看当"
-    "前正文是否明确说明这个群与所回复话题的具体关系\uff1b只借用了回复位置\uff0c不构成这种关系。无需知道私群内有"
-    "什么。单独的邀请链接不充分。明确对应当前讨论的活动报名、学习或协作邀请不算广告\uff1b引用链接来提醒、反"
-    "对或举报也不算广告。\n"
-    "公开群组和频道导流\uff1a当前正文直接邀请读者加入公开群组或频道\uff0c泛泛承诺一起聊天、欢迎加入或提供独家内容\uff0c却没有具体的当前讨论、活动、学习、协作或迁群目的\uff0c属于垃圾广告。\n"
-    "公开或私有不改变导流判断\uff1b欢迎加入、进群聊天、频道内容和群链接组合起来就是推广\uff0c不要求收费或诈骗。自称本群或频道停用、搬迁或改址后\uff0c直接说加入新群、新频道或新地址一起聊天、继续关注\uff0c却没有说明要继续什么具体讨论、活动、学习或协作\uff0c也属于垃圾广告\uff1b例如“本群已停用\uff0c请加入新群一起聊天\uff1ahttps://example.invalid/new-group”。"
-    "与当前话题具体相关的迁群、活动报名、学习或协作邀请不算广告\uff1b索取样本、核实、讨论广告、提醒、反对和举报中的链接也不算推广。仅有链接、群名、频道名或简介中的邀请不能单独处罚当前发送者。\n"
+    "资料和引用的相关性\uff1a有引用时先比较当前回复与被回复内容是否具体相关。明显跑题且当前发送者的简介、引用作者简介或公开目标资料包含招揽、色情服务或其他垃圾内容时\uff0c这是重要的垃圾证据\uff1b上下文相关时\uff0c这些资料只作辅助\uff0c不能单独处罚当前发送者。"
+    "无引用时\uff0c个人简介、群组或频道资料只说明背景\uff0c不能因为其中有频道、群组、色情或广告内容就单独处罚。当前消息明确邀请、推荐或迁群也要结合上下文、资料来源和整体意图判断\uff0c不能由固定短语单独决定。索取样本、核实、讨论广告、提醒、反对和举报不算主动推广。\n"
     "收款码招募\uff1a招呼读者提供收款码、带码收钱或参与代收款就是招募广告\uff0c不要求明确收益、链接或风险说明。"
     "结合收款语境理解收米、带码等黑话\uff0c以及数字字母混写、错别字、谐音和语序拆分\uff1b例如“收款1ooo+码"
     "”与“带码收米莱 @<contact>”是在招募收款码参与者。普通商户收款、账单查询、申请收款码和讨论"
     "自己的收入不算招募。\n"
     "夸张日收益招募\uff1a名片以兼职日赚数千、日入五位数等承诺吸引联系就是广告\uff0c无需收款码或另有链接。k、千"
     "、万、五位数是金额表达\uff1b结合收益理解针孔投放等项目用语。普通招聘、月薪和摄像头安全讨论不算。\n"
-    "色情招揽\uff1a当前正文或昵称主动提供色情资源、性服务\uff0c或者用身体触感描述结合联系入口、付款方式暗示性服务\uff0c属于广告。可用简介只提供辅助背景\uff0c不能单独构成当前消息的广告证据。"
-    "无定、无锭金表示免定金\uff0c缅附表示面付\uff1b结合粉嫩、嫩滑等身体描述、昵称中年龄或面付信息、@联系入口判断招揽\uff0c不因谐音、错别字、emoji、短句或联系名后的分隔字母而免责。"
-    "不要求出现露骨性词或明码标价。仅有触感词、付款词或简介内容不充分\uff1b食品、护肤、服饰、教学和普通生活服务讨论不算色情广告。\n"
+    "色情招揽\uff1a当前正文、昵称、简介或引用内容主动提供色情资源、性服务\uff0c或者用身体触感描述结合联系入口、付款方式暗示性服务\uff0c属于广告。"
+    "但要结合当前消息与引用内容的关系判断\uff1a有引用且当前回复明显跑题时\uff0c资料中的招揽内容是重要的垃圾证据\uff1b上下文相关时\uff0c索取样本、讨论、提醒、反对和举报不算主动提供。无引用时\uff0c资料只作背景\uff0c不能单独处罚当前消息。"
+    "无定、无锭金表示免定金\uff0c缅附表示面付\uff1b结合粉嫩、嫩滑等身体描述、昵称中年龄或面付信息、@联系入口判断招揽\uff0c不因谐音、错别字、emoji、短句或联系名后的分隔字母而免责。不要求出现露骨性词或明码标价。"
+    "仅有触感词或付款词不充分\uff1b食品、护肤、服饰、教学和普通生活服务讨论不算色情广告。\n"
     "加密货币招揽\uff1a向读者推销加密货币买卖、场外兑换、投资理财、带单、挖矿、空投、钱包或转账服务\uff0c"
     "或者招代理、返佣拉新\uff0c都属于垃圾广告。包括BTC/比特币、ETH/以太坊、SOL、BNB、XRP、DOGE、"
     "USDT、USDC等常见币种\uff0c不限于TRON/TRX。结合低价、报价、收益承诺、下单、领取或联系入口判断"

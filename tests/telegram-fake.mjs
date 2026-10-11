@@ -30,6 +30,7 @@ export class Telegram {
   groups = new Map();
   faults = new Map();
   accounts = new Map();
+  getChatCalls = [];
   replies = [];
   violations = [];
   now = Math.floor(Date.now() / 1000);
@@ -41,6 +42,7 @@ export class Telegram {
     this.groups.clear();
     this.faults.clear();
     this.accounts.clear();
+    this.getChatCalls = [];
     this.replies = [];
     this.violations = [];
     this.now = Math.floor(Date.now() / 1000);
@@ -70,6 +72,7 @@ export class Telegram {
       const params = await request.json();
       if (method === 'getChat') {
         assert.match(params.chat_id, /^@[A-Za-z0-9_]{1,32}$/);
+        this.getChatCalls.push(params.chat_id);
         const fault = this.faults.get(method);
         if (fault) return fault();
         const account = this.accounts.get(params.chat_id.toLowerCase());

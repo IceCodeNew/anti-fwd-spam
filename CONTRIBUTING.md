@@ -33,7 +33,7 @@ The live Jev suite is intentionally separate because it sends fixture data to a 
 - `src/anti_fwd_spam/tasks.py` owns durable classification/deletion retries.
 - `src/anti_fwd_spam/actions.py` owns Telegram moderation outcomes.
 
-The constants and rules modules must remain dependency-light. Preserve compatibility exports when moving a symbol: `entry.py`, `tasks.py`, `moderation.py`, `sources.py`, and tests intentionally import established names.
+The constants and rules modules must remain dependency-light. When moving a symbol, update its production and test callers to the owning module in the same change. Keep `policy.py`'s matcher functions as the behavior API used by routing and deferred profile checks; do not add compatibility aliases merely to hide an unclear ownership boundary.
 
 ## Behavior changes
 

@@ -18,10 +18,8 @@ from .constants import (
     MAX_PROFILE_TEXT,
     MAX_TELEGRAM_ID,
     MODEL_CONTENT_FIELDS,
-    MODEL_PROVIDERS,  # noqa: F401 - compatibility export
     MODEL_TIMEOUT_SECONDS,
     PUBLIC_PROFILE_HOSTS,
-    SPAM_THRESHOLD,  # noqa: F401 - compatibility export
 )
 from .policy import display_name, reply_target
 from .rules import (

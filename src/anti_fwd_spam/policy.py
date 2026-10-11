@@ -6,33 +6,16 @@ import json
 import re
 from dataclasses import dataclass
 
-MAX_TELEGRAM_ID = (1 << 52) - 1
-MAX_CONFIG_LENGTH = 4_096
-MAX_ID_ENTRIES = 500
-TOKEN_PART_COUNT = 2
-GROUP_CHAT_TYPES = frozenset({"group", "supergroup"})
-SUPPORTED_CHAT_TYPES = GROUP_CHAT_TYPES | {"private", "channel"}
-SUPPORTED_FORWARD_ORIGINS = frozenset({"user", "hidden_user", "chat", "channel"})
-# Only administrators may announce that a group moved to a replacement destination.
-# Administrators are protected before Action 1, so this maintenance rule cannot
-# delete the administrator messages that are allowed to carry such notices.
-DISABLED_GROUP_NOTICE_RE = re.compile(
-    r"(?i)(?!(?:[^。\uff01\uff1f\n]{0,100})(?:不要|别|勿|请勿|禁止)\s*"
-    r"(?:加入|进群|入群|移步|迁移到|关注|点击))"
-    r"(?:本(?:群|频道)|群(?:组|聊)|频道)\s*(?:已|已经|被)?\s*"
-    r"(?:停用|关闭|解散|搬迁|搬家|改址|换址|换链接|迁移|失效)"
-    r"(?:[^。\uff01\uff1f\n]{0,80}(?:请(?:大家|各位|所有人)?\s*)?"
-    r"(?:加入|进群|入群|移步|迁移到|关注)\s*"
-    r"(?:新群|新频道|新地址|新链接|群组|频道|https?://\S+)"
-    r"|[^。\uff01\uff1f\n]{0,80}点击\s*(?:新地址|新链接|https?://\S+))"
+from .constants import (
+    GROUP_CHAT_TYPES,
+    MAX_CONFIG_LENGTH,
+    MAX_ID_ENTRIES,
+    MAX_TELEGRAM_ID,
+    SUPPORTED_CHAT_TYPES,
+    SUPPORTED_FORWARD_ORIGINS,
+    TOKEN_PART_COUNT,
 )
-
-SPAM_PATTERNS = (
-    re.compile(r"@[A-Za-z0-9_]{5,32}\s+campaign_[0-9]+"),
-    re.compile(r"([💰🔴])(?:\s*\1){3,}"),
-    re.compile(r"(?:极品|新人|童颜|嫩)小?萝莉(?!塔)|萝莉(?:上门|包夜|资源)"),
-    re.compile(r"(?:约炮|包夜|外围|楼凤)上门|看头像\s*加?\s*(?:[qQ]|扣扣?)(?![A-Za-z\u4e00-\u9fff])"),
-)
+from .rules import DISABLED_GROUP_NOTICE_RE, SPAM_PATTERNS
 
 
 def matches_spam_pattern(message: dict[str, object]) -> bool:

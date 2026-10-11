@@ -10,8 +10,9 @@ from urllib.parse import urlsplit
 
 from workers import Request, Response, WorkerEntrypoint, fetch
 
+from anti_fwd_spam.constants import MODEL_PROVIDERS
 from anti_fwd_spam.evidence import ReportStore
-from anti_fwd_spam.model import MODEL_PROVIDERS, ModelConfig
+from anti_fwd_spam.model import ModelConfig
 from anti_fwd_spam.moderation import AppResponse, Moderator
 from anti_fwd_spam.policy import Config, ConfigError
 from anti_fwd_spam.tasks import ModelTasks

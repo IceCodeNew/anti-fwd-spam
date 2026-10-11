@@ -2,264 +2,66 @@
 
 [English](README.md) | 简体中文
 
-部署在 Cloudflare Workers 上的 Telegram 群管理机器人，使用 Cloudflare D1 保存黑名单和举报记录。管理员可以举报垃圾消息、拦截指定来源 bot 的消息，也可以启用 Jev 模型检查新消息。
+一个运行在 Cloudflare Workers + D1 上的 Telegram 群管理机器人：处理举报、拦截已登记来源 bot 的消息、维护账号和贴纸黑名单，并可使用 Jev 判断语义不明确的垃圾消息。
 
-请先在测试群中使用。封禁可能删除历史消息，解除封禁无法恢复已删除的内容。
+## 适合谁
 
-功能流程图、黑名单处理顺序和举报插件约定见[消息处理与举报](docs/behavior.md)（英文）。
+如果你需要在 Telegram 群中做自动管理，并且愿意维护以下基础设施，这个项目适合你：
 
-## 1. 创建 Telegram bot
+- 使用 Cloudflare Workers 和 D1 部署与保存数据。
+- 给 bot 配置删除消息和限制成员所需的 Telegram 管理员权限。
+- 启用 Jev 时接受模型服务的隐私和费用边界。
 
-1. 向 [@BotFather](https://t.me/BotFather) 发送 `/newbot`，按提示创建 bot，保存 token 和用户名。
-2. 在 BotFather 中关闭 Group Privacy Mode（群组隐私模式）。需要接收其他 bot 的消息时，也启用 [Bot-to-Bot Communication Mode](https://core.telegram.org/api/bots/bot-to-bot)。
-3. 将 bot 加入群组，设为管理员，授予「删除消息」和「封禁用户」权限。管理频道评论时，将 bot 加入频道关联的讨论群。
+完整功能建议使用**超级群**。普通群可以删除消息，但不能永久禁言。群主和管理员不会被自动禁言或封禁。确认后的封禁或删除可能影响历史消息，Telegram 无法恢复已删除内容。
 
-使用超级群（例如频道关联的讨论群）可启用完整的管理功能。Telegram 普通群不支持永久禁言。
+## 它处理什么
 
-## 2. 准备部署工具
-
-注册 [Cloudflare 账户](https://dash.cloudflare.com/sign-up)，安装 [Git](https://git-scm.com/downloads) 和 [mise](https://mise.jdx.dev/getting-started.html)。Windows 用户使用 WSL 中的 Linux 终端。以下命令在 Bash 中执行，请保持使用同一个终端窗口。
-
-```bash
-git clone https://github.com/IceCodeNew/anti-fwd-spam.git
-cd anti-fwd-spam
-mise trust
-mise install
-mise exec -- uv sync --locked
-mise exec -- npm ci --ignore-scripts
-mise exec -- uv run pywrangler login
-```
-
-登录命令会打开浏览器，请登录用于部署 bot 的 Cloudflare 账户。某条命令失败时，先处理错误，再继续后续步骤。
-
-Cloudflare 为 [Workers](https://developers.cloudflare.com/workers/platform/pricing/) 和 [D1](https://developers.cloudflare.com/d1/platform/pricing/) 提供免费额度。部署前查看额度限制，使用中在控制台查看用量；模型服务单独计费。
-
-## 3. 创建数据库
-
-```bash
-mise exec -- uv run pywrangler d1 create anti-fwd-spam-reports
-```
-
-用文本编辑器打开 `wrangler.jsonc`，将 `d1_databases` 中的 `database_id` 替换为命令返回的 ID。保留 `binding` 为 `REPORTS`，保留其他设置，包括 `triggers` 中的定时任务。
-
-创建数据库表：
-
-```bash
-mise exec -- uv run pywrangler d1 migrations apply anti-fwd-spam-reports --remote
-```
-
-## 4. 配置 bot 和举报身份
-
-输入 BotFather 提供的 token，终端不会显示输入内容。完成 webhook 注册前，不要关闭这个终端。
-
-```bash
-read -rsp 'Bot token: ' BOT_TOKEN; printf '\n'
-```
-
-注册 webhook 前，先用每个需要举报权限的账号给新 bot 发一条私聊消息，然后执行：
-
-```bash
-curl --silent --show-error --fail-with-body \
-  "https://api.telegram.org/bot${BOT_TOKEN}/getUpdates"
-```
-
-在返回的 `result` 中找到对应消息，复制 `message.from.id`。授权匿名管理员时，以群组匿名身份发一条提及 bot 的消息，复制该消息的 `message.sender_chat.id`。结果为空时，发送一条新消息后重新执行命令。输出中包含成员信息，不要公开。
-
-将以下设置保存为 Worker secret（运行时密钥）。每条 `secret put` 命令都会提示输入对应的值。Wrangler 询问是否创建 Worker 时，确认创建：
-
-```bash
-mise exec -- uv run pywrangler secret put BOT_USERNAME
-mise exec -- uv run pywrangler secret put REPORTER_IDS
-printf '%s' "$BOT_TOKEN" | mise exec -- uv run pywrangler secret put BOT_TOKEN
-TELEGRAM_WEBHOOK_SECRET="$(mise exec -- python -c 'import secrets; print(secrets.token_urlsafe(32))')"
-printf '%s' "$TELEGRAM_WEBHOOK_SECRET" | mise exec -- uv run pywrangler secret put TELEGRAM_WEBHOOK_SECRET
-```
-
-| 设置 | 填写内容 |
+| 场景 | 结果 |
 | --- | --- |
-| `BOT_USERNAME` | 管理 bot 的用户名，不含 `@`。 |
-| `REPORTER_IDS` | 可信用户或发言所用的聊天身份数字 ID，用英文逗号分隔。例如 `123456789,-1001234567890`，请替换两个示例 ID。 |
+| 授权举报人回复垃圾消息并提及 bot | 封禁被举报发送者，并清理符合条件的索引历史。 |
+| 未授权成员提交有效回复举报 | 保存证据，不自动处罚。 |
+| 消息来自已登记来源 bot | 删除当前消息；来源账号按独立规则处理。 |
+| 新消息命中本地规则或已登记贴纸 | 删除当前消息；Telegram 支持时永久禁言发送者。 |
+| Jev 判断消息为垃圾消息 | 删除当前消息并禁言发送者，不处罚被引用作者。 |
+| 消息被编辑或网络请求暂时失败 | 终止旧任务，只重试尚未完成的操作。 |
 
-只有名单中的身份可以通过举报直接触发处理，或通过 `/bs` 登记来源，群主也不例外。名单外身份可以通过回复举报提交证据。以群组或频道身份发言时，授权按该发言身份判断，不按背后的个人账号判断。加入群组身份不会授权群成员的个人账号。留空则禁用直接举报处理和来源登记。
+完整路由、保护条件和重试规则见[行为契约](docs/behavior.md)。
 
-不要将 token 和密钥写入仓库文件、截图或公开日志。
+## 快速开始
 
-## 5. 部署并连接 Telegram
+1. 创建 Telegram bot，将它加入一个用于测试的超级群，并授予删除消息和限制成员的管理员权限。
+2. 准备 Cloudflare Workers、D1、Git 和 `mise`。
+3. 创建 D1、执行迁移、保存 Worker secrets、部署 Worker，并注册 `/webhook` 地址。
+4. 在使用 `/bs` 或自动举报前，配置可信的举报身份。
 
-```bash
-mise exec -- uv run pywrangler deploy
-```
+完整的可复制部署步骤见[部署设置](docs/setup.md)。请先使用测试群，因为举报和封禁可能造成不可逆的删除。
 
-复制命令输出的 Worker HTTPS 地址，将它注册为 Telegram 的 webhook。Telegram 会向这个地址发送 bot 收到的消息：
+## 日常使用
 
-```bash
-read -rp 'Worker HTTPS URL: ' WORKER_URL
-curl --silent --show-error --fail-with-body \
-  "https://api.telegram.org/bot${BOT_TOKEN}/setWebhook" \
-  --data-urlencode "url=${WORKER_URL%/}/webhook" \
-  --data-urlencode "secret_token=${TELEGRAM_WEBHOOK_SECRET}" \
-  --data-urlencode 'allowed_updates=["message","edited_message"]'
-unset TELEGRAM_WEBHOOK_SECRET
-```
+- **举报垃圾消息：** 用可信身份回复目标消息，并提及管理 bot。
+- **登记来源：** 用可信身份发送 `/bs @source_bot`。
+- **同时处理内联发送者和来源：** 回复消息并发送裸 `/bs`。
+- **登记贴纸包：** 用 `/bs` 发送完整的 `https://t.me/addstickers/<set_name>` 链接。
+- **处理误报：** 按[运维手册](docs/operations.md)检查并移除规则；如 Telegram 中仍有禁言或封禁，再单独解除限制。
 
-确认返回内容包含 `"ok":true` 和 `"result":true`。同一个 token 只用于一套 bot 部署；注册另一个 webhook 会替换此地址。
+举报身份、管理员保护、来源归因、贴纸处理和误报恢复都由[行为契约](docs/behavior.md)定义。
 
-## 举报和管理消息来源
+## 可选的 Jev 分类
 
-### 举报消息
+Jev 在本地规则、黑名单、贴纸检查和举报处理之后运行。bot 只发送受限的消息上下文，不下载或识别媒体。模型服务可能收费，也可能接收用户发送的文本和简介；启用前请查看服务条款。
 
-使用 `REPORTER_IDS` 中的身份，选择垃圾消息的「回复」，输入 `@`，选中管理 bot 后发送。
+模型以当前发送者意图为主要证据，并保持引用内容和简介的来源隔离。只有当前消息和发送者简介同时支持项目招募解释时，才追加窄范围提示。达到配置的包含边界后，仍按当前消息执行相同的 Jev 处理；测试方法见[Jev 测试](docs/jev-checks.md)。
 
-在超级群中，`REPORTER_IDS` 中的任意身份举报后，bot 都会删除目标消息、封禁发送者，并清理符合条件的索引历史，不要求举报人是群管理员。真人账号和 bot 账号适用相同规则，作为目标的群主和管理员免于封禁。清理成功后，bot 删除举报消息。不在名单中的身份即使是群管理员，回复举报也只保存证据。
+运行真实模型测试前请阅读[Jev 测试](docs/jev-checks.md)。Provider 配置应保存为部署 secrets，不要写入仓库文件。
 
-如果 Telegram 拒绝封禁（例如 bot 没有封禁权限），bot 仍会删除目标消息。在论坛话题中，需要回复垃圾消息本身；没有回复任何消息的提及不会举报话题创建者。名单外身份通过回复并提及 bot，或回复并发送裸 `/bs`，只会保存证据，不会自动处罚。名单外身份带用户名或贴纸包链接的 `/bs` 不能登记来源，继续接受普通消息过滤。
+## 文档导航
 
-确认封禁后，发送者进入账号黑名单。该账号在使用同一 bot 的其他超级群发言时，bot 会在该群封禁账号并清理符合条件的索引消息。
+- [部署设置](docs/setup.md) —— 创建 bot、数据库、secrets、webhook 和部署。
+- [运维手册](docs/operations.md) —— 举报、来源/贴纸名单、误报、排障、隐私和数据保留。
+- [行为契约](docs/behavior.md) —— 最终路由、授权、处罚、重试和存储行为。
+- [Jev 测试](docs/jev-checks.md) —— 安全、可重复的真实分类测试流程和 fixture 规则。
+- [贡献与维护](CONTRIBUTING.md) —— 开发命令、模块边界和变更要求。
 
-如果消息由 A 通过 bot B 代发，这种回复举报只针对 A，不登记或处罚 B。对于贴纸，也只处理发送者（真人或 bot），不登记贴纸包。
+## 参与开发
 
-### 添加来源
-
-用已授权身份在私聊或群聊中发送 `/bs @example_bot`，将 `example_bot` 替换为来源 bot 的用户名。群内可以使用 `/bs@管理bot用户名 @example_bot` 明确指定接收命令的 bot。
-
-bot 将解析出的账号 ID 保存到来源名单，并回复该 ID。群聊中，bot 回复后会删除命令消息，查询失败时也会清理；私聊命令和结果回复会保留。这个指定用户名的命令不封禁账号或删除历史。请核对返回的 ID：Telegram 无法解析部分用户名，命令也不校验目标是否为 bot。
-
-同时举报代发消息的发送者 A 和来源 bot B 时，回复该消息并发送 `/bs`（或 `/bs@管理bot用户名`），不带参数。管理 bot 从消息中读取 B 的 ID 并加入来源名单。名单中的任意举报身份都会触发对 A 和 B 的封禁及各自符合条件的索引历史清理，目标管理员仍受保护。名单外身份的裸命令回复只保存证据。处理结束后，bot 清理名单身份的群内命令；临时失败时保留命令，等待重试。
-
-无法确认封禁结果时，bot 保留命令，并提示举报者检查成员状态后再提交新举报，不会自动重复未确认的封禁。
-
-有人通过名单中的 bot 发送内联消息，或转发带有该 bot 来源标记的消息时：
-
-- 对发送者，只删除当前消息并永久禁言，保留其他历史消息，不加入黑名单。
-- 对来源 bot，执行封禁、加入账号黑名单，并清理该 bot 符合条件的索引消息。
-
-复制粘贴的内容、隐藏来源的转发，以及普通账号直接发送的消息，不匹配来源名单。
-
-回复或引用消息时，Jev 同时判断当前发送者是否自行发广告，以及是否意在推广引用中的广告；正常引用不能为当前正文中的广告免责。单纯提醒、反对或举报不算推广。这类消息绕过正则和贴纸名单检查。模型判定为垃圾消息时，只删除当前消息并永久禁言当前发送者，不处罚引用作者或清理历史。Jev 只接收 Telegram 实际提供的引用字段；详细规则见[内容检查契约](docs/behavior.md#blacklists-and-content-checks-connect-to-two-actions)（英文）。
-
-对于没有引用的消息，本地正则先检查消息、发送者昵称和联系人名片显示的姓名。正则和贴纸名单检查均未命中后，后台任务查询发送者简介；名片含 Telegram 用户 ID 时，也尝试查询该账号的昵称和简介。随后正则检查能获取的资料字段，Jev 判断完整的可用信息。没有可用 ID 的名片仍提供其显示姓名；bot 不把电话号码发送给 Jev。
-
-### 封禁贴纸包
-
-使用 `REPORTER_IDS` 中的身份，在群内回复贴纸并发送裸 `/bs`，bot 会登记整个贴纸包、删除举报目标，并在超级群中封禁发送者、清理符合条件的索引历史。贴纸同时带有内联来源 bot（`via_bot`）时，也登记、封禁该 bot，并清理其符合条件的索引历史，目标管理员仍受保护。改为回复并提及管理 bot，则只举报发送者。贴纸没有可用包名时，`/bs` 改为按区分大小写的 `file_unique_id` 登记单张贴纸。有效的内联来源 bot 仍单独登记。贴纸身份和内联来源都不可用时，只回复用法，不登记或处罚。
-
-只登记整包、不处罚任何账号时，在私聊或群内发送 `/bs https://t.me/addstickers/example_set`，将 `example_set` 替换为分享链接中的包名。请使用完整 HTTPS 链接，不附加路径、查询参数或片段。即使这条命令回复了消息，也只登记整包。名单外身份的裸命令回复只保存证据；授权和命令规则见[行为契约](docs/behavior.md#inputs-and-reporting-authorization)（英文）。
-
-群内没有引用的新消息和编辑消息在本地正则未命中后检查贴纸名单，无需模型 key。命中时，只删除当前消息，并在超级群中永久禁言真人发送者，不清理历史或新增黑名单条目。bot 不禁言，普通群只支持删除，管理员仍受保护。回复和引用绕过贴纸名单检查；论坛话题自动附带的创建消息不构成绕过。整包登记覆盖整个贴纸包；单张登记仅覆盖相同稳定身份的贴纸，下载文件 ID 变化不影响匹配。
-
-### 管理员保护和历史清理范围
-
-群主和管理员免于禁言、封禁，来源 bot 是管理员时也受保护。自动过滤不会删除其消息。名单中的举报身份仍可删除指定的管理员消息。
-
-历史清理只覆盖 bot 在同一群中收到并建立索引的消息，范围截至触发消息或在举报之前，且距今不足 48 小时。bot 无法搜索未收到的历史。Telegram 可能在封禁时删除更多历史消息。
-
-### 查看名单和解除误报
-
-在 Cloudflare 控制台打开 **D1 → anti-fwd-spam-reports → Console**，查询名单，将 `123456789` 替换为管理 bot 的数字 ID：
-
-```sql
-SELECT source_id FROM blacklisted_sources ORDER BY source_id;
-SELECT bot_id, user_id FROM blacklisted_users ORDER BY bot_id, user_id;
-SELECT set_name, added_at FROM blacklisted_sticker_sets
-WHERE bot_id = 123456789 ORDER BY set_name;
-```
-
-`blacklisted_sources` 保存登记的来源 ID；`blacklisted_users` 按管理 bot 保存封禁账号 ID。从查询结果复制需要移除的 ID，替换以下示例。来源 bot 可能同时出现在两张表中，需要从两张表中移除，才能停止两类拦截：
-
-```sql
-DELETE FROM blacklisted_sources WHERE source_id = 987654321;
-DELETE FROM blacklisted_users WHERE bot_id = 123456789 AND user_id = 987654321;
-```
-
-贴纸包按管理 bot 隔离，以小写 ASCII 包名保存。查询或移除单个贴纸包时，将 bot ID 和 `example_set` 替换为对应 ID 和名单中的归一化包名：
-
-```sql
-SELECT set_name, added_at FROM blacklisted_sticker_sets
-WHERE bot_id = 123456789 AND set_name = 'example_set';
-DELETE FROM blacklisted_sticker_sets
-WHERE bot_id = 123456789 AND set_name = 'example_set';
-```
-
-单张贴纸同样按管理 bot 隔离。移除时，请从名单复制区分大小写的完整 ID：
-
-```sql
-SELECT file_unique_id, added_at FROM blacklisted_stickers
-WHERE bot_id = 123456789 ORDER BY file_unique_id;
-DELETE FROM blacklisted_stickers
-WHERE bot_id = 123456789 AND file_unique_id = 'example_unique_id';
-```
-
-删除后对后续消息立即生效，无需重新部署。贴纸举报也可能登记了来源 bot 或将账号加入黑名单；需要解除这些规则时，分别移除对应条目。
-
-然后在各个受影响群组的 Telegram 成员设置中解除禁言或封禁。删除数据库条目不会解除 Telegram 限制。账号仍在账号黑名单中时，再次发消息会触发封禁。
-
-## 自动文本过滤
-
-bot 在 Jev 之前用本地规则检查群内没有引用的新消息和编辑后的消息，包括其他 bot 的消息，无需配置 API key。规则在正文、媒体说明、分享的联系人名片名称或发送者昵称的任意位置搜索 campaign 标记、色情招揽，以及连续相同的钱袋或红圆 emoji，允许 emoji 之间有空白。前后文字或其他 emoji 不影响匹配。真人发送的消息没有命中时，bot 在后台查询能获取的发送者及名片账号资料，先用同一套规则搜索，再交给 Jev。具体匹配式见 [policy.py](src/anti_fwd_spam/policy.py) 中的 `SPAM_PATTERNS`。有引用的消息（包括编辑消息）绕过这些通用规则，由 Jev 根据上下文判断。
-
-命中后，bot 删除当前消息，在超级群中永久禁言真人发送者，保留历史消息和所有黑名单。bot 发送者不禁言。群主和管理员受保护，私聊消息不参与此检查。
-
-## 可选：启用 Jev 垃圾消息检查
-
-启用后，bot 会向外部模型平台发送用户昵称、可获取的简介、正文或媒体说明、名片显示姓名和能获取的名片账号资料、能获取的引用消息及作者资料，以及格式信息和选定的媒体描述，不下载或识别媒体内容。启用前请查看平台的隐私条款和价格。
-
-将 API key 保存为对应的 Worker secret。配置多个平台时，bot 从下表中第一个已配置的平台开始请求，失败时可能切换平台：
-
-| 平台 | Worker secret |
-| --- | --- |
-| [TypeSafe AI](https://ai-sdk.dev/providers/ai-sdk-providers/typesafe-ai) | `TYPESAFE_AI_API_KEY` |
-| [Experiential](https://platform.experientiallabs.ai/models/jev-latest) | `EXPERIENTIAL_API_KEY` |
-| [OpenCode Zen](https://opencode.ai/docs/zen/) | `OPENCODE_API_KEY` |
-| [CommandCode](https://commandcode.ai/docs/provider#decision-models-typesafe-jev) | `CMD_API_KEY` |
-| [Vercel AI Gateway](https://vercel.com/ai-gateway/models/jev) | `AI_GATEWAY_API_KEY` |
-
-bot 的[重试次数有限](docs/behavior.md#edits-and-retries)，配置全部平台并不保证逐一调用。
-
-使用 Vercel 时执行：
-
-```bash
-mise exec -- uv run pywrangler secret put AI_GATEWAY_API_KEY
-```
-
-bot 在其他管理规则之后，用 Jev 检查用户新消息及有引用的编辑消息。垃圾消息分数达到阈值时，bot 删除该条消息并永久禁言发送者，保留其历史消息，不加入任何黑名单。群主和管理员受保护。阈值见 [model.py](src/anti_fwd_spam/model.py) 中的 `SPAM_THRESHOLD`；分数不代表准确率。没有引用的编辑消息、服务事件、bot 消息及以群组或频道身份发送的消息不参与模型检查。
-
-商品、服务推销、加密货币招揽和群组/频道导流由 Jev 检查，没有专用本地正则。Jev 以当前消息作为意图的主要证据，简介和被引用的广告只提供上下文，不能单独构成推销。广告判定范围见[行为契约](docs/behavior.md#blacklists-and-content-checks-connect-to-two-actions)。修改 prompt 时，运行[真实 Jev 验收](docs/jev-checks.md)。
-
-模型请求临时失败时，bot 保留消息，等待定时重试。删除和禁言临时失败也会重试；消息已经删除时，bot 只继续处理待完成的禁言。请保留定时任务。每次模型请求都可能产生费用，也可能向另一个已配置平台发送相同内容。
-
-关闭检查并暂停待处理的模型任务时，删除已配置的全部模型 secret。只配置了 Vercel 时执行：
-
-```bash
-mise exec -- uv run pywrangler secret delete AI_GATEWAY_API_KEY
-```
-
-## 验证运行和排查故障
-
-使用可丢弃的测试群和测试账号。先用已授权管理员举报测试消息，确认目标消息删除、发送者封禁。单独测试来源过滤：私聊 bot 添加来源，用非管理员账号发送该来源的内联消息，确认消息删除、发送者禁言，之前的消息保留。测试结束后，移除测试黑名单条目并解除限制。
-
-在保存了 `BOT_TOKEN` 的终端检查 Telegram 投递状态：
-
-```bash
-curl --silent --show-error --fail-with-body \
-  "https://api.telegram.org/bot${BOT_TOKEN}/getWebhookInfo"
-```
-
-`result.url` 应等于 Worker 地址加 `/webhook`。`pending_update_count: 0` 只表示没有积压，不能证明管理功能正常。积压持续增加或出现新的 `last_error_message` 时，在 Cloudflare 控制台打开 Worker 日志。
-
-| 现象 | 检查方法 |
-| --- | --- |
-| 举报或 `/bs` 无反应 | 核对 `REPORTER_IDS`、发言身份和 `BOT_USERNAME`。 |
-| webhook 返回 `401` | 用同一个 `TELEGRAM_WEBHOOK_SECRET` 保存密钥并注册 webhook。 |
-| webhook 返回 `404` | 使用以 `/webhook` 结尾的部署地址。 |
-| 删除、禁言或封禁失败 | 核对 bot 的管理员权限，以及目标是否受管理员保护。 |
-| `ban confirmation failed` 或 `mute retry skipped` | 先手动核对成员状态，再决定是否重新举报或修改限制。 |
-| `history cleanup rejected` | 手动检查并删除残留消息。 |
-| 存储错误 | 检查 `REPORTS` 绑定、数据库表和 D1 用量。 |
-
-换了终端时，先按第 4 步重新输入 `BOT_TOKEN`。使用结束后运行 `unset BOT_TOKEN`。
-
-## 数据存储
-
-D1 保留举报和来源处理的完整 JSON、命令解析出的 ID，以及临时处理记录，保留期为 3 天。近期消息索引只保存 ID 和时间，不保存正文。模型任务在判断完成前暂存提交的内容，之后只保留完成删除和禁言所需的身份信息。bot 不下载媒体文件。
-
-来源、账号和贴纸黑名单长期保留，直到手动删除。定时任务清理到期记录，服务故障或额度耗尽可能延迟清理。Cloudflare 备份另有[保留规则](https://developers.cloudflare.com/d1/reference/time-travel/)。查看或导出数据库时，不要公开成员信息。
+修改行为前请阅读[贡献与维护](CONTRIBUTING.md)。行为改动必须同步更新行为测试和契约；提交 PR 前运行其中列出的检查。

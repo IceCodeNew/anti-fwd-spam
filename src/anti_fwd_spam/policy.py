@@ -6,28 +6,30 @@ import json
 import re
 from dataclasses import dataclass
 
-MAX_TELEGRAM_ID = (1 << 52) - 1
-MAX_CONFIG_LENGTH = 4_096
-MAX_ID_ENTRIES = 500
-TOKEN_PART_COUNT = 2
-GROUP_CHAT_TYPES = frozenset({"group", "supergroup"})
-SUPPORTED_CHAT_TYPES = GROUP_CHAT_TYPES | {"private", "channel"}
-SUPPORTED_FORWARD_ORIGINS = frozenset({"user", "hidden_user", "chat", "channel"})
-SPAM_PATTERNS = (
-    re.compile(r"@[A-Za-z0-9_]{5,32}\s+campaign_[0-9]+"),
-    re.compile(r"([💰🔴])(?:\s*\1){3,}"),
-    re.compile(r"(?:极品|新人|童颜|嫩)小?萝莉(?!塔)|萝莉(?:上门|包夜|资源)"),
-    re.compile(r"(?:约炮|包夜|外围|楼凤)上门|看头像\s*加?\s*(?:[qQ]|扣扣?)(?![A-Za-z\u4e00-\u9fff])"),
+from .constants import (
+    GROUP_CHAT_TYPES,
+    MAX_CONFIG_LENGTH,
+    MAX_ID_ENTRIES,
+    MAX_TELEGRAM_ID,
+    SUPPORTED_CHAT_TYPES,
+    SUPPORTED_FORWARD_ORIGINS,
+    TOKEN_PART_COUNT,
 )
+from .rules import DISABLED_GROUP_NOTICE_RE, SPAM_PATTERNS
 
 
 def matches_spam_pattern(message: dict[str, object]) -> bool:
-    """Search current text, captions, shared contact names, and the sender's nickname without inspecting replies."""
-    return any(matches_spam_text(text) for text in _pattern_texts(message))
+    """Search current text and identity fields without inspecting replies."""
+    if any(matches_spam_text(text) for text in _pattern_texts(message)):
+        return True
+    return any(
+        isinstance(text := message.get(field), str) and DISABLED_GROUP_NOTICE_RE.search(text) is not None
+        for field in ("text", "caption")
+    )
 
 
 def matches_spam_text(text: object) -> bool:
-    """Search one string, such as a sender biography, with the same patterns as message fields."""
+    """Search one profile string with patterns that are safe outside the current message."""
     return isinstance(text, str) and any(pattern.search(text) is not None for pattern in SPAM_PATTERNS)
 
 

@@ -1,25 +1,31 @@
-# Live Jev acceptance checks
+# Live Jev checks
 
-The [advertising contract](behavior.md#blacklists-and-content-checks-connect-to-two-actions) defines the expected classification. `tests/jev-cases.json` contains advertising samples and normal controls.
+This document defines the repeatable procedure for testing semantic Jev classification. It is a test runbook, not a record of any single investigation or provider result.
 
-Each case records its source PR, sample type, and reconstruction limits in `source`.
+## Fixture rules
 
-The screenshot samples retain advertising text and context. Names, contact destinations, and campaign identifiers use synthetic placeholders. Unreadable nickname decorations and unavailable biographies remain absent. Invite samples use non-routable `https://t.me/+<invite>` placeholders and partial reference text.
+- Keep semantic cases in `tests/jev-cases.json` with an expected `spam` label and a `source` note.
+- Use sanitized text, synthetic usernames, placeholder contacts such as `@<contact>`, and reserved URLs such as `https://example.invalid/`.
+- Keep real member IDs, phone numbers, report JSON, credentials, and private destinations out of the repository.
+- Mark reconstructed context and unavailable fields explicitly; do not infer historical scores from deleted or completed task state.
+- Skip only cases owned by deterministic local rules. Keep semantic positives, semantic negatives, and reference cases active.
+- Add paired positive and negative controls for each boundary: current-sender intent, quoted promotion versus warning/analysis, profile-only context, product/service discussion, and ordinary technical or personal experience.
 
-Do not store real advertising destinations in source, tests, or documentation. Use `@<contact>` and `https://example.invalid/` for contact placeholders. Syntax-sensitive parser fixtures use synthetic handles, IDs, and sticker names. Keep the protocol syntax that each fixture tests. Preserve official service endpoints and project links.
+## Running the check
 
-Cases with a nonempty `skip` reason retain samples assigned to local regex rules. The test reports them as skipped without a provider request. Payment-code samples remain active because PR #30 removed their dedicated regex. Reference cases remain active because references bypass regex.
-
-D1 report evidence can preserve a reported message without its nested reply. Completed model tasks discard their input, and the message index stores identifiers only. Use screenshot text for recoverable reply context, label that reconstruction, and leave unavailable profiles absent. Do not infer a historical model score from completed task status.
-
-Add recoverable missed text and normal controls to the same collection. Keep unknown fields absent. Mark synthetic controls and reconstructed context explicitly. Use semantic cases only when the current intent and relation are clear; do not use a fixed phrase, profile-only content, or a fabricated destination as proof of model accuracy. Profile-only personal channel text and quoted discussion remain false-positive controls. Enrichment tests separately verify public-target parsing, source separation, sanitization, unknown fallback, query caps, and one Jev request. They must not treat a profile phrase or a fixed Worker score as proof that Jev's semantic classification is correct. Do not add a skip reason to hide a new model regression. Sticker images and blocked source identities are not text-classification cases.
-
-Export a key from `MODEL_PROVIDERS` in [model.py](../src/anti_fwd_spam/model.py) into your shell. Keep the key outside the repository. Run:
+The acceptance harness in `tests/test_jev.py` uses the production formatter, prompt assembly, response parser, timeout, and threshold. It selects the first configured provider from `MODEL_PROVIDERS` and sends each active case once.
 
 ```bash
 JEV_LIVE_TEST=1 PYTHONPATH=src uv run python -m unittest tests.test_jev -v
 ```
 
-The test uses the first configured provider and the production prompt, input formatter, response parser, deadline, and threshold. It reports each case separately and sends each active sample once. It does not retry a failed request. A timeout can leave a charged request with an unknown result.
+The provider credential must be available through the deployment/runtime environment used for the test. Do not put the credential in a repository file or command argument. The test can incur provider charges and sends fixture text to the provider; run it only with an approved credential and data set.
 
-These requests send sample content to the provider and can incur charges. The test does not access Telegram or D1. Ordinary unit tests skip this live check. A skip does not prove classification accuracy. Fixed scores in Worker tests verify moderation behavior, not model accuracy.
+## Interpreting results
+
+- A skipped local-rule case is not evidence about Jev accuracy.
+- A Worker fake score proves routing and moderation lifecycle behavior, not semantic model quality.
+- Treat provider errors, timeouts, invalid envelopes, and model scores as separate result categories.
+- Report the fixture revision, provider/model selected by `MODEL_PROVIDERS`, active/skipped case counts derived from the fixture, score range, and false-positive/false-negative cases.
+- For prompt changes, compare baseline and candidate prompts against the same active fixtures and provider. Repeat boundary cases when scores are near the threshold; do not declare a prompt safe from one run.
+- Keep historical score matrices and investigation-specific rationale in the pull request or an external experiment record, not in this durable runbook.

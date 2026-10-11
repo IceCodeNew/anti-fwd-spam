@@ -2,266 +2,66 @@
 
 English | [简体中文](README_zh-Hans.md)
 
-A Telegram moderation bot hosted on Cloudflare Workers, with blocklists and report records stored in Cloudflare D1. Use it to report spam, block messages from specified source bots, and optionally check new messages with the Jev model.
+A Telegram moderation bot for Cloudflare Workers and D1. It handles reports, blocks messages from registered source bots, tracks account and sticker blacklists, and can classify ambiguous text with Jev.
 
-Start in a test group. Bans can delete message history, and unbanning cannot restore deleted messages.
+## Is it for you?
 
-See [Message processing and reporting](docs/behavior.md) for flow diagrams, blacklist routing, and the reporting-plugin contract.
+Use this bot when you need moderation inside Telegram groups and are comfortable with:
 
-## 1. Create a Telegram bot
+- Cloudflare Workers and D1 for hosting and storage.
+- Telegram administrator permissions for deleting messages and restricting members.
+- A separate model provider when you enable Jev classification.
 
-1. Send `/newbot` to [@BotFather](https://t.me/BotFather) and follow the prompts. Save the bot token and username.
-2. In BotFather, disable Group Privacy Mode. To receive messages from other bots, also enable [Bot-to-Bot Communication Mode](https://core.telegram.org/api/bots/bot-to-bot).
-3. Add the bot to your group as an administrator with permission to delete messages and ban users. For a channel's comments, use its linked discussion group.
+Use a **supergroup** for the complete feature set. Basic groups can delete messages but cannot provide permanent mutes. Administrators and group owners are protected from automatic mutes and bans. A confirmed ban or deletion can remove history that Telegram cannot restore.
 
-Use a supergroup, such as a channel's linked discussion group, for all moderation features. Telegram does not support permanent mutes in basic groups.
+## What the bot does
 
-## 2. Prepare the deployment tools
-
-Create a [Cloudflare account](https://dash.cloudflare.com/sign-up) and install [Git](https://git-scm.com/downloads) and [mise](https://mise.jdx.dev/getting-started.html). On Windows, use a Linux terminal through WSL. Run the commands below in Bash, in the same terminal session.
-
-```bash
-git clone https://github.com/IceCodeNew/anti-fwd-spam.git
-cd anti-fwd-spam
-mise trust
-mise install
-mise exec -- uv sync --locked
-mise exec -- npm ci --ignore-scripts
-mise exec -- uv run pywrangler login
-```
-
-The login command opens a browser. Sign in to the Cloudflare account that will host the bot. If any command fails, resolve the error before continuing.
-
-Cloudflare offers free allowances for [Workers](https://developers.cloudflare.com/workers/platform/pricing/) and [D1](https://developers.cloudflare.com/d1/platform/pricing/). Check the limits and monitor usage in the dashboard; model providers charge separately.
-
-## 3. Create the database
-
-```bash
-mise exec -- uv run pywrangler d1 create anti-fwd-spam-reports
-```
-
-Open `wrangler.jsonc` in a text editor. Replace the `database_id` under `d1_databases` with the ID returned by this command. Keep `binding` as `REPORTS` and keep the other settings, including the scheduled trigger in `triggers`.
-
-Create the database tables:
-
-```bash
-mise exec -- uv run pywrangler d1 migrations apply anti-fwd-spam-reports --remote
-```
-
-## 4. Configure the bot and reporting identities
-
-Enter the bot token from BotFather. The terminal hides the input. Keep this terminal open until webhook registration is complete.
-
-```bash
-read -rsp 'Bot token: ' BOT_TOKEN; printf '\n'
-```
-
-Before registering the webhook, send a private message to the new bot from each account that should be allowed to report. Then run:
-
-```bash
-curl --silent --show-error --fail-with-body \
-  "https://api.telegram.org/bot${BOT_TOKEN}/getUpdates"
-```
-
-Find each message under `result` and copy its `message.from.id`. For anonymous administrators, send a message mentioning the bot from the group's anonymous identity and copy `message.sender_chat.id` instead. If the result is empty, send a fresh message and run the command again. Do not publish this output; it contains member information.
-
-Save these settings as Worker secrets. Each `secret put` command prompts for its value. If Wrangler asks to create the Worker, confirm:
-
-```bash
-mise exec -- uv run pywrangler secret put BOT_USERNAME
-mise exec -- uv run pywrangler secret put REPORTER_IDS
-printf '%s' "$BOT_TOKEN" | mise exec -- uv run pywrangler secret put BOT_TOKEN
-TELEGRAM_WEBHOOK_SECRET="$(mise exec -- python -c 'import secrets; print(secrets.token_urlsafe(32))')"
-printf '%s' "$TELEGRAM_WEBHOOK_SECRET" | mise exec -- uv run pywrangler secret put TELEGRAM_WEBHOOK_SECRET
-```
-
-| Setting | Value |
+| Situation | Result |
 | --- | --- |
-| `BOT_USERNAME` | Your moderation bot's username, without `@`. |
-| `REPORTER_IDS` | Trusted numeric user or sender-chat IDs, separated by commas. For example: `123456789,-1001234567890`. Replace both example IDs. |
+| An authorized reporter replies to a spam message and mentions the bot | Ban the reported sender and clean eligible indexed history. |
+| An unlisted member submits a valid reply report | Save evidence without automatic punishment. |
+| A message comes from a registered source bot | Delete the current message; moderate the source account separately. |
+| A new message matches a local rule or registered sticker | Delete the current message and mute its sender when Telegram supports it. |
+| Jev classifies a message as spam | Delete the current message and mute its sender; referenced authors are not punished. |
+| A message is edited or a network request fails temporarily | Fence stale work and retry only the pending operation. |
 
-Only listed identities can trigger report moderation or register a source with `/bs`, even if they own a group. Unlisted identities can submit reply reports as evidence. For messages sent as a group or channel, authorization uses that sending identity, not the personal account behind it. Listing a group does not authorize its members' personal accounts. Leave the list empty to disable direct report moderation and source registration.
+See [the behavior contract](docs/behavior.md) for the complete routing and protection rules.
 
-Keep tokens and secrets out of repository files, screenshots, and public logs.
+## Quick start
 
-## 5. Deploy and connect Telegram
+1. Create a Telegram bot and add it to a disposable test supergroup as an administrator with permission to delete messages and restrict members.
+2. Prepare Cloudflare Workers, D1, Git, and `mise`.
+3. Create the D1 database, apply migrations, save the required Worker secrets, deploy the Worker, and register its `/webhook` endpoint.
+4. Configure trusted reporting identities before using `/bs` or automatic reports.
 
-```bash
-mise exec -- uv run pywrangler deploy
-```
+The complete copy-pasteable setup is in [Deployment setup](docs/setup.md). Start with a test group: reports and bans can have destructive effects.
 
-Copy the Worker HTTPS URL printed by the command. Register it as Telegram's webhook, the address where Telegram sends messages to the bot:
+## Everyday use
 
-```bash
-read -rp 'Worker HTTPS URL: ' WORKER_URL
-curl --silent --show-error --fail-with-body \
-  "https://api.telegram.org/bot${BOT_TOKEN}/setWebhook" \
-  --data-urlencode "url=${WORKER_URL%/}/webhook" \
-  --data-urlencode "secret_token=${TELEGRAM_WEBHOOK_SECRET}" \
-  --data-urlencode 'allowed_updates=["message","edited_message"]'
-unset TELEGRAM_WEBHOOK_SECRET
-```
+- **Report spam:** reply to the target message and mention the moderation bot from a trusted reporting identity.
+- **Register a source:** send `/bs @source_bot` from a trusted identity.
+- **Report an inline sender and its source:** reply with bare `/bs` when both accounts should be handled.
+- **Register a sticker set:** send its complete `https://t.me/addstickers/<set_name>` URL with `/bs`.
+- **Inspect or remove a false positive:** follow [Operations](docs/operations.md), then lift the Telegram restriction separately if needed.
 
-Confirm that the response contains `"ok":true` and `"result":true`. Use this token with only one bot deployment; registering another webhook replaces this one.
+Reporting identity, administrator protection, source attribution, sticker handling, and false-positive recovery are defined by [the behavior contract](docs/behavior.md).
 
-## Report spam and manage sources
+## Optional Jev classification
 
-### Report a message
+Jev is used after local rules, blacklist checks, sticker checks, and report handling. It receives the bounded message context selected by the bot; media is not downloaded or inspected. A provider may charge for requests and may receive user-provided text and profile data, so review its terms before enabling the feature.
 
-Using an identity listed in `REPORTER_IDS`, choose **Reply** on the spam message, type `@`, select your moderation bot, and send.
+The model uses the current sender's intent as the primary evidence. Referenced content and profile data remain source-separated. A narrow project-recruitment hint is added only when the current message and sender biography both support that interpretation. A score at or above the configured inclusive threshold triggers the same current-message moderation action; see [Jev checks](docs/jev-checks.md) for the validation procedure.
 
-In a supergroup, a report from any identity in `REPORTER_IDS` deletes the target message, bans its sender, and clears eligible indexed history, regardless of the reporter's group role. Human and bot accounts follow the same policy, with group owners and administrators protected from bans. The bot removes the report after cleanup succeeds. A reply report from an unlisted identity saves evidence only, even if that identity is a group administrator.
+Read [Jev checks](docs/jev-checks.md) before running live model tests. Provider configuration belongs in deployment secrets, not in repository files.
 
-If Telegram rejects the ban, for example because the bot lacks ban permission, the bot still deletes the target message. In a forum topic, reply to the spam message itself; a mention that replies to nothing does not report the topic's creator. An unlisted reply with a bot mention or bare `/bs` saves evidence without automatic punishment. An unlisted `/bs` with a username or sticker-set URL cannot register a source and undergoes ordinary filtering.
+## Documentation map
 
-Confirmed bans add the sender to the account blacklist. When that account posts in another supergroup using this bot, the bot bans it there and clears eligible indexed messages.
+- [Deployment setup](docs/setup.md) — create the bot, database, secrets, webhook, and deployment.
+- [Operations](docs/operations.md) — reports, source/sticker lists, false positives, troubleshooting, privacy, and retention.
+- [Behavior contract](docs/behavior.md) — final routing, authorization, moderation, retry, and storage behavior.
+- [Jev checks](docs/jev-checks.md) — safe, repeatable live-classification procedure and fixture rules.
+- [Contributing and maintenance](CONTRIBUTING.md) — development commands, module boundaries, and change requirements.
 
-For an inline message sent by A through bot B, this reply report targets A only. It does not register or punish B. For a sticker, it likewise targets only the sender, human or bot, without registering the sticker set.
+## Contributing
 
-### Add a source
-
-Send `/bs @example_bot` using a listed reporting identity, in private or in a group. Replace `example_bot` with the source bot's username. In groups, `/bs@your_moderation_bot @example_bot` addresses this moderation bot explicitly.
-
-The bot saves the resolved account ID in the source list and replies with that ID. It removes the group command after replying, including when lookup fails; private-chat commands and result replies remain. This named command does not ban the account or delete its history. Check the returned ID: Telegram cannot resolve every username, and the command does not check whether the account is a bot.
-
-To report both an inline message's sender A and its source bot B, reply to that message with `/bs` (or `/bs@your_moderation_bot`), without an argument. The bot reads B's ID from the message and registers it as a source. For any listed reporting identity, it bans A and B and clears each account's eligible indexed history, protecting target administrators. An unlisted bare reply saves evidence only. The bot removes a listed group command after processing; temporary failures leave it pending retry.
-
-If a ban result is uncertain, the bot keeps the command and asks you to check membership before sending a new report. It does not repeat an unconfirmed ban automatically.
-
-When someone sends an inline message through a listed source bot, or forwards a message with that bot as the visible origin:
-
-- The sender loses only that message and is permanently muted. Their other messages remain, and they are not added to a blacklist.
-- The source bot is banned, added to the account blacklist, and its eligible indexed messages are cleared.
-
-Copied text, hidden forwarding origins, and messages sent directly by an ordinary account do not match the source list.
-
-For replies and quotes, Jev checks the current sender's own advertisement and any promotion of the referenced spam. Warnings and reports do not count as promotion. Regex and sticker-list checks are skipped. A spam classification deletes the current message and permanently mutes its sender; it does not punish the referenced author or remove history. Jev receives only the reference fields Telegram supplies. See the [content-check contract](docs/behavior.md#blacklists-and-content-checks-connect-to-two-actions).
-
-For messages without a reference, local regex rules first check the message, sender nickname, and shared contact card name. After the regex and sticker-list checks miss, the background task fetches the sender's biography and, if the card contains a Telegram user ID, tries to fetch that contact account's nickname and biography. The deferred regex checks the available profile fields, and Jev evaluates the complete available input. A contact card without a usable ID still supplies its displayed name; the bot does not send its phone number to Jev.
-
-### Block a sticker set
-
-Use an identity listed in `REPORTER_IDS`. Reply to a sticker in a group with bare `/bs` to register its whole set and delete the reported message. In a supergroup, the bot also bans the sender and clears eligible indexed history. If the sticker has an inline source bot (`via_bot`), the command also registers and bans that bot and clears its eligible indexed history. Administrator protection applies to both accounts. A reply with a mention of the moderation bot reports only the sender.
-
-If the sticker has no usable set name, `/bs` registers that sticker's case-sensitive `file_unique_id` instead. A valid inline source is registered separately. If neither sticker identity nor inline source is usable, the bot gives usage help without registration or punishment.
-
-To register a whole set without punishing anyone, send `/bs https://t.me/addstickers/example_set` in private or in a group. Replace `example_set` with the set name from its sharing link. Use the complete HTTPS link with no extra path, query, or fragment. Even when sent as a reply, this form only registers the set. Unlisted bare replies save evidence only; see the [authorization and command contract](docs/behavior.md#inputs-and-reporting-authorization).
-
-New and edited group messages without a reference are checked against the sticker lists after a local regex miss, without a model key. A match deletes the current message and permanently mutes a human sender in a supergroup; it does not clear history or add blacklist entries. Bots are not muted, basic groups support deletion only, and administrators remain protected. Replies and quotes bypass sticker-list checks; a forum topic's creation attachment does not. A set registration covers the whole set. An individual registration covers only the same stable sticker identity, even when its download file ID changes.
-
-### Administrator protection and history limits
-
-Group owners and administrators are exempt from mutes and bans, including when the source bot is an administrator. Automatic filtering leaves their messages intact. A listed reporter can still delete a targeted administrator message.
-
-History cleanup covers indexed messages received in the same group, up to the triggering message or before the report, and less than 48 hours old. The bot cannot search unread history. Telegram may remove additional history when banning an account.
-
-### Inspect lists and remove a false positive
-
-In the Cloudflare dashboard, open **D1 → anti-fwd-spam-reports → Console**. Inspect the lists, replacing `123456789` with your moderation bot's numeric ID:
-
-```sql
-SELECT source_id FROM blacklisted_sources ORDER BY source_id;
-SELECT bot_id, user_id FROM blacklisted_users ORDER BY bot_id, user_id;
-SELECT set_name, added_at FROM blacklisted_sticker_sets
-WHERE bot_id = 123456789 ORDER BY set_name;
-```
-
-`blacklisted_sources` contains registered source IDs; `blacklisted_users` contains banned account IDs for each moderation bot. Copy the IDs to remove and replace the examples below. A source bot can appear in both lists; remove it from both to stop both kinds of filtering:
-
-```sql
-DELETE FROM blacklisted_sources WHERE source_id = 987654321;
-DELETE FROM blacklisted_users WHERE bot_id = 123456789 AND user_id = 987654321;
-```
-
-Sticker sets are scoped to the moderation bot and stored as lowercase ASCII names. To inspect or remove one set, replace the bot ID and `example_set` with the normalized name from the list:
-
-```sql
-SELECT set_name, added_at FROM blacklisted_sticker_sets
-WHERE bot_id = 123456789 AND set_name = 'example_set';
-DELETE FROM blacklisted_sticker_sets
-WHERE bot_id = 123456789 AND set_name = 'example_set';
-```
-
-Individual stickers are scoped to the moderation bot. Copy the exact case-sensitive ID from the list to remove an entry:
-
-```sql
-SELECT file_unique_id, added_at FROM blacklisted_stickers
-WHERE bot_id = 123456789 ORDER BY file_unique_id;
-DELETE FROM blacklisted_stickers
-WHERE bot_id = 123456789 AND file_unique_id = 'example_unique_id';
-```
-
-Removal takes effect on subsequent messages without a new deployment. A sticker report may also have registered a source bot or blacklisted accounts; remove those entries separately when needed.
-
-Then lift any mute or ban in each affected group's Telegram member settings. Removing a database entry does not lift Telegram restrictions. An account left on the account blacklist will be banned again when it posts.
-
-## Automatic text filtering
-
-Local rules check new and edited group messages without a reference before Jev, including messages from bots, without an API key. They search anywhere in text, captions, a shared contact card's name, or the sender's nickname for campaign markers, sexual-solicitation offers, and runs of identical money-bag or red-circle emojis, allowing whitespace between emojis. Surrounding text or other emojis do not prevent a match. If no rule matches a message from a human sender, the bot checks the available sender and contact account profiles in the background before it asks Jev. The exact patterns are `SPAM_PATTERNS` in [policy.py](src/anti_fwd_spam/policy.py). Messages with a reference bypass these general rules, including edits; Jev checks their context.
-
-A match deletes the current message and permanently mutes a human sender in a supergroup, preserving earlier messages and all blacklists. Bot senders are not muted. Group owners and administrators are protected. Private messages skip this check.
-
-## Optional: enable Jev spam checks
-
-Model checks send the sender's display name, available biography, and message text or caption with formatting, shared contact names, available contact account profile, available quoted message and author profile, and selected media descriptions to an external provider. No media is downloaded or inspected. Review the provider's privacy terms and pricing before enabling this feature.
-
-Save an API key under the corresponding Worker secret. With multiple keys, the bot starts with the first configured provider below and can switch providers on failures:
-
-| Provider | Worker secret |
-| --- | --- |
-| [TypeSafe AI](https://ai-sdk.dev/providers/ai-sdk-providers/typesafe-ai) | `TYPESAFE_AI_API_KEY` |
-| [Experiential](https://platform.experientiallabs.ai/models/jev-latest) | `EXPERIENTIAL_API_KEY` |
-| [OpenCode Zen](https://opencode.ai/docs/zen/) | `OPENCODE_API_KEY` |
-| [CommandCode](https://commandcode.ai/docs/provider#decision-models-typesafe-jev) | `CMD_API_KEY` |
-| [Vercel AI Gateway](https://vercel.com/ai-gateway/models/jev) | `AI_GATEWAY_API_KEY` |
-
-The [retry budget](docs/behavior.md#edits-and-retries) is bounded; configuring every provider does not guarantee that each will be tried.
-
-For Vercel, run:
-
-```bash
-mise exec -- uv run pywrangler secret put AI_GATEWAY_API_KEY
-```
-
-Jev checks new user messages and referenced edits after the other moderation rules. A sufficiently high spam score deletes that message and permanently mutes its sender, preserving their earlier messages and leaving all blacklists unchanged. Group owners and administrators are protected. The threshold is `SPAM_THRESHOLD` in [model.py](src/anti_fwd_spam/model.py); a score is not an accuracy guarantee. Edits without a reference, service events, bot senders, and messages sent as a group or channel skip this check.
-
-Product, service, cryptocurrency, and group/channel solicitation uses the Jev check, not a dedicated local regex. Jev uses the current message as the primary intent evidence; profiles and referenced advertisements provide context and do not alone establish solicitation. See the [advertising criteria](docs/behavior.md#blacklists-and-content-checks-connect-to-two-actions) and [live Jev acceptance checks](docs/jev-checks.md).
-
-Temporary model failures leave the message visible while scheduled retries run. Temporary deletion and mute failures also retry; a deleted message stays deleted while a mute is pending. Keep the scheduled trigger enabled. Each model request can incur charges and can send the same content to another configured provider.
-
-To disable checks and pause pending model tasks, delete every configured model secret. For a Vercel-only setup:
-
-```bash
-mise exec -- uv run pywrangler secret delete AI_GATEWAY_API_KEY
-```
-
-## Check operation and troubleshoot
-
-Use a disposable test group and account. Report a test message from an authorized administrator and confirm deletion and the sender's ban. Test source filtering separately: add a source from a private chat, send an inline message from that source using a non-admin account, and confirm deletion and muting while earlier messages remain. Remove test blacklist entries and restrictions when finished.
-
-Check Telegram delivery in the terminal holding `BOT_TOKEN`:
-
-```bash
-curl --silent --show-error --fail-with-body \
-  "https://api.telegram.org/bot${BOT_TOKEN}/getWebhookInfo"
-```
-
-`result.url` must equal the Worker URL plus `/webhook`. `pending_update_count: 0` means no backlog; it does not prove moderation works. If the count keeps growing or a new `last_error_message` appears, open the Worker's logs in the Cloudflare dashboard.
-
-| Symptom | Check |
-| --- | --- |
-| Reports or `/bs` do nothing | Check `REPORTER_IDS`, the sending identity, and `BOT_USERNAME`. |
-| Webhook returns `401` | Save and register the same `TELEGRAM_WEBHOOK_SECRET`. |
-| Webhook returns `404` | Use the deployment URL ending in `/webhook`. |
-| Deletion, mute, or ban fails | Check the bot's administrator permissions and whether the target is protected. |
-| `ban confirmation failed` or `mute retry skipped` | Check membership manually before sending a new report or changing restrictions. |
-| `history cleanup rejected` | Check and delete remaining messages manually. |
-| Storage errors | Check the `REPORTS` binding, database tables, and D1 usage. |
-
-In a fresh terminal, re-enter `BOT_TOKEN` using the command in step 4. Run `unset BOT_TOKEN` when finished.
-
-## Data storage
-
-D1 retains report and source-moderation JSON, resolved command IDs, and temporary processing records for 3 days. The recent-message index stores IDs and timestamps, not message text. Model tasks retain submitted content while classification is pending, then keep only the identities needed to finish deletion and muting. The bot does not download media files.
-
-Source, account, and sticker blacklists remain until manually removed. Scheduled cleanup removes expired records; outages or exhausted quotas can delay it. Cloudflare backups have separate [retention rules](https://developers.cloudflare.com/d1/reference/time-travel/). Keep member information private when viewing or exporting the database.
+Read [Contributing and maintenance](CONTRIBUTING.md) before changing behavior. Keep behavior changes, behavior tests, and the contract synchronized. Run the documented checks before opening a pull request.

@@ -10,9 +10,9 @@ from http import HTTPStatus
 from typing import TYPE_CHECKING
 
 from .actions import Actions
+from .constants import SPAM_THRESHOLD
 from .evidence import MESSAGE_WINDOW_SECONDS, RETENTION_SECONDS, storage_errors
 from .model import (
-    SPAM_THRESHOLD,
     ModelRetryError,
     extract_profile_handles,
     public_profile,

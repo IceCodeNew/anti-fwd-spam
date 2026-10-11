@@ -304,6 +304,38 @@ test('user: Given ordinary discussion and short emoji runs, When Jev accepts the
   }
 });
 
+test('user: Given an unreferenced disabled-group replacement notice, When received from a member, Then local maintenance filtering deletes and mutes it', async () => {
+  await setBindings({ EXPERIENTIAL_API_KEY: undefined });
+  const target = { ...message(), text: '本群已停用，请加入新群一起聊天：https://example.invalid/new-group' };
+  telegram.send(target);
+  assert.equal((await dispatch({ update_id: 1, message: target })).status, 200);
+  assert.equal(telegram.has(81), false);
+  assert.equal(telegram.canSend(22), false);
+  assert.equal(model.state, null);
+});
+
+test('user: Given an unreferenced disabled-group replacement notice from an administrator, When received, Then protection keeps it visible', async () => {
+  await setBindings({ EXPERIENTIAL_API_KEY: undefined });
+  telegram.members.set(22, { status: 'administrator' });
+  const target = { ...message(), text: '本群已停用，请加入新群一起聊天：https://example.invalid/new-group' };
+  telegram.send(target);
+  assert.equal((await dispatch({ update_id: 1, message: target })).status, 200);
+  assert.equal(telegram.has(81), true);
+  assert.equal(telegram.members.get(22).status, 'administrator');
+});
+
+test('user: Given a referenced disabled-group notice, When received, Then local maintenance filtering is bypassed and Jev receives it', async () => {
+  model.probability = 0;
+  const target = { ...message(), text: '本群已停用，请加入新群继续讨论：https://example.invalid/new-group',
+    reply_to_message: { ...message(80), text: '群里正在讨论活动安排' } };
+  telegram.send(target);
+  assert.equal((await dispatch({ update_id: 1, message: target })).status, 200);
+  assert.equal(telegram.has(81), true);
+  assert.equal(telegram.canSend(22), true);
+  assert.equal(model.state.message.text, target.text);
+  assert.equal(model.state.context.reply.text, target.reply_to_message.text);
+});
+
 test('user: Given spam outside local patterns, When Jev flags it, Then model moderation still deletes and mutes', async () => {
   model.probability = 1;
   const target = { ...message(), text: '福利推广，联系我购买' };

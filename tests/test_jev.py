@@ -9,7 +9,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
-from anti_fwd_spam.model import MODEL_PROVIDERS, SPAM_THRESHOLD, ModelConfig, model_input, spam_probability
+from anti_fwd_spam.constants import MODEL_PROVIDERS, SPAM_THRESHOLD
+from anti_fwd_spam.model import ModelConfig, model_input, spam_probability
 from tests.test_model import StreamingResponse
 
 if TYPE_CHECKING:

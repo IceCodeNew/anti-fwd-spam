@@ -123,14 +123,14 @@ test('user: Given pending inference, When every key is removed then a different 
   assert.equal(telegram.has(81), true);
   await setModelKeys(configured(['OPENCODE_API_KEY']));
   model.response = null;
-  model.probability = 0.95;
+  model.probability = 0.90;
   await tick(due + 60);
   assert.equal(telegram.has(81), false);
 });
 
 test('user: Given a saved gateway spam decision, When the provider changes while deletion is pending, Then deletion completes without a new verdict', async () => {
   await setModelKeys(configured(['AI_GATEWAY_API_KEY']));
-  model.probability = 0.95;
+  model.probability = 0.90;
   telegram.faults.set('deleteMessage', () => new Response('unavailable', { status: 503 }));
   telegram.send(message());
   await dispatch({ update_id: 1, message: message() });

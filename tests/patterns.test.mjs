@@ -253,6 +253,16 @@ test('user: Given no model key, When a screenshot pattern arrives, Then local fi
   assert.equal(telegram.canSend(22), false);
 });
 
+test('user: Given a directly sent bot flood with an inline keyboard, When received, Then local filtering deletes the current message', async () => {
+  telegram.members.set(8850626409, { status: 'member' });
+  const target = { ...message(), from: { id: 8850626409, is_bot: true, first_name: 'Group Help', username: 'ghdsuighduibot' },
+    text: '💰'.repeat(192), reply_markup: { inline_keyboard: [[{ text: '💰财富入口💰', url: 'https://example.invalid/flood' }]] } };
+  telegram.send(target);
+  assert.equal((await dispatch({ update_id: 1, message: target })).status, 200);
+  assert.equal(telegram.has(81), false);
+  assert.equal(model.state, null);
+});
+
 test('user: Given a bot sending the screenshot flood, When received, Then its current message disappears with earlier messages intact', async () => {
   const target = { ...message(), from: { ...message().from, is_bot: true }, text: flood };
   telegram.send(message(80));

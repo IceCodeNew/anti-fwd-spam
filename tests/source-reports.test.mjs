@@ -20,6 +20,26 @@ async function inlineReport(text = '/bs') {
   return update;
 }
 
+test('user: Given a directly sent bot flood, When an authorized reporter replies with its username in bs, Then the bot is reported instead of registered as a source', async () => {
+  await setBindings({ REPORTER_IDS: '11' });
+  const target = { ...message(), from: { id: 8850626409, is_bot: true, first_name: 'Group Help', username: 'ghdsuighduibot' },
+    text: '💰'.repeat(192), reply_markup: { inline_keyboard: [[{ text: '💰财富入口💰', url: 'https://example.invalid/flood' }]] } };
+  telegram.members.set(8850626409, { status: 'member' });
+  const update = report(target);
+  update.message.text = '/bs @ghdsuighduibot';
+  update.message.entities = [
+    { type: 'bot_command', offset: 0, length: 3 },
+    { type: 'mention', offset: 4, length: 15 },
+  ];
+  telegram.send(target);
+  telegram.send(update.message);
+  assert.equal((await dispatch(update)).status, 200);
+  assert.equal(telegram.has(81), false);
+  assert.equal(telegram.canJoin(22), true);
+  assert.equal(telegram.canJoin(8850626409), false);
+  assert.equal(await database.prepare('SELECT source_id FROM blacklisted_sources WHERE source_id = 8850626409').first(), null);
+});
+
 test('user: Given an inline message, When a reporter replies with a mention only, Then only the actual sender is banned and cleaned', async () => {
   const command = await inlineReport();
   const update = report(command.message.reply_to_message);

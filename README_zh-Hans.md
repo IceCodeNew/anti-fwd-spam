@@ -195,7 +195,7 @@ WHERE bot_id = 123456789 AND file_unique_id = 'example_unique_id';
 
 ## 自动文本过滤
 
-bot 在 Jev 之前用本地规则检查群内没有引用的新消息和编辑后的消息，包括其他 bot 的消息，无需配置 API key。规则在正文、媒体说明、分享的联系人名片名称或发送者昵称的任意位置搜索 campaign 标记、色情招揽，以及连续相同的钱袋或红圆 emoji，允许 emoji 之间有空白。前后文字或其他 emoji 不影响匹配。真人发送的消息没有命中时，bot 在后台查询能获取的发送者及名片账号资料，先用同一套规则搜索，再交给 Jev。具体匹配式见 [policy.py](src/anti_fwd_spam/policy.py) 中的 `SPAM_PATTERNS`。有引用的消息（包括编辑消息）绕过这些通用规则，由 Jev 根据上下文判断。
+bot 在 Jev 之前用本地规则检查群内没有引用的新消息和编辑后的消息，包括其他 bot 的消息，无需配置 API key。规则在正文、媒体说明、分享的联系人名片名称或发送者昵称的任意位置搜索 campaign 标记、色情招揽，以及连续相同的钱袋或红圆 emoji，允许 emoji 之间有空白。另有维护正则只在当前正文和媒体说明中识别同一句“群/频道已停用、搬迁或改址并要求加入新目的地”的通知。前后文字或其他 emoji 不影响匹配。真人发送的消息没有命中时，bot 在后台查询能获取的发送者及名片账号资料，先用通用规则搜索，再交给 Jev；维护正则不会套用到简介。具体匹配式见 [policy.py](src/anti_fwd_spam/policy.py) 中的 `SPAM_PATTERNS` 和 `DISABLED_GROUP_NOTICE_RE`。有引用的消息（包括编辑消息）绕过这些通用规则，由 Jev 根据上下文判断。
 
 命中后，bot 删除当前消息，在超级群中永久禁言真人发送者，保留历史消息和所有黑名单。bot 发送者不禁言。群主和管理员受保护，私聊消息不参与此检查。
 
@@ -223,7 +223,7 @@ mise exec -- uv run pywrangler secret put AI_GATEWAY_API_KEY
 
 bot 在其他管理规则之后，用 Jev 检查用户新消息及有引用的编辑消息。垃圾消息分数达到阈值时，bot 删除该条消息并永久禁言发送者，保留其历史消息，不加入任何黑名单。群主和管理员受保护。阈值见 [model.py](src/anti_fwd_spam/model.py) 中的 `SPAM_THRESHOLD`；分数不代表准确率。没有引用的编辑消息、服务事件、bot 消息及以群组或频道身份发送的消息不参与模型检查。
 
-商品、服务推销、加密货币招揽和群组/频道导流由 Jev 检查，没有专用本地正则。Jev 以当前消息作为意图的主要证据，简介和被引用的广告只提供上下文，不能单独构成推销。广告判定范围见[行为契约](docs/behavior.md#blacklists-and-content-checks-connect-to-two-actions)。修改 prompt 时，运行[真实 Jev 验收](docs/jev-checks.md)。
+商品、服务推销、项目合作、加密货币招揽和群组/频道导流由 Jev 检查。没有引用的群/频道停用、搬迁或改址通知由专用维护正则检查；有引用的消息仍交给 Jev。项目合作提示只有在当前正文和发送者简介同时呈现招募入口时才追加。Jev 以当前消息作为意图的主要证据，简介和被引用的广告只提供上下文，不能单独构成推销。当前包含边界的垃圾分数阈值为 0.90，见 [model.py](src/anti_fwd_spam/model.py)。广告判定范围见[行为契约](docs/behavior.md#blacklists-and-content-checks-connect-to-two-actions)。修改 prompt 时，运行[真实 Jev 验收](docs/jev-checks.md)。
 
 模型请求临时失败时，bot 保留消息，等待定时重试。删除和禁言临时失败也会重试；消息已经删除时，bot 只继续处理待完成的禁言。请保留定时任务。每次模型请求都可能产生费用，也可能向另一个已配置平台发送相同内容。
 

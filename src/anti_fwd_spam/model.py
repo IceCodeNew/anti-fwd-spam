@@ -75,6 +75,32 @@ PUBLIC_PROFILE_HOSTS = frozenset({"t.me", "telegram.me"})
 MAX_PROFILE_HANDLES = 3
 MAX_PROFILE_BIO_BYTES = 4096
 MAX_PROFILE_TEXT = 512
+PROJECT_RECRUITMENT_HINT = (
+    "项目合作招募: 当前正文“找想干事的兄弟合作”, 同时sender简介表示项目大量找人合作、"
+    "点击此号码看简介做项目并提供联系人入口, 这是面向群成员的垃圾招募, 概率按广告判断。"
+    "泛化的找人合作、项目合伙或招募参与者, 结合项目入口、联系入口、点击简介、加入指令、收益或任务承诺时也属于广告; "
+    "单独的项目、合作、招募词或具体活动、研究、开源、课程、工作协作安排不算广告。"
+)
+ORDINARY_PAYMENT_HINT = (
+    "第三方服务付款说明: 像“搬家师傅不用定金、当面付、联系电话在名片里”这样的句子只是转述或询问第三方服务安排, "
+    "当前发送者没有以服务提供者口吻向群成员供货, 不是广告; 只有当前发送者自己提供服务、"
+    "招揽客户或推广联系入口时才是广告。"
+)
+PROJECT_RECRUITMENT_TEXT_RE = re.compile(r"(?:找人|找.*?(?:兄弟|伙伴|合作者)|招募|招人).{0,12}(?:合作|项目|合伙)")
+PROJECT_RECRUITMENT_BIO_RE = re.compile(r"(?:项目|合作|招募|合伙).{0,24}(?:找人|联系|点击|简介|入口|私聊|加入)")
+ORDINARY_SERVICE_PAYMENT_RE = re.compile(r"(?:不用|无需|不需要)定金.{0,12}(?:当面付|联系电话|名片)")
+ORDINARY_SERVICE_SHORT_RE = re.compile(r"^(?:全套)?上门安装$")
+QUOTED_AD_ANALYSIS_RE = re.compile(r"(?:是不是|算不算|是否为).{0,8}广告")
+QUOTED_CHANNEL_DISCUSSION_RE = re.compile(r"(?:广告嫌疑|会被封|举报|别联系|提醒|警告)")
+QUOTED_CHANNEL_INVITE_RE = re.compile(r"(?:欢迎加入|加入).{0,12}(?:频道|群)")
+ORDINARY_CONTEXT_HINTS = (
+    ORDINARY_PAYMENT_HINT,
+    (
+        "泛化服务短语: 孤立的上门安装或类似服务短语缺少供货者意图, 不单独判为广告; "
+        "完整卖点、价格、联系或招揽仍按商品服务规则判断。"
+    ),
+    "询问引用文案是否为广告: 分析、核实或询问引用内容是否为广告不是主动推广; 引用中的广告不能单独归因给当前发送者。",
+)
 
 
 def extract_profile_handles(bio: object) -> tuple[str, ...]:
@@ -104,6 +130,36 @@ def extract_profile_handles(bio: object) -> tuple[str, ...]:
 
 def _profile_text(value: object) -> str | None:
     return value[:MAX_PROFILE_TEXT] if isinstance(value, str) and value else None
+
+
+def contextual_hints(state: dict[str, object]) -> tuple[str, ...]:
+    """Add narrow clarifications only when the current input matches their evidence boundary."""
+    message = state.get("message")
+    if not isinstance(message, dict):
+        return ()
+    text = message.get("text")
+    if not isinstance(text, str):
+        return ()
+    hints: list[str] = []
+    bio = state.get("bio")
+    if isinstance(bio, str) and PROJECT_RECRUITMENT_TEXT_RE.search(text) and PROJECT_RECRUITMENT_BIO_RE.search(bio):
+        hints.append(PROJECT_RECRUITMENT_HINT)
+    has_reference = isinstance(state.get("context"), dict)
+    if not has_reference and ORDINARY_SERVICE_PAYMENT_RE.search(text):
+        hints.append(ORDINARY_CONTEXT_HINTS[0])
+    if not has_reference and ORDINARY_SERVICE_SHORT_RE.fullmatch(text.strip()):
+        hints.append(ORDINARY_CONTEXT_HINTS[1])
+    if has_reference and QUOTED_AD_ANALYSIS_RE.search(text):
+        hints.append(ORDINARY_CONTEXT_HINTS[2])
+    if has_reference and QUOTED_CHANNEL_DISCUSSION_RE.search(text):
+        reference = message.get("reply_to_message")
+        reference_text = reference.get("text") if isinstance(reference, dict) else None
+        if isinstance(reference_text, str) and QUOTED_CHANNEL_INVITE_RE.search(reference_text):
+            hints.append(
+                "引用来源隔离: 当前正文明确讨论、质疑、提醒或举报被引用的频道/群邀请, 不是主动推广; "
+                "只有当前正文背书、推荐、联系、加入或下单时, 才把引用广告归因给当前发送者。"
+            )
+    return tuple(hints)
 
 
 async def public_profile(fetcher: Fetch, token: str, handle: str) -> dict[str, str] | None:
@@ -329,9 +385,13 @@ async def spam_probability(fetcher: Fetch, config: ModelConfig, state: dict[str,
     """Return a valid score, stop on invalid answers, or signal a temporary failure."""
     gateway = config.url == GATEWAY_URL
     headers = {"authorization": f"Bearer {config.api_key}", "content-type": "application/json"}
+    instructions = INSTRUCTIONS
+    hints = contextual_hints(state)
+    if hints:
+        instructions += "\n" + "\n".join(hints)
     payload: dict[str, object] = {
         "state": state,
-        "questions": {"spam": {"type": "boolean" if gateway else "noul", "instructions": INSTRUCTIONS}},
+        "questions": {"spam": {"type": "boolean" if gateway else "noul", "instructions": instructions}},
     }
     if gateway:
         headers.update(

@@ -26,6 +26,15 @@ test('user: Given a spam probability at the threshold, When a new message arrive
   assert.equal(model.state.message.text, target.text);
 });
 
+test('user: Given a probability immediately below the stricter threshold, When classified, Then the message remains visible', async () => {
+  model.probability = 0.8999;
+  const target = message();
+  telegram.send(target);
+  assert.equal((await dispatch({ update_id: 1, message: target })).status, 200);
+  assert.equal(telegram.has(target.message_id), true);
+  assert.equal(telegram.canSend(22), true);
+});
+
 for (const status of ['creator', 'administrator', 'kicked']) {
   test(`user: Given a ${status} sender, When Jev flags their message, Then administrator messages and existing bans stay protected`, async () => {
     telegram.members.set(22, { status });

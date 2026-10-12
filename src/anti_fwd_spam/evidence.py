@@ -17,6 +17,10 @@ DELETE_BATCH_SIZE = 100
 # Ban progress saved before the report finishes; a target-removal result replaces it.
 BANNED = "banned"
 BAN_FAILED = "ban failed"
+ALLOW_REQUESTED = "allow requested"
+UNBANNED = "unbanned"
+ALLOWED = "allowed"
+ALLOW_MARKERS = (ALLOW_REQUESTED, UNBANNED, ALLOWED)
 
 
 class EvidenceError(Exception):
@@ -73,12 +77,129 @@ class ReportStore:
                 .run()
             )
 
-    async def add_source(self, source_id: int) -> None:
-        """Persist a source once, including concurrent or redelivered commands."""
+    async def request_allow(self, bot_id: int, update_id: int) -> None:
+        """Publish an account fence without resetting confirmed unban or completion progress."""
         with storage_errors():
             await (
-                self.database.prepare("INSERT INTO blacklisted_sources (source_id) VALUES (?) ON CONFLICT DO NOTHING")
-                .bind(source_id)
+                self.database.prepare(
+                    "UPDATE reports SET moderation_result = ? WHERE bot_id = ? AND update_id = ? "
+                    "AND subject_id = 0 AND command_source_id IS NOT NULL AND moderation_result IS NULL",
+                )
+                .bind(ALLOW_REQUESTED, bot_id, update_id)
+                .run()
+            )
+
+    async def confirm_unban(self, bot_id: int, update_id: int) -> None:
+        """Checkpoint Telegram success before attempting any atomic blacklist removal."""
+        with storage_errors():
+            await (
+                self.database.prepare(
+                    "UPDATE reports SET moderation_result = ? WHERE bot_id = ? AND update_id = ? "
+                    "AND subject_id = 0 AND moderation_result = ?",
+                )
+                .bind(UNBANNED, bot_id, update_id, ALLOW_REQUESTED)
+                .run()
+            )
+
+    async def newer_allow(
+        self, bot_id: int, identifier: int, event_update_id: int | None, *, chat_id: int | None = None
+    ) -> int | None:
+        """Read the newest retained command fence for an older or legacy event."""
+        with storage_errors():
+            row = await (
+                self.database.prepare(
+                    "SELECT update_id FROM reports WHERE bot_id = ? AND subject_id = 0 "
+                    "AND command_source_id = ? AND moderation_result IN (?, ?, ?) "
+                    "AND (? IS NULL OR update_id > ?) "
+                    "AND (? IS NULL OR json_extract(raw_update, '$.message.chat.id') = ?) "
+                    "ORDER BY update_id DESC LIMIT 1",
+                )
+                .bind(bot_id, identifier, *ALLOW_MARKERS, event_update_id, event_update_id, chat_id, chat_id)
+                .first()
+            )
+        return int(row.update_id) if row is not None else None
+
+    async def later_confirmed_ban(self, bot_id: int, identifier: int, chat_id: int, update_id: int) -> bool:
+        """Preserve later confirmed bans when compensating an older in-flight request."""
+        with storage_errors():
+            row = await (
+                self.database.prepare(
+                    "SELECT 1 FROM reports WHERE bot_id = ? AND update_id > ? "
+                    "AND COALESCE(json_extract(raw_update, '$.message.chat.id'), "
+                    "json_extract(raw_update, '$.edited_message.chat.id')) = ? "
+                    "AND (subject_id = ? OR (subject_id = 0 AND COALESCE("
+                    "json_extract(raw_update, '$.message.reply_to_message.from.id'), "
+                    "json_extract(raw_update, '$.edited_message.reply_to_message.from.id'), "
+                    "json_extract(raw_update, '$.message.from.id'), "
+                    "json_extract(raw_update, '$.edited_message.from.id')) = ?)) "
+                    "AND (ban_claimed = 1 OR moderation_result = ? OR moderation_result LIKE '%; banned') LIMIT 1",
+                )
+                .bind(bot_id, update_id, chat_id, identifier, identifier, BANNED)
+                .first()
+            )
+        return row is not None
+
+    async def complete_allow(self, bot_id: int, identifier: int, update_id: int) -> bool:
+        """Atomically remove rules only while this confirmed unban is still the latest account decision."""
+        key = (bot_id, update_id)
+        with storage_errors():
+            await self.database.batch(
+                [
+                    self.database.prepare(
+                        "UPDATE reports SET moderation_result = ? WHERE bot_id = ? AND update_id = ? "
+                        "AND subject_id = 0 AND moderation_result = ? AND response_status IS NULL "
+                        "AND NOT EXISTS (SELECT 1 FROM reports AS n WHERE n.bot_id = ? AND n.update_id > ? AND "
+                        "((n.command_source_id = ? AND n.moderation_result IS NULL) OR "
+                        "((n.subject_id = ? OR (n.subject_id = 0 AND "
+                        "COALESCE(json_extract(n.raw_update, '$.message.reply_to_message.from.id'), "
+                        "json_extract(n.raw_update, '$.edited_message.reply_to_message.from.id')) = ?)) "
+                        "AND (n.ban_claimed = 1 OR n.moderation_result = ? OR n.moderation_result LIKE '%; banned'))))"
+                    ).bind(ALLOWED, *key, UNBANNED, *key, identifier, identifier, identifier, BANNED),
+                    self.database.prepare(
+                        "DELETE FROM blacklisted_users WHERE bot_id = ? AND user_id = ? AND EXISTS "
+                        "(SELECT 1 FROM reports WHERE bot_id = ? AND update_id = ? AND subject_id = 0 "
+                        "AND moderation_result = ? AND response_status IS NULL)"
+                    ).bind(bot_id, identifier, *key, ALLOWED),
+                    self.database.prepare(
+                        "DELETE FROM blacklisted_sources WHERE source_id = ? AND EXISTS "
+                        "(SELECT 1 FROM reports WHERE bot_id = ? AND update_id = ? AND subject_id = 0 "
+                        "AND moderation_result = ? AND response_status IS NULL)"
+                    ).bind(identifier, *key, ALLOWED),
+                    self.database.prepare(
+                        "UPDATE model_tasks SET phase = 'done', input_json = NULL, generation = generation + 1, "
+                        "lease_until = 0 WHERE bot_id = ? AND json_extract(input_json, '$.target.from.id') = ? "
+                        "AND (json_extract(input_json, '$.update_id') IS NULL "
+                        "OR json_extract(input_json, '$.update_id') < ?) "
+                        "AND EXISTS (SELECT 1 FROM reports WHERE bot_id = ? AND update_id = ? AND subject_id = 0 "
+                        "AND moderation_result = ? AND response_status IS NULL)"
+                    ).bind(bot_id, identifier, update_id, *key, ALLOWED),
+                    self.database.prepare(
+                        "UPDATE reports SET response_status = 200, response_body = ? "
+                        "WHERE bot_id = ? AND update_id = ? AND subject_id = 0 AND moderation_result = ? "
+                        "AND response_status IS NULL"
+                    ).bind(ALLOWED, *key, ALLOWED),
+                ],
+            )
+            row = (
+                await self.database.prepare(
+                    "SELECT response_status FROM reports WHERE bot_id = ? AND update_id = ? AND subject_id = 0"
+                )
+                .bind(*key)
+                .first()
+            )
+        return row is not None and row.response_status == HTTPStatus.OK
+
+    async def add_source(self, source_id: int, *, bot_id: int, update_id: int) -> None:
+        """Persist a source once unless a newer allow command fenced this registration."""
+        with storage_errors():
+            await (
+                self.database.prepare(
+                    "INSERT INTO blacklisted_sources (source_id) SELECT ? WHERE NOT EXISTS "
+                    "(SELECT 1 FROM reports WHERE bot_id = ? AND subject_id = 0 AND command_source_id = ? "
+                    "AND moderation_result IN (?, ?, ?) AND update_id > ?) "
+                    "ON CONFLICT DO NOTHING",
+                )
+                .bind(source_id, bot_id, source_id, *ALLOW_MARKERS, update_id)
                 .run()
             )
 
@@ -118,15 +239,32 @@ class ReportStore:
             row = await self.database.prepare(sql).bind(bot_id, identity).first()
         return row is not None
 
-    async def blacklist_user(self, bot_id: int, user_id: int, now: int) -> None:
-        """Retain confirmed banned accounts independently of expiring evidence."""
+    async def blacklisted_username(self, bot_id: int, username: str) -> tuple[int, ...]:
+        """Read up to two retained matches so an ambiguous name cannot fall back to public lookup."""
+        with storage_errors():
+            rows = await (
+                self.database.prepare(
+                    "SELECT user_id FROM blacklisted_users WHERE bot_id = ? AND username = ? COLLATE NOCASE LIMIT 2"
+                )
+                .bind(bot_id, username)
+                .all()
+            )
+        return tuple(int(row.user_id) for row in rows.results)
+
+    async def blacklist_user(
+        self, bot_id: int, user_id: int, now: int, *, update_id: int | None = None, username: str | None = None
+    ) -> None:
+        """Retain confirmed banned accounts unless a newer allow fenced this event."""
         with storage_errors():
             await (
                 self.database.prepare(
-                    "INSERT INTO blacklisted_users (bot_id, user_id, added_at) VALUES (?, ?, ?) "
-                    "ON CONFLICT(bot_id, user_id) DO NOTHING",
+                    "INSERT INTO blacklisted_users (bot_id, user_id, added_at, username) SELECT ?, ?, ?, ? "
+                    "WHERE NOT EXISTS (SELECT 1 FROM reports WHERE bot_id = ? AND subject_id = 0 "
+                    "AND command_source_id = ? AND moderation_result IN (?, ?, ?) "
+                    "AND (? IS NULL OR update_id > ?)) ON CONFLICT(bot_id, user_id) DO UPDATE "
+                    "SET username = COALESCE(excluded.username, blacklisted_users.username)",
                 )
-                .bind(bot_id, user_id, now)
+                .bind(bot_id, user_id, now, username, bot_id, user_id, *ALLOW_MARKERS, update_id, update_id)
                 .run()
             )
 

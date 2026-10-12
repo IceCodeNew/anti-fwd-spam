@@ -10,7 +10,7 @@ from http import HTTPStatus
 from typing import TYPE_CHECKING
 
 from .actions import Actions
-from .constants import SPAM_THRESHOLD
+from .constants import MAX_PROFILE_TEXT, SPAM_THRESHOLD
 from .evidence import MESSAGE_WINDOW_SECONDS, RETENTION_SECONDS, storage_errors
 from .model import (
     ModelRetryError,
@@ -19,9 +19,11 @@ from .model import (
     spam_probability,
     user_profile,
 )
-from .policy import matches_spam_text
+from .policy import matches_spam_text, parse_update
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
     from .evidence import ReportStore
     from .model import ModelConfig
     from .telegram import Fetch
@@ -40,6 +42,7 @@ class Task:
     input_json: str | None
     attempts: int
     generation: int
+    subject_id: int = 0
 
 
 async def _fetch_account_profiles(
@@ -117,13 +120,15 @@ class ModelTasks:
         self.database = store.database
         self.bot_id = bot_id
 
-    async def enqueue(
+    async def enqueue(  # noqa: PLR0913 - Preserve the ordinary message API while adding an independent subject.
         self,
         chat_id: int,
         message_id: int,
         sent_at: int,
         state: dict[str, object] | None,
         now: int,
+        *,
+        subject_id: int = 0,
     ) -> bool:
         """Deduplicate deliveries; an edit also leaves a tombstone before any original delivery."""
         phase = "done" if state is None else "classify"
@@ -131,8 +136,10 @@ class ModelTasks:
             row = (
                 await self.database.prepare(
                     "INSERT INTO model_tasks "
-                    "(bot_id, chat_id, message_id, phase, input_json, due_at, stop_at, created_at, expires_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(bot_id, chat_id, message_id) DO UPDATE "
+                    "(bot_id, chat_id, message_id, subject_id, phase, input_json, "
+                    "due_at, stop_at, created_at, expires_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                    "ON CONFLICT(bot_id, chat_id, message_id, subject_id) DO UPDATE "
                     "SET phase = 'done', input_json = NULL, generation = generation + 1 "
                     "WHERE excluded.phase = 'done' RETURNING message_id",
                 )
@@ -140,6 +147,7 @@ class ModelTasks:
                     self.bot_id,
                     chat_id,
                     message_id,
+                    subject_id,
                     phase,
                     json.dumps(state, ensure_ascii=False) if state is not None else None,
                     now,
@@ -159,9 +167,10 @@ class ModelTasks:
             await (
                 self.database.prepare(
                     "INSERT INTO model_tasks "
-                    "(bot_id, chat_id, message_id, phase, input_json, due_at, stop_at, created_at, expires_at, "
-                    "revision, edit_pending) VALUES (?, ?, ?, 'done', NULL, ?, ?, ?, ?, ?, ?) "
-                    "ON CONFLICT(bot_id, chat_id, message_id) DO UPDATE SET "
+                    "(bot_id, chat_id, message_id, subject_id, phase, input_json, due_at, stop_at, "
+                    "created_at, expires_at, revision, edit_pending) "
+                    "VALUES (?, ?, ?, 0, 'done', NULL, ?, ?, ?, ?, ?, ?) "
+                    "ON CONFLICT(bot_id, chat_id, message_id, subject_id) DO UPDATE SET "
                     "phase = 'done', input_json = NULL, attempts = 0, generation = generation + 1, "
                     "due_at = excluded.due_at, lease_until = 0, stop_at = excluded.stop_at, "
                     "expires_at = excluded.expires_at, revision = excluded.revision, "
@@ -189,7 +198,7 @@ class ModelTasks:
                 await self.database.prepare(
                     "UPDATE model_tasks SET phase = 'classify', input_json = ?, attempts = 0, "
                     "due_at = ?, lease_until = 0, stop_at = ?, edit_pending = 0 "
-                    "WHERE bot_id = ? AND chat_id = ? AND message_id = ? AND revision = ? "
+                    "WHERE bot_id = ? AND chat_id = ? AND message_id = ? AND subject_id = 0 AND revision = ? "
                     "AND phase = 'done' AND edit_pending = 1 RETURNING message_id"
                 )
                 .bind(
@@ -204,7 +213,14 @@ class ModelTasks:
             )
         return row is not None
 
-    async def claim(self, now: int, target: tuple[int, int] | None = None, *, inference: bool = True) -> Task | None:
+    async def claim(
+        self,
+        now: int,
+        target: tuple[int, int] | None = None,
+        *,
+        inference: bool = True,
+        subject_id: int = 0,
+    ) -> Task | None:
         """Atomically claim one due stage and charge an attempt before the external request.
 
         Without inference, claim only deletions and unstarted biography checks; model retries stay paused.
@@ -216,7 +232,7 @@ class ModelTasks:
                     "due_at = ? + CASE attempts WHEN 0 THEN ? WHEN 1 THEN ? ELSE ? END "
                     "WHERE rowid = (SELECT rowid FROM model_tasks WHERE bot_id = ? AND phase != 'done' "
                     "AND due_at <= ? AND lease_until <= ? AND stop_at > ? AND expires_at > ? "
-                    "AND attempts < ? AND (? IS NULL OR (chat_id = ? AND message_id = ?)) "
+                    "AND attempts < ? AND (? IS NULL OR (chat_id = ? AND message_id = ? AND subject_id = ?)) "
                     "AND (? OR phase = 'delete' OR attempts = 0) "
                     "ORDER BY due_at, rowid LIMIT 1) RETURNING *",
                 )
@@ -233,6 +249,7 @@ class ModelTasks:
                     target[0] if target else None,
                     target[0] if target else None,
                     target[1] if target else None,
+                    subject_id,
                     inference,
                 )
                 .first()
@@ -246,6 +263,7 @@ class ModelTasks:
                 str(row.input_json) if row.input_json is not None else None,
                 int(row.attempts),
                 int(row.generation),
+                int(row.subject_id),
             )
 
     async def finish(
@@ -260,7 +278,7 @@ class ModelTasks:
                 await self.database.prepare(
                     "UPDATE model_tasks SET phase = ?, input_json = CASE WHEN ? THEN input_json ELSE ? END, "
                     "attempts = CASE WHEN ? THEN attempts ELSE 0 END, due_at = ?, lease_until = 0 "
-                    "WHERE bot_id = ? AND chat_id = ? AND message_id = ? AND generation = ? "
+                    "WHERE bot_id = ? AND chat_id = ? AND message_id = ? AND subject_id = ? AND generation = ? "
                     "AND phase = ? AND lease_until > ? AND stop_at > ? AND expires_at > ? RETURNING message_id",
                 )
                 .bind(
@@ -272,6 +290,7 @@ class ModelTasks:
                     self.bot_id,
                     task.chat_id,
                     task.message_id,
+                    task.subject_id,
                     task.generation,
                     task.phase,
                     now,
@@ -303,54 +322,124 @@ class ModelTasks:
         )
 
     async def run(self, task: Task, fetcher: Fetch, token: str, models: tuple[ModelConfig, ...], now: int) -> None:
-        """Check the biography, then classify; persist the result before moderation so retries cannot reevaluate it."""
+        """Persist a profile or message decision before its independently leased moderation action."""
         payload = json.loads(task.input_json or "{}")
         snapshot = payload.get("target")
         target = snapshot if isinstance(snapshot, dict) else None
+        joining = payload.get("joining") is True
         # Tasks saved by the previous release have no mute flag and keep the mute.
         mute = payload.get("mute") is not False
-        action: dict[str, object] | None = {"target": target, "mute": mute} if target is not None else None
-        if task.phase == "classify":
-            state = payload["state"]
-            await enrich_profiles(
-                state, payload.get("profile_ids"), target["from"]["id"] if target is not None else None, fetcher, token
+        action: dict[str, object] = {"target": target, "update_id": payload.get("update_id")}
+        if joining:
+            action.update({"joining": True, "update_json": payload["update_json"]})
+        else:
+            action["mute"] = mute
+
+        async def can_act() -> bool:
+            if not await self._owns(task, max(now, int(time.time()))):
+                return False
+            identifier = target["from"]["id"] if target is not None else None
+            update_id = payload.get("update_id")
+            return (
+                identifier is None
+                or (
+                    await self.store.newer_allow(self.bot_id, identifier, update_id if type(update_id) is int else None)
+                )
+                is None
             )
-            spam = deferred_regex_match(state)
-            if not spam and models:
+
+        if task.phase == "classify":
+            if not await can_act():
+                await self.finish(task, "done", max(now, int(time.time())))
+                return
+            state = payload["state"]
+            spam = await self._profile_match(payload, fetcher, token, can_act=can_act)
+            if spam is False and models and await can_act():
                 model = models[(task.attempts - 1) % len(models)]
                 try:
-                    probability = await spam_probability(fetcher, model, state)
+                    probability = (
+                        await spam_probability(fetcher, model, state, joining=True)
+                        if joining
+                        else await spam_probability(fetcher, model, state)
+                    )
                 except ModelRetryError as error:
-                    retry = error.retryable or task.attempts < len(models)
+                    retry = (error.retryable or task.attempts < len(models)) and await can_act()
                     await self.finish(task, "classify" if retry else "done", max(now, int(time.time())), retry=retry)
                     return
                 spam = probability is not None and probability >= SPAM_THRESHOLD
             now = max(now, int(time.time()))
-            phase = "delete" if spam else "done"
+            phase = "delete" if spam and await can_act() else "done"
             if not await self.finish(task, phase, now, action=action) or phase == "done":
                 return
-            deletion = await self.claim(now, (task.chat_id, task.message_id))
+            deletion = await self.claim(now, (task.chat_id, task.message_id), subject_id=task.subject_id)
             if deletion is None:
                 return
             task = deletion
-        retry = False
-        if target is not None:
-
-            async def can_act() -> bool:
-                return await self._owns(task, max(now, int(time.time())))
-
-            response = await Actions(fetcher, token, self.store).delete_and_mute(target, can_act=can_act, mute=mute)
-            retry = response.status == HTTPStatus.SERVICE_UNAVAILABLE
+        retry = await self._moderate(payload, fetcher, token, can_act=can_act)
         await self.finish(task, "delete" if retry else "done", max(now, int(time.time())), retry=retry)
+
+    async def _moderate(
+        self, payload: dict[str, object], fetcher: Fetch, token: str, *, can_act: Callable[[], Awaitable[bool]]
+    ) -> bool:
+        target = payload.get("target")
+        if not isinstance(target, dict):
+            return False
+        actions = Actions(fetcher, token, self.store)
+        if payload.get("joining") is True:
+            raw_json = payload.get("update_json")
+            if not isinstance(raw_json, str):
+                return False
+            update = parse_update(raw_json)
+            if update is None or not await can_act():
+                return False
+            response = await actions.ban_joiner(target, update, can_act=can_act)
+        else:
+            response = await actions.delete_and_mute(target, can_act=can_act, mute=payload.get("mute") is not False)
+        return response.status == HTTPStatus.SERVICE_UNAVAILABLE
+
+    async def _profile_match(
+        self, payload: dict[str, object], fetcher: Fetch, token: str, *, can_act: Callable[[], Awaitable[bool]]
+    ) -> bool | None:
+        state = payload["state"]
+        if not isinstance(state, dict):
+            return False
+        target = payload.get("target")
+        sender = target["from"] if isinstance(target, dict) else None
+        candidate = sender.get("id") if isinstance(sender, dict) else None
+        identifier = candidate if type(candidate) is int else None
+        if payload.get("joining") is True and isinstance(sender, dict) and identifier is not None:
+            if await self.store.is_blacklisted(self.bot_id, identifier):
+                return True
+            if sender.get("is_bot") is True:
+                return True if await self.store.matching_sources(frozenset({identifier})) else None
+            if matches_spam_text(state.get("nickname")):
+                return True
+        if not await can_act():
+            return False
+        await enrich_profiles(state, payload.get("profile_ids"), identifier, fetcher, token)
+        biography = state.get("bio")
+        if payload.get("joining") is True and isinstance(biography, str):
+            state["bio"] = biography[:MAX_PROFILE_TEXT]
+        return deferred_regex_match(state)
 
     async def _owns(self, task: Task, now: int) -> bool:
         with storage_errors():
             row = await (
                 self.database.prepare(
-                    "SELECT 1 FROM model_tasks WHERE bot_id = ? AND chat_id = ? AND message_id = ? "
-                    "AND generation = ? AND phase = 'delete' AND lease_until > ? AND stop_at > ? AND expires_at > ?"
+                    "SELECT 1 FROM model_tasks WHERE bot_id = ? AND chat_id = ? AND message_id = ? AND subject_id = ? "
+                    "AND generation = ? AND phase = ? AND lease_until > ? AND stop_at > ? AND expires_at > ?"
                 )
-                .bind(self.bot_id, task.chat_id, task.message_id, task.generation, now, now, now)
+                .bind(
+                    self.bot_id,
+                    task.chat_id,
+                    task.message_id,
+                    task.subject_id,
+                    task.generation,
+                    task.phase,
+                    now,
+                    now,
+                    now,
+                )
                 .first()
             )
         return row is not None

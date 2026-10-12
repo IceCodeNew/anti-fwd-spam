@@ -23,6 +23,7 @@ Use a **supergroup** for the complete feature set. Basic groups can delete messa
 | A message comes from a registered source bot | Delete the current message; moderate the source account separately. |
 | A new message matches a local rule or registered sticker | Delete the current message and mute its sender when Telegram supports it. |
 | Jev classifies a message as spam | Delete the current message and mute its sender; referenced authors are not punished. |
+| A joining account advertises through its nickname or profile | Permanently ban the matched member and delete the join notice, even before they speak. |
 | A message is edited or a network request fails temporarily | Fence stale work and retry only the pending operation. |
 
 See [the behavior contract](docs/behavior.md) for the complete routing and protection rules.
@@ -42,7 +43,7 @@ The complete copy-pasteable setup is in [Deployment setup](docs/setup.md). Start
 - **Register a source:** send `/bs @source_bot` from a trusted identity. Registered sources include bots that send messages directly, including guest bots.
 - **Block and report a bot source:** reply with bare `/bs` to a direct bot message, or to an inline message when both its sender and source should be handled.
 - **Register a sticker set:** send its complete `https://t.me/addstickers/<set_name>` URL with `/bs`.
-- **Inspect or remove a false positive:** follow [Operations](docs/operations.md), then lift the Telegram restriction separately if needed.
+- **Undo an account ban:** from a trusted identity in the affected supergroup, send `/allow @username` or `/allow <account ID>` to remove its blacklist entries and allow rejoining. See [Operations](docs/operations.md) for username lookup limits and other false-positive recovery.
 
 Reporting identity, administrator protection, source attribution, sticker handling, and false-positive recovery are defined by [the behavior contract](docs/behavior.md).
 

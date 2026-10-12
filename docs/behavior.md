@@ -9,6 +9,7 @@ The Worker accepts authenticated Telegram `message` and `edited_message` updates
 A reporting identity is either a configured user ID or a configured sender-chat ID. A sender-chat identity is evaluated on its own; a compatibility `from` field cannot authorize it. An ordinary user must be a genuine non-bot sender whose ID is configured. Authorization is checked again on redelivery and retry.
 
 - A listed `/bs` command is handled before automatic filtering. `/bs @username` registers the named source without immediately moderating a reply target. A bare `/bs` reply registers the target's inline bot, or its actual bot sender when there is no inline bot; registration must succeed before the target and registered source receive Action 2. The guest caller is not a source or moderation target. Sticker registration and target validation still apply.
+- A listed `/allow @username` or `/allow <account ID>` in a supergroup removes the selected account from this bot's account blacklist and the shared source blacklist, then permits it to rejoin that supergroup. Telegram unban confirmation precedes blacklist removal. Existing members, restrictions, other groups' bans, other bots' account entries, and sticker lists are unchanged. Recorded usernames are checked against the account's current profile before first resolution, then stay pinned on retry; unresolved, renamed or ambiguous identities require the numeric ID. `/allow` uses the same configured reporting identities as `/bs`, not administrator status alone; edited, private-chat and basic-group forms do not change state.
 - An unlisted bare `/bs` reply to a valid group target records evidence but does not register a source or punish an account.
 - An unlisted reply that mentions the bot records evidence and ends routing.
 - An explicit unlisted `/bs` argument continues through ordinary filtering instead of registering a source.
@@ -19,10 +20,10 @@ A reporting identity is either a configured user ID or a configured sender-chat 
 For a new group message, processing follows this order:
 
 1. Validate the update and authenticated webhook request.
-2. Match explicit source identities and account blacklists.
-3. Dispatch authorized commands and report plugins.
-4. Index an eligible message for possible later history cleanup.
-5. Apply reply-report handling.
+2. Dispatch authorized commands before automatic filtering.
+3. Route a join notice to independent checks of its new members, rather than its inviter.
+4. For other messages, match explicit source identities and account blacklists.
+5. Index an eligible message for possible later history cleanup, then apply reply reports and remaining command handling.
 6. Apply local text, profile, sticker, and maintenance rules to messages without a reference and to actual bot senders even when referenced.
 7. Queue Jev classification for the remaining eligible input.
 8. Leave the message unchanged when no rule or model decision reaches the configured threshold.
@@ -30,10 +31,15 @@ For a new group message, processing follows this order:
 ```mermaid
 flowchart TD
     A[Authenticated Telegram update] --> B{Supported command?}
-    B -->|Listed /bs| C[Authorize and handle command]
+    B -->|Listed /bs or /allow| C[Authorize and handle command]
     B -->|No| D{Group message?}
     D -->|No| E[Ignore, except commands]
-    D -->|Yes| F[Match source and account blacklists]
+    D -->|Yes| S{New members notice?}
+    S -->|Yes| T[Check each joined account independently]
+    T --> U{Listed account/source or profile advertisement?}
+    U -->|Yes, unprotected| V[Permanently ban joined account and remove notice]
+    U -->|No or protected| Q[Leave member unchanged]
+    S -->|No| F[Match source and account blacklists]
     F -->|Source match| G[Action 1 on sender and Action 2 on source]
     F -->|Account match| H[Action 2 on account]
     F -->|No blacklist match| I[Index eligible message]
@@ -64,7 +70,8 @@ flowchart LR
     B -->|Registered source| C[Current sender A: Action 1]
     B -->|Registered source| D[Source bot B: Action 2]
     B -->|Trusted reply report| E[Reported account A: Action 2]
-    B -->|Local rule, sticker, or Jev| F[Current sender A: Action 1]
+    B -->|Local rule, sticker, or Jev on a message| F[Current sender A: Action 1]
+    B -->|Joined account match| M[Joined member: Action 2 and notice removal]
     G[Unlisted report] --> H[Evidence only]
     C --> I{Protected administrator or owner?}
     F --> I
@@ -72,6 +79,7 @@ flowchart LR
     I -->|No| K[Delete current message and mute when supported]
     D --> L[Ban and clean eligible indexed history]
     E --> L
+    M --> L
 ```
 
 ## Moderation outcomes
@@ -84,9 +92,17 @@ Group owners, administrators, and messages sent as a group's anonymous identity 
 
 ### Action 2: ban an account and clean eligible history
 
-Trusted reply reports and explicit source reports use Action 2. The bot bans the selected account when allowed, prevents rejoining, and removes eligible indexed messages in that group. A reported target message is deleted independently of the ban result when Telegram permits it. Confirmed bans add the account to the bot-scoped account blacklist.
+Trusted reply reports, explicit source reports, and matching joined accounts use Action 2. The bot bans the selected account when allowed, prevents rejoining, and removes eligible indexed messages in that group. A reported target message is deleted independently of the ban result when Telegram permits it. Confirmed bans add the account to the bot-scoped account blacklist.
 
 Action 2 never treats the source bot as the sender's history unless the command explicitly reports both accounts. Target administrators remain protected from automatic bans and history cleanup.
+
+## Joining accounts
+
+A new `new_chat_members` service notice in a supergroup checks each joined account independently. The inviter or service-message actor is neither classified nor indexed as a joiner. Duplicate member identities are processed once; the moderation bot itself is skipped. Edited join notices and other service events do not create join checks.
+
+Existing account blacklists and registered bot sources apply to joined accounts even before they speak. Otherwise, the bot checks a human joiner's own bounded nickname and available biography against existing profile-safe local rules and, when configured, a separate Jev profile-advertising scope. A nickname or biography that clearly solicits services, goods, sexual offers, cryptocurrency trades, or recruitment can be sufficient without an authored message. Isolated keywords, emoji, student identities, ordinary self-description, warnings, fictional dialogue, or advertisements in linked targets alone are insufficient. Unknown profile fields are not evidence of spam. Unlisted bots do not enter profile classification.
+
+A match permanently bans only that joined account, preventing rejoining, and records the confirmed ban in the existing bot-scoped account blacklist. It also removes the shared join notice and cleans eligible indexed history of that account, not the inviter. Normal co-joiners stay in the group; administrators and owners remain protected. A confirmed ban is not repeated when notice deletion needs retry. Each member has an independent durable task and moderation subject, so one failed lookup, decision, or action does not overwrite another's progress.
 
 ## Local filtering
 
@@ -102,13 +118,15 @@ The current sender's intent is the primary evidence. Reference content and profi
 
 Product/service pitches, private-group recruitment, public-group/channel recruitment, project recruitment, payment-code recruitment, sexual offers, income recruitment, and cryptocurrency solicitation are evaluated by their respective semantic conditions. A product's features or warranty can form a short sales pitch; isolated keywords, profile text, links, coin names, payment terms, or quoted advertisements do not independently establish spam.
 
-The inclusive score threshold is the `SPAM_THRESHOLD` value maintained in `src/anti_fwd_spam/constants.py`. A score at or above it uses Action 1. A lower score, invalid answer, missing provider, or failed request leaves the message visible.
+The inclusive score threshold is the `SPAM_THRESHOLD` value maintained in `src/anti_fwd_spam/constants.py`. A message score at or above it uses Action 1; the separate joining-account scope uses the join outcome above. A lower score, invalid answer, missing provider, or failed request leaves the message visible.
 
 ## Edits and retries
 
 An edit fences older model work for that message. An edited message still passes source and report routing. An edited human message without a reference can use local rules; an eligible referenced human edit starts fresh Jev classification. Bot messages use local rules even when referenced and never enter Jev. Edits do not rerun automatic account-blacklist checks.
 
 Webhook delivery retries and scheduled task retries are separate. Durable task leases prevent concurrent work from repeating a completed moderation action. A confirmed deletion or ban is not repeated after a later redelivery; uncertain operations remain retryable or require manual inspection.
+
+Within retained evidence, `/allow` fences older source registration and moderation events and cancels superseded account tasks. Completed command redelivery does not undo a subsequent new ban. This is replay protection, not a permanent allowlist: a new advertisement, join, or trusted report can trigger moderation again. Already-issued Telegram requests require outcome handling; unresolved overlap requires manual inspection rather than silently claiming recovery. Deleting blacklist rows does not restore deleted history or unmute a restricted current member.
 
 ## Stored state and privacy
 

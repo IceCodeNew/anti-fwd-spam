@@ -24,6 +24,7 @@ from .constants import (
 from .policy import display_name, reply_target
 from .rules import (
     INSTRUCTIONS,
+    JOIN_PROFILE_INSTRUCTIONS,
     ORDINARY_CONTEXT_HINTS,
     ORDINARY_SERVICE_PAYMENT_RE,
     ORDINARY_SERVICE_SHORT_RE,
@@ -249,6 +250,15 @@ def model_input(message: dict[str, object]) -> dict[str, object]:
     return state
 
 
+def join_model_input(member: dict[str, object]) -> dict[str, object]:
+    """Snapshot a joining account's bounded profile labels without inventing an authored message."""
+    state: dict[str, object] = {"nickname": display_name(member)[:MAX_PROFILE_TEXT]}
+    username = _profile_text(member.get("username"))
+    if username is not None:
+        state["username"] = username
+    return state
+
+
 def profile_ids(message: dict[str, object]) -> dict[str, int]:
     """Return only resolvable Telegram user IDs; never send these IDs to Jev."""
     identifiers: dict[str, int] = {}
@@ -289,14 +299,17 @@ async def sender_bio(fetcher: Fetch, token: str, user_id: int) -> str | None:
     return (await user_profile(fetcher, token, user_id))[1]
 
 
-async def spam_probability(fetcher: Fetch, config: ModelConfig, state: dict[str, object]) -> float | None:
-    """Return a valid score, stop on invalid answers, or signal a temporary failure."""
+async def spam_probability(
+    fetcher: Fetch, config: ModelConfig, state: dict[str, object], *, joining: bool = False
+) -> float | None:
+    """Score an ordinary message or joining profile, retaining the provider retry policy."""
     gateway = config.url == GATEWAY_URL
     headers = {"authorization": f"Bearer {config.api_key}", "content-type": "application/json"}
-    instructions = INSTRUCTIONS
-    hints = contextual_hints(state)
-    if hints:
-        instructions += "\n" + "\n".join(hints)
+    instructions = JOIN_PROFILE_INSTRUCTIONS if joining else INSTRUCTIONS
+    if not joining:
+        hints = contextual_hints(state)
+        if hints:
+            instructions += "\n" + "\n".join(hints)
     payload: dict[str, object] = {
         "state": state,
         "questions": {"spam": {"type": "boolean" if gateway else "noul", "instructions": instructions}},

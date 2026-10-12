@@ -12,13 +12,13 @@ if TYPE_CHECKING:
     from .telegram import Fetch
 
 
-def source_argument(message: dict[str, object], bot_username: str) -> str | None:
+def command_argument(message: dict[str, object], bot_username: str, command: str) -> str | None:
     """Recognize a leading Telegram command addressed to this bot."""
     text, entities = message.get("text"), message.get("entities")
     if not isinstance(text, str) or not isinstance(entities, list):
         return None
     parts = text.split(maxsplit=1)
-    if not parts or parts[0].casefold() not in {"/bs", f"/bs@{bot_username.casefold()}"}:
+    if not parts or parts[0].casefold() not in {command, f"{command}@{bot_username.casefold()}"}:
         return None
     if not any(
         isinstance(entity, dict)
@@ -53,24 +53,29 @@ def replied_source(message: dict[str, object]) -> int | None:
     return identifier if type(identifier) is int and 0 < identifier <= MAX_TELEGRAM_ID else None
 
 
-async def resolve_source(fetcher: Fetch, token: str, username: str) -> int | None:
+async def resolve_source(fetcher: Fetch, token: str, username: str, *, known_id: int | None = None) -> int | None:
     """Resolve a username without requiring the returned account to be a bot."""
     if not re.fullmatch(r"[A-Za-z0-9_]{1,32}", username):
         return None
     try:
-        account = await call_method(fetcher, token, "getChat", {"chat_id": f"@{username}"})
+        account = await call_method(
+            fetcher, token, "getChat", {"chat_id": known_id if known_id is not None else f"@{username}"}
+        )
     except TelegramError as error:
         if error.retryable:
             raise
         return None
     if not isinstance(account, dict) or account.get("type") not in SUPPORTED_CHAT_TYPES:
         raise TelegramError(retryable=True)
+    known_identity = known_id is None or (account.get("id") == known_id and account.get("type") == "private")
     names = account.get("active_usernames", [])
     if not isinstance(names, list):
         raise TelegramError(retryable=True)
-    if not any(
+    if not known_identity or not any(
         isinstance(name, str) and name.casefold() == username.casefold() for name in [account.get("username"), *names]
     ):
+        if known_id is not None:
+            return None
         raise TelegramError(retryable=True)
     identifier = account.get("id")
     if type(identifier) is not int or not 0 < abs(identifier) <= MAX_TELEGRAM_ID:

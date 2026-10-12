@@ -10,7 +10,9 @@ Use `/bs @source_bot` to register a source bot, including a guest bot that sends
 
 ## False positives and restrictions
 
-Automatic filtering deletes the triggering message and can permanently mute a human sender. It does not add that sender to a blacklist. Administrators and group owners are protected. A confirmed ban or deletion may remove history; lifting a Telegram restriction does not restore deleted messages.
+Ordinary message filtering deletes the triggering message and can permanently mute a human sender without adding an account blacklist entry. Join-profile filtering instead permanently bans the matched new member and deletes the join notice, recording the confirmed account ban. Administrators and group owners are protected. Deleted messages cannot be restored.
+
+To undo an account ban, use an identity in `REPORTER_IDS` to send `/allow @username` or `/allow <account ID>` in the affected supergroup. Known usernames are retained on confirmed account bans and checked against that account's current numeric profile. Prefer the numeric ID for legacy entries without a name, renamed or ambiguous accounts, or when Telegram cannot resolve the identity. The command removes this bot's account entry and the matching shared source entry, and lets the account rejoin the current group; it does not automatically add them back. It leaves other groups' bans, other bots' account entries, sticker lists, and current-member mute permissions unchanged. This is not a lasting exemption from future advertisements or new reports.
 
 Inspect D1 in the Cloudflare dashboard. Replace the example IDs with the moderation bot ID and the value from your database:
 
@@ -34,7 +36,7 @@ DELETE FROM blacklisted_stickers
 WHERE bot_id = 123456789 AND file_unique_id = 'example_unique_id';
 ```
 
-Database removal affects future messages; lift an existing mute or ban separately in Telegram. Keep member information private when viewing or exporting D1 data.
+Manual database removal affects future filtering; lift its existing Telegram restriction separately. `/allow` handles account-ban recovery together with list removal, but a current member's mute still needs separate recovery. Keep member information private when viewing or exporting D1 data.
 
 ## Delivery and troubleshooting
 
@@ -49,7 +51,7 @@ curl --silent --show-error --fail-with-body \
 
 | Symptom | Check |
 | --- | --- |
-| Reports or `/bs` do nothing | Check the sending identity, `REPORTER_IDS`, and `BOT_USERNAME`. |
+| Reports, `/bs`, or `/allow` do nothing | Check the sending identity, `REPORTER_IDS`, and `BOT_USERNAME`. |
 | Webhook returns `401` | Confirm the saved and registered `TELEGRAM_WEBHOOK_SECRET` match. |
 | Webhook returns `404` | Use the deployed URL ending in `/webhook`. |
 | Deletion, mute, or ban fails | Check bot administrator permissions and target protection. |

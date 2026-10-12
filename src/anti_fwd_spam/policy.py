@@ -201,6 +201,7 @@ def parse_update(raw_json: str) -> TelegramUpdate | None:
     if update_id is not None and (type(update_id) is not int or update_id < 0):
         message = "update.update_id is invalid"
         raise ValueError(message)
+    _validate_join(raw_message, chat_type, update_id)
     sources = _message_sources(raw_message) if chat_type in GROUP_CHAT_TYPES else frozenset()
     if sources and update_id is None:
         message = "update.update_id is required for a source match"
@@ -217,6 +218,20 @@ def parse_update(raw_json: str) -> TelegramUpdate | None:
         edited=edited,
         sources=sources,
     )
+
+
+def _validate_join(message: dict[str, object], chat_type: str, update_id: int | None) -> None:
+    if "new_chat_members" not in message:
+        return
+    members = message["new_chat_members"]
+    if not isinstance(members, list) or not members or chat_type not in GROUP_CHAT_TYPES or update_id is None:
+        detail = "message.new_chat_members is invalid or missing its update ID"
+        raise ValueError(detail)
+    for member in members:
+        _bot_id(member, require_bot=False)
+        if not isinstance(member.get("first_name"), str) or not member["first_name"]:
+            detail = "new member name is invalid"
+            raise ValueError(detail)
 
 
 def _required_string(name: str, value: object, *, maximum: int) -> str:

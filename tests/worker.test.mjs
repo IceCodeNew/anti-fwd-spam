@@ -640,7 +640,7 @@ test('user chooses the reported bot: Given username entities and UTF-16 offsets,
   }
 });
 
-test('user filters provenance: Given bot IDs and lookalike usernames, When messages arrive, Then only explicit blacklisted inline or forwarded bot origins are deleted', async () => {
+test('user filters provenance: Given bot IDs and lookalike usernames, When messages arrive, Then blacklisted bot senders and inline or forwarded origins are deleted', async () => {
   const cases = [
     [{ via_bot: { id: 7788, is_bot: true, username: 'renamed_bot' } }, true],
     [{ via_bot: { id: 7789, is_bot: true, username: 'SyntheticSourceBot' } }, false],
@@ -649,7 +649,9 @@ test('user filters provenance: Given bot IDs and lookalike usernames, When messa
     [{ forward_origin: { type: 'hidden_user', sender_user_name: 'SyntheticSourceBot' } }, false],
     [{ forward_origin: { type: 'channel', chat: { id: -7788, type: 'channel' } } }, false],
     [{ text: '@synthetic_source_bot', reply_to_message: { via_bot: { id: 7788, is_bot: true } } }, false],
-    [{ from: { id: 7788, is_bot: true } }, false],
+    [{ from: { id: 7788, is_bot: true } }, true],
+    [{ from: { id: 7788, is_bot: false } }, false],
+    [{ from: { id: 7788, is_bot: true }, sender_chat: chat }, false],
   ];
   for (const [index, [fields, expected]] of cases.entries()) {
     telegram.reset();
@@ -657,7 +659,7 @@ test('user filters provenance: Given bot IDs and lookalike usernames, When messa
     telegram.send(target);
     assert.equal((await dispatch({ update_id: index, edited_message: target })).status, 200);
     assert.equal(telegram.has(target.message_id), !expected, JSON.stringify(fields));
-    assert.equal(telegram.canSend(22), !expected);
+    assert.equal(telegram.canSend(22), !(expected && !fields.from));
   }
 });
 

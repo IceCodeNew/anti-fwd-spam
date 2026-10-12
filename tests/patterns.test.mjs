@@ -253,6 +253,70 @@ test('user: Given no model key, When a screenshot pattern arrives, Then local fi
   assert.equal(telegram.canSend(22), false);
 });
 
+// D1 reconstruction: direct guest bot, 192 money bags, keyboard and an explicit reply.
+// Sender, caller, destination and message identities are synthetic.
+for (const [reference, edited, field] of [
+  ['same_chat', false, 'text'],
+  ['same_chat', true, 'text'],
+  ['external', false, 'caption'],
+  ['quote', true, 'text'],
+  ['quote', false, 'caption'],
+]) {
+  test(`user: Given a guest bot's authored emoji flood with ${reference} context, When ${edited ? 'edited' : 'delivered'} as ${field}, Then automatic filtering deletes only the current message`, async () => {
+    await setBindings({ EXPERIENTIAL_API_KEY: undefined });
+    const original = { ...message(80, 11), text: '@test_gate_bot', sender_chat: message().chat };
+    telegram.send(original);
+    const target = { ...message(), from: { ...message().from, is_bot: true, username: 'example_guest_bot' },
+      guest_bot_caller_chat: { id: -10012, type: 'supergroup', title: 'Test discussion' },
+      reply_markup: { inline_keyboard: [[{ text: 'Example', url: 'https://example.invalid/flood' }]] } };
+    delete target.text;
+    target[field] = '💰'.repeat(192);
+    if (reference === 'same_chat') target.reply_to_message = original;
+    else if (reference === 'external') target.external_reply = { origin: { type: 'hidden_user' } };
+    else target.quote = { text: original.text };
+    telegram.send(target);
+    const updateField = edited ? 'edited_message' : 'message';
+    assert.equal((await dispatch({ update_id: 1, [updateField]: target })).status, 200);
+    assert.equal(telegram.has(81), false);
+    assert.equal(telegram.has(80), true);
+    assert.equal(telegram.canJoin(22), true);
+    assert.equal(telegram.canSend(22), true);
+    assert.equal(telegram.members.get(11).status, 'administrator');
+    assert.equal((await database.prepare('SELECT COUNT(*) AS n FROM blacklisted_users').first()).n, 0);
+    assert.equal((await database.prepare('SELECT COUNT(*) AS n FROM model_tasks WHERE phase != \'done\'').first()).n, 0);
+    assert.equal(model.state, null);
+  });
+}
+
+for (const status of ['administrator', 'creator', 'anonymous']) {
+  test(`user: Given a referenced emoji flood from a ${status}, When automatically filtered, Then its sender and the reference remain protected`, async () => {
+    if (status !== 'anonymous') telegram.members.set(22, { status });
+    const original = message(80, 11);
+    const target = { ...message(), from: { ...message().from, is_bot: true }, text: '💰'.repeat(192), reply_to_message: original };
+    if (status === 'anonymous') target.sender_chat = message().chat;
+    telegram.send(original);
+    telegram.send(target);
+    assert.equal((await dispatch({ update_id: 1, message: target })).status, 200);
+    assert.equal(telegram.has(81), true);
+    assert.equal(telegram.has(80), true);
+    assert.equal(telegram.members.get(22).status, status === 'anonymous' ? 'member' : status);
+  });
+}
+
+for (const text of ['💰'.repeat(3), '🔴 '.repeat(3), '💰💰文字💰💰']) {
+  test(`user: Given a short or interrupted emoji run in a bot reply, When received, Then neither message is automatically removed`, async () => {
+    const original = { ...message(80, 11), text: '💰'.repeat(192) };
+    const target = { ...message(), from: { ...message().from, is_bot: true }, text, reply_to_message: original };
+    telegram.send(original);
+    telegram.send(target);
+    assert.equal((await dispatch({ update_id: 1, message: target })).status, 200);
+    assert.equal(telegram.has(81), true);
+    assert.equal(telegram.has(80), true);
+    assert.equal(telegram.canSend(22), true);
+    assert.equal(model.state, null);
+  });
+}
+
 test('user: Given a bot sending the screenshot flood, When received, Then its current message disappears with earlier messages intact', async () => {
   const target = { ...message(), from: { ...message().from, is_bot: true }, text: flood };
   telegram.send(message(80));

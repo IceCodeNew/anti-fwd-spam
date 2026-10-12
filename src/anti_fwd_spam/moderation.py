@@ -9,8 +9,9 @@ from http import HTTPStatus
 from typing import TYPE_CHECKING
 
 from .actions import Actions, AppResponse, BanTarget, user_id
+from .constants import MODEL_CONTENT_FIELDS
 from .evidence import MESSAGE_WINDOW_SECONDS, EvidenceError, ReportStore
-from .model import MODEL_CONTENT_FIELDS, model_input, profile_ids
+from .model import model_input, profile_ids
 from .policy import (
     matches_spam_pattern,
     parse_update,
@@ -364,7 +365,9 @@ class Moderator:
             or isinstance(message.get("external_reply"), dict)
             or isinstance(message.get("quote"), dict)
         )
-        if not referenced:
+        sender = message.get("from")
+        bot_sender = isinstance(sender, dict) and sender.get("is_bot") is True and "sender_chat" not in message
+        if not referenced or bot_sender:
             try:
                 spam = matches_spam_pattern(message) or await self.matches_sticker(message)
             except EvidenceError:

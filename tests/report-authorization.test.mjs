@@ -101,7 +101,7 @@ for (const status of ['member', 'kicked', 'administrator', 'creator']) {
     const history = message(70);
     history.from.is_bot = true;
     telegram.send(history);
-    await dispatch({ message: history });
+    assert.equal((await dispatch({ update_id: 70, message: history })).status, 200);
     telegram.send(message(71, 11));
     const target = message();
     target.from.is_bot = true;

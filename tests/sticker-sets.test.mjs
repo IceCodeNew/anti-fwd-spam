@@ -439,7 +439,7 @@ for (const [label, configure, automaticDelete] of [
     const current = sticker();
     configure(current);
     const member = structuredClone(telegram.members.get(22));
-    assert.equal((await deliver({ message: current })).status, 200);
+    assert.equal((await deliver({ update_id: 81, message: current })).status, 200);
     assert.equal(telegram.has(81), !automaticDelete);
     assert.deepEqual(telegram.members.get(22), member);
     assert.equal((await database.prepare('SELECT COUNT(*) AS n FROM blacklisted_users').first()).n, 0);

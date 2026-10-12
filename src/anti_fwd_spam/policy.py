@@ -125,6 +125,11 @@ class Config:
 
 def _message_sources(message: dict[str, object]) -> frozenset[int]:
     sources: set[int] = set()
+    sender = message.get("from")
+    if "sender_chat" not in message and isinstance(sender, dict) and sender.get("is_bot") is True:
+        identifier = _bot_id(sender, require_bot=True)
+        if identifier is not None:
+            sources.add(identifier)
     via_bot = message.get("via_bot")
     if via_bot is not None:
         identifier = _bot_id(via_bot, require_bot=True)

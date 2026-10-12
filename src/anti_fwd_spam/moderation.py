@@ -9,10 +9,11 @@ from http import HTTPStatus
 from typing import TYPE_CHECKING
 
 from .actions import Actions, AppResponse, BanTarget, user_id
-from .evidence import MESSAGE_WINDOW_SECONDS, EvidenceError, ReportStore
 from .constants import MODEL_CONTENT_FIELDS
+from .evidence import MESSAGE_WINDOW_SECONDS, EvidenceError, ReportStore
 from .model import model_input, profile_ids
 from .policy import (
+    matches_emoji_flood,
     matches_spam_pattern,
     parse_update,
     reply_target,
@@ -214,11 +215,9 @@ class Moderator:
                 response = source_response
         return response
 
-    def _explicit_target_report(
-        self, update: TelegramUpdate, argument: str, target: dict[str, object] | None
-    ) -> bool:
+    def _explicit_target_report(self, update: TelegramUpdate, argument: str, target: dict[str, object] | None) -> bool:
         """Treat an explicit source username as a report only when it names the replied sender."""
-        if not update.in_group or not argument or target is None:
+        if not update.in_group or not argument or target is None or "sender_chat" in target or "via_bot" in target:
             return False
         username = argument.removeprefix("@").casefold()
         sender = target.get("from")
@@ -241,7 +240,7 @@ class Moderator:
             response = await self.report(update, remove_report=False)
             if response.status != HTTPStatus.OK:
                 return response
-            return await self._finish_source_command(update, "Report handled", response)
+            return await self._finish_source_command(update, response.body, response)
         set_name = sticker_set_name(target) if reply_report and target is not None else sticker_set_argument(argument)
         identity = set_name or (sticker_unique_id(target) if reply_report and target is not None else None)
         replies = []
@@ -384,13 +383,16 @@ class Moderator:
             or isinstance(message.get("external_reply"), dict)
             or isinstance(message.get("quote"), dict)
         )
-        if not referenced:
-            try:
-                spam = matches_spam_pattern(message) or await self.matches_sticker(message)
-            except EvidenceError:
-                return AppResponse(503, "sticker list unavailable; retry pending")
-            if spam:
-                return await self.actions.delete_and_mute(message, mute=mute)
+        try:
+            spam = (
+                matches_emoji_flood(message)
+                if referenced
+                else matches_spam_pattern(message) or await self.matches_sticker(message)
+            )
+        except EvidenceError:
+            return AppResponse(503, "sticker list unavailable; retry pending")
+        if spam:
+            return await self.actions.delete_and_mute(message, mute=mute)
         if (
             (update.edited and not referenced)
             or user_id(message) is None

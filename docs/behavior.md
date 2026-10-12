@@ -8,7 +8,7 @@ The Worker accepts authenticated Telegram `message` and `edited_message` updates
 
 A reporting identity is either a configured user ID or a configured sender-chat ID. A sender-chat identity is evaluated on its own; a compatibility `from` field cannot authorize it. An ordinary user must be a genuine non-bot sender whose ID is configured. Authorization is checked again on redelivery and retry.
 
-- A listed `/bs` command is handled before automatic filtering.
+- A listed `/bs` command is handled before automatic filtering. In a valid group reply to a bot account, `/bs @username` reports that bot when its sender username matches exactly, ignoring case. This form uses the replied sender's ID and does not register a source or punish a guest-bot caller. Other explicit usernames keep the source-registration behavior.
 - An unlisted bare `/bs` reply to a valid group target records evidence but does not register a source or punish an account.
 - An unlisted reply that mentions the bot records evidence and ends routing.
 - An explicit unlisted `/bs` argument continues through ordinary filtering instead of registering a source.
@@ -40,7 +40,9 @@ flowchart TD
     I --> J{Reply report?}
     J -->|Trusted| K[Action 2 on reported sender]
     J -->|Unlisted| L[Save evidence only]
-    J -->|No report| M{Reference present?}
+    J -->|No report| R{Emoji flood in current text or caption?}
+    R -->|Yes| P[Action 1 on current sender]
+    R -->|No| M{Reference present?}
     M -->|Yes| N[Jev with bounded reference context]
     M -->|No| O[Local text/profile/sticker rules]
     O -->|Match| P[Action 1 on current sender]
@@ -49,7 +51,7 @@ flowchart TD
     N -->|Below threshold or unavailable| Q[Leave message unchanged]
 ```
 
-A message with a same-chat reply, external reply, or quote bypasses local regex and sticker-list checks. Jev receives only the bounded fields Telegram supplied for the current message and its reference. A forum topic attachment that is not an explicit reply does not count as a reference.
+A message with a same-chat reply, external reply, or quote bypasses general local regex and sticker-list checks, except that an emoji flood in its own text or caption still triggers Action 1. Floods found only in a reference do not trigger this check. Jev receives only the bounded fields Telegram supplied for the current message and its reference. A forum topic attachment that is not an explicit reply does not count as a reference.
 
 ## Moderation decision map
 
@@ -89,7 +91,7 @@ Action 2 never treats the source bot as the sender's history unless the command 
 
 Messages without a reference are checked before Jev. General local patterns inspect authored text, captions, shared contact display names, and sender nicknames; deferred profile checks inspect the available sender and contact-account biographies after Telegram lookups. A separate maintenance pattern checks only current text and captions for a same-sentence claim that a group or channel is disabled, moved, or replaced followed by a request to join a new destination. Administrators are protected before Action 1, so ordinary administrator notices remain intact.
 
-A local match ends model classification for that message. A reference bypasses all local regex and sticker-list checks, including on edits.
+A local match ends model classification for that message. Four or more identical money-bag or red-circle emojis, optionally separated by whitespace, in current text or captions are filtered on both new and edited messages regardless of a reference or bot sender. This exception never inspects the referenced message, nickname, biography, or guest-bot caller. Bots receive deletion only; human senders retain the existing mute policy, and administrator/anonymous-group protection still applies. Other local regex and sticker-list checks remain bypassed when a reference is present.
 
 ## Jev classification
 
@@ -103,7 +105,7 @@ The inclusive score threshold is the `SPAM_THRESHOLD` value maintained in `src/a
 
 ## Edits and retries
 
-An edit fences older model work for that message. An edited message still passes source and report routing. An edited message without a reference can use local rules; a referenced edit starts a fresh Jev classification. Edits do not rerun automatic account-blacklist checks.
+An edit fences older model work for that message. An edited message still passes source and report routing. An edited message without a reference can use local rules; a referenced edit with an authored emoji flood uses Action 1, while other eligible referenced edits start fresh Jev classification. Bot senders do not enter Jev. Edits do not rerun automatic account-blacklist checks.
 
 Webhook delivery retries and scheduled task retries are separate. Durable task leases prevent concurrent work from repeating a completed moderation action. A confirmed deletion or ban is not repeated after a later redelivery; uncertain operations remain retryable or require manual inspection.
 

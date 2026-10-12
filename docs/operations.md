@@ -45,7 +45,7 @@ curl --silent --show-error --fail-with-body \
   "https://api.telegram.org/bot${BOT_TOKEN}/getWebhookInfo"
 ```
 
-`result.url` should be the Worker URL ending in `/webhook`. A growing update backlog or a new `last_error_message` requires checking Worker logs.
+`result.url` should be the Worker URL ending in `/webhook`. A growing update backlog or a new `last_error_message` requires checking Worker logs. To intercept unsolicited messages from other bots, including guest bots, the receiving moderation bot must have Bot-to-Bot Communication Mode enabled and satisfy Telegram's group-delivery conditions (administrator rights or disabled Group Privacy Mode). Seeing a bot message nested in a reply report does not prove its original update was delivered. Enablement is described in [setup](setup.md#telegram-bot-and-permissions).
 
 | Symptom | Check |
 | --- | --- |

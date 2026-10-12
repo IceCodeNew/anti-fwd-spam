@@ -20,24 +20,73 @@ async function inlineReport(text = '/bs') {
   return update;
 }
 
-test('user: Given a directly sent bot flood, When an authorized reporter replies with its username in bs, Then the bot is reported instead of registered as a source', async () => {
-  await setBindings({ REPORTER_IDS: '11' });
-  const target = { ...message(), from: { id: 8850626409, is_bot: true, first_name: 'Group Help', username: 'ghdsuighduibot' },
-    text: '💰'.repeat(192), reply_markup: { inline_keyboard: [[{ text: '💰财富入口💰', url: 'https://example.invalid/flood' }]] } };
-  telegram.members.set(8850626409, { status: 'member' });
+for (const senderStatus of ['member', 'administrator']) {
+  test(`user: Given a direct guest bot with ${senderStatus} status, When an authorized anonymous reporter uses its exact username in bs, Then only the reported bot is moderated`, async () => {
+    const target = { ...message(81, 777), from: { ...message(81, 777).from, is_bot: true, username: 'example_guest_bot' },
+      text: '💰'.repeat(192), guest_bot_caller_user: message(1, 22).from,
+      reply_markup: { inline_keyboard: [[{ text: 'Example', url: 'https://example.invalid/flood' }]] } };
+    telegram.members.set(777, { status: senderStatus });
+    const update = report(target);
+    update.message.sender_chat = chat;
+    update.message.from = { id: 1087968824, is_bot: true, first_name: 'Group' };
+    update.message.text = '/bs @EXAMPLE_GUEST_BOT';
+    update.message.entities = [{ type: 'bot_command', offset: 0, length: 3 }];
+    telegram.send(target);
+    telegram.send(update.message);
+    assert.equal((await dispatch(update)).status, 200);
+    assert.equal(telegram.has(81), false);
+    assert.equal(telegram.has(82), false);
+    assert.equal(telegram.canJoin(22), true);
+    assert.equal(telegram.canJoin(777), senderStatus === 'administrator');
+    assert.equal(await database.prepare('SELECT source_id FROM blacklisted_sources WHERE source_id = 777').first(), null);
+    assert.equal((await database.prepare('SELECT COUNT(*) AS n FROM blacklisted_users').first()).n,
+      senderStatus === 'administrator' ? 0 : 1);
+    assert.equal(telegram.getChatCalls.length, 0, 'the target identity must come from the reply, not username lookup');
+  });
+}
+
+for (const allowed of ['11', '']) {
+  test(`user: Given an unlisted sender-chat identity with REPORTER_IDS=${JSON.stringify(allowed)}, When bs names a direct bot, Then neither bot nor guest caller is punished`, async () => {
+    await setBindings({ REPORTER_IDS: allowed });
+    const target = { ...message(81, 777), from: { ...message(81, 777).from, is_bot: true, username: 'example_guest_bot' },
+      guest_bot_caller_user: message(1, 22).from };
+    telegram.members.set(777, { status: 'member' });
+    const update = report(target);
+    update.message.sender_chat = chat;
+    update.message.text = '/bs @example_guest_bot';
+    update.message.entities = [{ type: 'bot_command', offset: 0, length: 3 }];
+    telegram.send(target);
+    telegram.send(update.message);
+    assert.equal((await dispatch(update)).status, 200);
+    assert.equal(telegram.has(81), true);
+    assert.equal(telegram.canJoin(777), true);
+    assert.equal(telegram.canJoin(22), true);
+    assert.equal(await database.prepare('SELECT source_id FROM blacklisted_sources WHERE source_id = 777').first(), null);
+    assert.equal((await database.prepare('SELECT COUNT(*) AS n FROM blacklisted_users').first()).n, 0);
+  });
+}
+
+test('user: Given an uncertain direct-bot ban, When bs is redelivered, Then the command stays with a manual-inspection warning and no repeated ban', async () => {
+  const target = { ...message(81, 777), from: { ...message(81, 777).from, is_bot: true, username: 'example_guest_bot' } };
+  telegram.members.set(777, { status: 'member' });
   const update = report(target);
-  update.message.text = '/bs @ghdsuighduibot';
-  update.message.entities = [
-    { type: 'bot_command', offset: 0, length: 3 },
-    { type: 'mention', offset: 4, length: 15 },
-  ];
+  update.message.text = '/bs @example_guest_bot';
+  update.message.entities = [{ type: 'bot_command', offset: 0, length: 3 }];
   telegram.send(target);
   telegram.send(update.message);
+  let banAttempts = 0;
+  telegram.faults.set('banChatMember:777', () => {
+    banAttempts += 1;
+    return Response.json({ ok: false, error_code: 500 }, { status: 500 });
+  });
+  assert.equal((await dispatch(update)).status, 503);
+  telegram.faults.clear();
   assert.equal((await dispatch(update)).status, 200);
-  assert.equal(telegram.has(81), false);
-  assert.equal(telegram.canJoin(22), true);
-  assert.equal(telegram.canJoin(8850626409), false);
-  assert.equal(await database.prepare('SELECT source_id FROM blacklisted_sources WHERE source_id = 8850626409').first(), null);
+  assert.equal(telegram.has(82), true);
+  assert.equal(telegram.has(81), true);
+  assert.equal(banAttempts, 1);
+  assert.match(telegram.replies.at(-1).text, /uncertain|check membership/i);
+  assert.equal((await database.prepare('SELECT COUNT(*) AS n FROM blacklisted_users').first()).n, 0);
 });
 
 test('user: Given an inline message, When a reporter replies with a mention only, Then only the actual sender is banned and cleaned', async () => {

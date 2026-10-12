@@ -15,7 +15,15 @@ from .constants import (
     SUPPORTED_FORWARD_ORIGINS,
     TOKEN_PART_COUNT,
 )
-from .rules import DISABLED_GROUP_NOTICE_RE, SPAM_PATTERNS
+from .rules import DISABLED_GROUP_NOTICE_RE, EMOJI_FLOOD_RE, SPAM_PATTERNS
+
+
+def matches_emoji_flood(message: dict[str, object]) -> bool:
+    """Match authored text/captions without attributing quoted floods to the sender."""
+    return any(
+        isinstance(text := message.get(field), str) and EMOJI_FLOOD_RE.search(text) is not None
+        for field in ("text", "caption")
+    )
 
 
 def matches_spam_pattern(message: dict[str, object]) -> bool:

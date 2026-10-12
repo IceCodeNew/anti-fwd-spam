@@ -38,7 +38,7 @@ The complete copy-pasteable setup is in [Deployment setup](docs/setup.md). Start
 
 ## Everyday use
 
-- **Report spam:** reply to the target message and mention the moderation bot from a trusted reporting identity.
+- **Report spam:** reply to the target message and mention the moderation bot from a trusted reporting identity. For a directly sent bot message, replying with `/bs @that_bot` also reports that sender when the username matches.
 - **Register a source:** send `/bs @source_bot` from a trusted identity.
 - **Report an inline sender and its source:** reply with bare `/bs` when both accounts should be handled.
 - **Register a sticker set:** send its complete `https://t.me/addstickers/<set_name>` URL with `/bs`.

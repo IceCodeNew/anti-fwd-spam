@@ -98,11 +98,9 @@ DISABLED_GROUP_NOTICE_RE = re.compile(
     r"|[^。\uff01\uff1f\n]{0,80}点击\s*(?:新地址|新链接|https?://\S+))"
 )
 
-EMOJI_FLOOD_RE = re.compile(r"([💰🔴])(?:\s*\1){3,}")
-
 SPAM_PATTERNS = (
     re.compile(r"@[A-Za-z0-9_]{5,32}\s+campaign_[0-9]+"),
-    EMOJI_FLOOD_RE,
+    re.compile(r"([💰🔴])(?:\s*\1){3,}"),
     re.compile(r"(?:极品|新人|童颜|嫩)小?萝莉(?!塔)|萝莉(?:上门|包夜|资源)"),
     re.compile(r"(?:约炮|包夜|外围|楼凤)上门|看头像\s*加?\s*(?:[qQ]|扣扣?)(?![A-Za-z\u4e00-\u9fff])"),
 )

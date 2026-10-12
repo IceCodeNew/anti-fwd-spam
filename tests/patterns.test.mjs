@@ -255,18 +255,18 @@ test('user: Given no model key, When a screenshot pattern arrives, Then local fi
 
 // D1 reconstruction: direct guest bot, 192 money bags, keyboard and an explicit reply.
 // Sender, caller, destination and message identities are synthetic.
-for (const [reference, edited, field, isBot] of [
-  ['same_chat', false, 'text', true],
-  ['same_chat', true, 'text', true],
-  ['external', false, 'caption', false],
-  ['quote', true, 'text', false],
-  ['quote', false, 'caption', true],
+for (const [reference, edited, field] of [
+  ['same_chat', false, 'text'],
+  ['same_chat', true, 'text'],
+  ['external', false, 'caption'],
+  ['quote', true, 'text'],
+  ['quote', false, 'caption'],
 ]) {
-  test(`user: Given an authored emoji flood with ${reference} context, When ${edited ? 'edited' : 'delivered'} as ${field}, Then automatic filtering deletes only the current message`, async () => {
+  test(`user: Given a guest bot's authored emoji flood with ${reference} context, When ${edited ? 'edited' : 'delivered'} as ${field}, Then automatic filtering deletes only the current message`, async () => {
     await setBindings({ EXPERIENTIAL_API_KEY: undefined });
     const original = { ...message(80, 11), text: '@test_gate_bot', sender_chat: message().chat };
     telegram.send(original);
-    const target = { ...message(), from: { ...message().from, is_bot: isBot, username: 'example_guest_bot' },
+    const target = { ...message(), from: { ...message().from, is_bot: true, username: 'example_guest_bot' },
       guest_bot_caller_chat: { id: -10012, type: 'supergroup', title: 'Test discussion' },
       reply_markup: { inline_keyboard: [[{ text: 'Example', url: 'https://example.invalid/flood' }]] } };
     delete target.text;
@@ -280,7 +280,7 @@ for (const [reference, edited, field, isBot] of [
     assert.equal(telegram.has(81), false);
     assert.equal(telegram.has(80), true);
     assert.equal(telegram.canJoin(22), true);
-    assert.equal(telegram.canSend(22), isBot);
+    assert.equal(telegram.canSend(22), true);
     assert.equal(telegram.members.get(11).status, 'administrator');
     assert.equal((await database.prepare('SELECT COUNT(*) AS n FROM blacklisted_users').first()).n, 0);
     assert.equal((await database.prepare('SELECT COUNT(*) AS n FROM model_tasks WHERE phase != \'done\'').first()).n, 0);
@@ -292,7 +292,7 @@ for (const status of ['administrator', 'creator', 'anonymous']) {
   test(`user: Given a referenced emoji flood from a ${status}, When automatically filtered, Then its sender and the reference remain protected`, async () => {
     if (status !== 'anonymous') telegram.members.set(22, { status });
     const original = message(80, 11);
-    const target = { ...message(), text: '💰'.repeat(192), reply_to_message: original };
+    const target = { ...message(), from: { ...message().from, is_bot: true }, text: '💰'.repeat(192), reply_to_message: original };
     if (status === 'anonymous') target.sender_chat = message().chat;
     telegram.send(original);
     telegram.send(target);

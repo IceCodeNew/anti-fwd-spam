@@ -40,12 +40,16 @@ def sticker_set_argument(argument: str) -> str | None:
 
 
 def replied_source(message: dict[str, object]) -> int | None:
-    """Read only the inline bot attached to the replied-to message."""
+    """Read the inline source or actual bot sender, never a guest caller or fake chat sender."""
     target = reply_target(message)
-    via_bot = target.get("via_bot") if target is not None else None
-    if not isinstance(via_bot, dict) or via_bot.get("is_bot") is not True:
+    if target is None:
         return None
-    identifier = via_bot.get("id")
+    source = target.get("via_bot")
+    if source is None and "sender_chat" not in target:
+        source = target.get("from")
+    if not isinstance(source, dict) or source.get("is_bot") is not True:
+        return None
+    identifier = source.get("id")
     return identifier if type(identifier) is int and 0 < identifier <= MAX_TELEGRAM_ID else None
 
 

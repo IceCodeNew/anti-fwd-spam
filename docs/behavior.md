@@ -8,7 +8,7 @@ The Worker accepts authenticated Telegram `message` and `edited_message` updates
 
 A reporting identity is either a configured user ID or a configured sender-chat ID. A sender-chat identity is evaluated on its own; a compatibility `from` field cannot authorize it. An ordinary user must be a genuine non-bot sender whose ID is configured. Authorization is checked again on redelivery and retry.
 
-- A listed `/bs` command is handled before automatic filtering. In a valid group reply to a bot account, `/bs @username` reports that bot when its sender username matches exactly, ignoring case. This form uses the replied sender's ID and does not register a source or punish a guest-bot caller. Other explicit usernames keep the source-registration behavior.
+- A listed `/bs` command is handled before automatic filtering. `/bs @username` registers the named source without immediately moderating a reply target. A bare `/bs` reply registers the target's inline bot, or its actual bot sender when there is no inline bot; registration must succeed before the target and registered source receive Action 2. The guest caller is not a source or moderation target. Sticker registration and target validation still apply.
 - An unlisted bare `/bs` reply to a valid group target records evidence but does not register a source or punish an account.
 - An unlisted reply that mentions the bot records evidence and ends routing.
 - An explicit unlisted `/bs` argument continues through ordinary filtering instead of registering a source.
@@ -23,7 +23,7 @@ For a new group message, processing follows this order:
 3. Dispatch authorized commands and report plugins.
 4. Index an eligible message for possible later history cleanup.
 5. Apply reply-report handling.
-6. Apply local text, profile, sticker, and maintenance rules where the message has no reference.
+6. Apply local text, profile, sticker, and maintenance rules to messages without a reference and to actual bot senders even when referenced.
 7. Queue Jev classification for the remaining eligible input.
 8. Leave the message unchanged when no rule or model decision reaches the configured threshold.
 
@@ -40,22 +40,23 @@ flowchart TD
     I --> J{Reply report?}
     J -->|Trusted| K[Action 2 on reported sender]
     J -->|Unlisted| L[Save evidence only]
-    J -->|No report| R{Emoji flood in current text or caption?}
-    R -->|Yes| P[Action 1 on current sender]
+    J -->|No report| R{Actual bot sender?}
+    R -->|Yes| O[Existing local rules on current message]
     R -->|No| M{Reference present?}
     M -->|Yes| N[Jev with bounded reference context]
-    M -->|No| O[Local text/profile/sticker rules]
+    M -->|No| O
     O -->|Match| P[Action 1 on current sender]
-    O -->|No match| N
+    O -->|No match, human sender| N
+    O -->|No match, bot sender| Q[Leave message unchanged]
     N -->|Spam at threshold| P
     N -->|Below threshold or unavailable| Q[Leave message unchanged]
 ```
 
-A message with a same-chat reply, external reply, or quote bypasses general local regex and sticker-list checks, except that an emoji flood in its own text or caption still triggers Action 1. Floods found only in a reference do not trigger this check. Jev receives only the bounded fields Telegram supplied for the current message and its reference. A forum topic attachment that is not an explicit reply does not count as a reference.
+Human messages with a same-chat reply, external reply, or quote bypass local regex and sticker-list checks so Jev can interpret their context. Actual bot senders, including guest bots, still undergo the existing local checks on their own message even when replying; they do not enter Jev. Referenced content and guest caller metadata never substitute for the current sender's content or identity. A forum topic attachment that is not an explicit reply does not count as a reference.
 
 ## Moderation decision map
 
-The two moderation actions have different targets. A source match handles the sender and source independently; a trusted report handles the explicitly reported account; an automatic content match handles only the current sender.
+The two moderation actions have different targets. Source identities include the actual bot sender, an inline bot, and visible forwarded bot origins; a compatibility `from` attached to `sender_chat` and guest caller metadata are never source identities. A source match handles the sender and each listed source independently. When a direct bot is both sender and source, Action 2 targets that same bot, not its caller. A trusted report handles the explicitly reported account; an automatic content match handles only the current sender.
 
 ```mermaid
 flowchart LR
@@ -89,9 +90,9 @@ Action 2 never treats the source bot as the sender's history unless the command 
 
 ## Local filtering
 
-Messages without a reference are checked before Jev. General local patterns inspect authored text, captions, shared contact display names, and sender nicknames; deferred profile checks inspect the available sender and contact-account biographies after Telegram lookups. A separate maintenance pattern checks only current text and captions for a same-sentence claim that a group or channel is disabled, moved, or replaced followed by a request to join a new destination. Administrators are protected before Action 1, so ordinary administrator notices remain intact.
+Local checks run before Jev on messages without a reference and on actual bot senders with references. General local patterns inspect authored text, captions, shared contact display names, and sender nicknames; deferred profile checks inspect the available sender and contact-account biographies after Telegram lookups. A separate maintenance pattern checks only current text and captions for a same-sentence claim that a group or channel is disabled, moved, or replaced followed by a request to join a new destination. Administrators are protected before Action 1, so ordinary administrator notices remain intact.
 
-A local match ends model classification for that message. Four or more identical money-bag or red-circle emojis, optionally separated by whitespace, in current text or captions are filtered on both new and edited messages regardless of a reference or bot sender. This exception never inspects the referenced message, nickname, biography, or guest-bot caller. Bots receive deletion only; human senders retain the existing mute policy, and administrator/anonymous-group protection still applies. Other local regex and sticker-list checks remain bypassed when a reference is present.
+A local match ends model classification for that message. The same local regex and sticker checks apply to new and edited bot messages regardless of a reference; human reference messages keep the Jev path. Floods found only in referenced content do not count as a local match. Bots receive deletion only for a content match, while administrator/anonymous-group protection still applies. A registered source match uses Action 2 on the bot separately from content filtering.
 
 ## Jev classification
 
@@ -105,7 +106,7 @@ The inclusive score threshold is the `SPAM_THRESHOLD` value maintained in `src/a
 
 ## Edits and retries
 
-An edit fences older model work for that message. An edited message still passes source and report routing. An edited message without a reference can use local rules; a referenced edit with an authored emoji flood uses Action 1, while other eligible referenced edits start fresh Jev classification. Bot senders do not enter Jev. Edits do not rerun automatic account-blacklist checks.
+An edit fences older model work for that message. An edited message still passes source and report routing. An edited human message without a reference can use local rules; an eligible referenced human edit starts fresh Jev classification. Bot messages use local rules even when referenced and never enter Jev. Edits do not rerun automatic account-blacklist checks.
 
 Webhook delivery retries and scheduled task retries are separate. Durable task leases prevent concurrent work from repeating a completed moderation action. A confirmed deletion or ban is not repeated after a later redelivery; uncertain operations remain retryable or require manual inspection.
 

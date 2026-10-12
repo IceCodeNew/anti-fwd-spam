@@ -49,6 +49,47 @@ test('user: Given an authorized group reporter, When a source is registered then
   assert.deepEqual((await database.prepare('SELECT user_id FROM blacklisted_users').all()).results, [{ user_id: 777 }]);
 });
 
+for (const callerKind of ['none', 'user', 'chat', 'reply']) {
+  test(`user: Given a guest bot registered by username with ${callerKind} caller context, When it sends ordinary text, Then its blacklist applies to the bot and not the caller`, async () => {
+    telegram.accounts.set('@example_guest_bot', { id: 777, type: 'private', username: 'example_guest_bot' });
+    telegram.members.set(777, { status: 'member' });
+    const target = { ...message(81, 777), from: { ...message(81, 777).from, is_bot: true, username: 'example_guest_bot' } };
+    const update = command('/bs @example_guest_bot');
+    update.message.reply_to_message = target;
+    telegram.send(target);
+    telegram.send(update.message);
+    assert.equal((await dispatch(update)).status, 200);
+    assert.deepEqual(await database.prepare('SELECT source_id FROM blacklisted_sources WHERE source_id=777').first(), { source_id: 777 });
+    assert.equal(telegram.has(81), true, 'named registration must not become a report');
+    assert.equal(telegram.canJoin(777), true);
+    assert.equal((await database.prepare('SELECT COUNT(*) AS n FROM blacklisted_users').first()).n, 0);
+    const later = { ...target, message_id: 301, text: 'ordinary guest response' };
+    if (callerKind === 'user') later.guest_bot_caller_user = message(1, 22).from;
+    if (callerKind === 'chat') later.guest_bot_caller_chat = chat;
+    if (callerKind === 'reply') later.reply_to_message = message(80, 22);
+    telegram.send(later);
+    assert.equal((await dispatch({ update_id: 301, message: later })).status, 200);
+    assert.equal(telegram.has(301), false);
+    assert.equal(telegram.canJoin(777), false);
+    assert.equal(telegram.canJoin(22), true);
+    assert.equal(telegram.canSend(22), true);
+    assert.deepEqual((await database.prepare('SELECT user_id FROM blacklisted_users').all()).results, [{ user_id: 777 }]);
+  });
+}
+
+test('user: Given a guest caller in the source blacklist but an unlisted bot sender, When the guest response arrives, Then caller attribution does not trigger moderation', async () => {
+  telegram.members.set(777, { status: 'member' });
+  await database.exec('INSERT INTO blacklisted_sources VALUES (22)');
+  const target = { ...message(81, 777), from: { ...message(81, 777).from, is_bot: true },
+    guest_bot_caller_user: message(1, 22).from, guest_bot_caller_chat: chat };
+  telegram.send(target);
+  assert.equal((await dispatch({ update_id: 301, message: target })).status, 200);
+  assert.equal(telegram.has(81), true);
+  assert.equal(telegram.canJoin(777), true);
+  assert.equal(telegram.canSend(22), true);
+  assert.equal((await database.prepare('SELECT COUNT(*) AS n FROM blacklisted_users').first()).n, 0);
+});
+
 test('user: Given a listed private-chat reporter, When an ordinary username is added, Then its numeric ID is accepted without restricting that account directly', async () => {
   telegram.accounts.set('@ordinary', { id: 22, type: 'private', username: 'ordinary' });
   const update = command('/bs @ordinary');

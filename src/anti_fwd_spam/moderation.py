@@ -13,7 +13,6 @@ from .constants import MODEL_CONTENT_FIELDS
 from .evidence import MESSAGE_WINDOW_SECONDS, EvidenceError, ReportStore
 from .model import model_input, profile_ids
 from .policy import (
-    matches_emoji_flood,
     matches_spam_pattern,
     parse_update,
     reply_target,
@@ -215,32 +214,15 @@ class Moderator:
                 response = source_response
         return response
 
-    def _explicit_target_report(self, update: TelegramUpdate, argument: str, target: dict[str, object] | None) -> bool:
-        """Treat an explicit source username as a report only when it names the replied sender."""
-        if not update.in_group or not argument or target is None or "sender_chat" in target or "via_bot" in target:
-            return False
-        username = argument.removeprefix("@").casefold()
-        sender = target.get("from")
-        if not isinstance(sender, dict) or sender.get("is_bot") is not True:
-            return False
-        target_username = sender.get("username")
-        return isinstance(target_username, str) and target_username.casefold() == username
-
     async def source_command(self, update: TelegramUpdate) -> AppResponse:
         """Register sources, moderate bare replies, then acknowledge and clean the command."""
         argument = source_argument(update.message, self.bot_username)
         if update.edited or argument is None:
             return AppResponse(200, "command ignored")
         target = reply_target(update.message)
-        target_report = self._explicit_target_report(update, argument, target)
         reply_report = update.in_group and not argument and target is not None
-        if update.update_id is None or ((reply_report or target_report) and reported_target(update) is None):
+        if update.update_id is None or (reply_report and reported_target(update) is None):
             return AppResponse(400, "invalid command")
-        if target_report:
-            response = await self.report(update, remove_report=False)
-            if response.status != HTTPStatus.OK:
-                return response
-            return await self._finish_source_command(update, response.body, response)
         set_name = sticker_set_name(target) if reply_report and target is not None else sticker_set_argument(argument)
         identity = set_name or (sticker_unique_id(target) if reply_report and target is not None else None)
         replies = []
@@ -383,16 +365,15 @@ class Moderator:
             or isinstance(message.get("external_reply"), dict)
             or isinstance(message.get("quote"), dict)
         )
-        try:
-            spam = (
-                matches_emoji_flood(message)
-                if referenced
-                else matches_spam_pattern(message) or await self.matches_sticker(message)
-            )
-        except EvidenceError:
-            return AppResponse(503, "sticker list unavailable; retry pending")
-        if spam:
-            return await self.actions.delete_and_mute(message, mute=mute)
+        sender = message.get("from")
+        bot_sender = isinstance(sender, dict) and sender.get("is_bot") is True and "sender_chat" not in message
+        if not referenced or bot_sender:
+            try:
+                spam = matches_spam_pattern(message) or await self.matches_sticker(message)
+            except EvidenceError:
+                return AppResponse(503, "sticker list unavailable; retry pending")
+            if spam:
+                return await self.actions.delete_and_mute(message, mute=mute)
         if (
             (update.edited and not referenced)
             or user_id(message) is None

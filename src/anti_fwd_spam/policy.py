@@ -15,15 +15,7 @@ from .constants import (
     SUPPORTED_FORWARD_ORIGINS,
     TOKEN_PART_COUNT,
 )
-from .rules import DISABLED_GROUP_NOTICE_RE, EMOJI_FLOOD_RE, SPAM_PATTERNS
-
-
-def matches_emoji_flood(message: dict[str, object]) -> bool:
-    """Match authored text/captions without attributing quoted floods to the sender."""
-    return any(
-        isinstance(text := message.get(field), str) and EMOJI_FLOOD_RE.search(text) is not None
-        for field in ("text", "caption")
-    )
+from .rules import DISABLED_GROUP_NOTICE_RE, SPAM_PATTERNS
 
 
 def matches_spam_pattern(message: dict[str, object]) -> bool:
@@ -133,6 +125,11 @@ class Config:
 
 def _message_sources(message: dict[str, object]) -> frozenset[int]:
     sources: set[int] = set()
+    sender = message.get("from")
+    if "sender_chat" not in message and isinstance(sender, dict) and sender.get("is_bot") is True:
+        identifier = _bot_id(sender, require_bot=True)
+        if identifier is not None:
+            sources.add(identifier)
     via_bot = message.get("via_bot")
     if via_bot is not None:
         identifier = _bot_id(via_bot, require_bot=True)

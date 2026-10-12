@@ -6,7 +6,7 @@ This page covers routine moderation, false-positive recovery, troubleshooting, a
 
 Use an identity in `REPORTER_IDS` to reply to a spam message and mention the bot. The bot can remove the target, ban its sender, and clean eligible indexed history. An unlisted valid reply report records evidence without automatic punishment. A group owner or administrator remains protected from automatic bans, but a trusted report can still delete its explicit target.
 
-Use `/bs @source_bot` to register a source bot. To handle both an inline sender and its source, reply to the inline message with bare `/bs`. Use the complete `https://t.me/addstickers/<set_name>` URL with `/bs` to register a sticker set without a source lookup. See [the behavior contract](behavior.md) for command forms, authorization, and retry outcomes.
+Use `/bs @source_bot` to register a source bot, including a guest bot that sends messages directly. A named command registers the source only, even when sent as a reply. To register and immediately report a direct bot sender, reply to its message with bare `/bs`; no username lookup is needed. Bare `/bs` on an inline message still handles both its sender and inline source. Use the complete `https://t.me/addstickers/<set_name>` URL with `/bs` to register a sticker set. See [the behavior contract](behavior.md) for authorization and retry outcomes.
 
 ## False positives and restrictions
 

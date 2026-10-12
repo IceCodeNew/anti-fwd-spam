@@ -38,9 +38,9 @@ The complete copy-pasteable setup is in [Deployment setup](docs/setup.md). Start
 
 ## Everyday use
 
-- **Report spam:** reply to the target message and mention the moderation bot from a trusted reporting identity. For a directly sent bot message, replying with `/bs @that_bot` also reports that sender when the username matches.
-- **Register a source:** send `/bs @source_bot` from a trusted identity.
-- **Report an inline sender and its source:** reply with bare `/bs` when both accounts should be handled.
+- **Report spam:** reply to the target message and mention the moderation bot from a trusted reporting identity.
+- **Register a source:** send `/bs @source_bot` from a trusted identity. Registered sources include bots that send messages directly, including guest bots.
+- **Block and report a bot source:** reply with bare `/bs` to a direct bot message, or to an inline message when both its sender and source should be handled.
 - **Register a sticker set:** send its complete `https://t.me/addstickers/<set_name>` URL with `/bs`.
 - **Inspect or remove a false positive:** follow [Operations](docs/operations.md), then lift the Telegram restriction separately if needed.
 

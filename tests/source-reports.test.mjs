@@ -9,7 +9,7 @@ async function inlineReport(text = '/bs') {
     const history = message(id, sender);
     history.from.is_bot = sender === 777;
     telegram.send(history);
-    await dispatch({ message: history });
+    assert.equal((await dispatch({ update_id: id, message: history })).status, 200);
   }
   const target = { ...message(), via_bot: { id: 777, is_bot: true } };
   const update = report(target);
@@ -21,7 +21,7 @@ async function inlineReport(text = '/bs') {
 }
 
 for (const senderStatus of ['member', 'administrator']) {
-  test(`user: Given a direct guest bot with ${senderStatus} status, When an authorized anonymous reporter uses its exact username in bs, Then only the reported bot is moderated`, async () => {
+  test(`user: Given a direct guest bot with ${senderStatus} status, When an authorized anonymous reporter uses bare bs, Then its source is registered and only the bot is moderated`, async () => {
     const target = { ...message(81, 777), from: { ...message(81, 777).from, is_bot: true, username: 'example_guest_bot' },
       text: '💰'.repeat(192), guest_bot_caller_user: message(1, 22).from,
       reply_markup: { inline_keyboard: [[{ text: 'Example', url: 'https://example.invalid/flood' }]] } };
@@ -29,7 +29,7 @@ for (const senderStatus of ['member', 'administrator']) {
     const update = report(target);
     update.message.sender_chat = chat;
     update.message.from = { id: 1087968824, is_bot: true, first_name: 'Group' };
-    update.message.text = '/bs @EXAMPLE_GUEST_BOT';
+    update.message.text = '/bs';
     update.message.entities = [{ type: 'bot_command', offset: 0, length: 3 }];
     telegram.send(target);
     telegram.send(update.message);
@@ -38,7 +38,7 @@ for (const senderStatus of ['member', 'administrator']) {
     assert.equal(telegram.has(82), false);
     assert.equal(telegram.canJoin(22), true);
     assert.equal(telegram.canJoin(777), senderStatus === 'administrator');
-    assert.equal(await database.prepare('SELECT source_id FROM blacklisted_sources WHERE source_id = 777').first(), null);
+    assert.equal((await database.prepare('SELECT source_id FROM blacklisted_sources WHERE source_id = 777').first()).source_id, 777);
     assert.equal((await database.prepare('SELECT COUNT(*) AS n FROM blacklisted_users').first()).n,
       senderStatus === 'administrator' ? 0 : 1);
     assert.equal(telegram.getChatCalls.length, 0, 'the target identity must come from the reply, not username lookup');
@@ -53,7 +53,7 @@ for (const allowed of ['11', '']) {
     telegram.members.set(777, { status: 'member' });
     const update = report(target);
     update.message.sender_chat = chat;
-    update.message.text = '/bs @example_guest_bot';
+    update.message.text = '/bs';
     update.message.entities = [{ type: 'bot_command', offset: 0, length: 3 }];
     telegram.send(target);
     telegram.send(update.message);
@@ -70,7 +70,7 @@ test('user: Given an uncertain direct-bot ban, When bs is redelivered, Then the 
   const target = { ...message(81, 777), from: { ...message(81, 777).from, is_bot: true, username: 'example_guest_bot' } };
   telegram.members.set(777, { status: 'member' });
   const update = report(target);
-  update.message.text = '/bs @example_guest_bot';
+  update.message.text = '/bs';
   update.message.entities = [{ type: 'bot_command', offset: 0, length: 3 }];
   telegram.send(target);
   telegram.send(update.message);

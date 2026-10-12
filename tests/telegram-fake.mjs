@@ -28,6 +28,7 @@ export class Telegram {
   messages = new Map();
   members = new Map();
   groups = new Map();
+  defaultPermissions = new Map();
   faults = new Map();
   accounts = new Map();
   getChatCalls = [];
@@ -40,6 +41,7 @@ export class Telegram {
     this.members = new Map([[11, { status: 'administrator' }], [22, { status: 'member' }],
       [7788, { status: 'left' }]]);
     this.groups.clear();
+    this.defaultPermissions.clear();
     this.faults.clear();
     this.accounts.clear();
     this.getChatCalls = [];
@@ -57,7 +59,9 @@ export class Telegram {
   canJoin(id, chatId = chat.id) { return this.membersIn(chatId).get(id).status !== 'kicked'; }
   canSend(id, permission = 'can_send_messages', chatId = chat.id) {
     const member = this.membersIn(chatId).get(id);
-    return member.status !== 'kicked' && member.permissions?.[permission] !== false;
+    if (['creator', 'administrator'].includes(member.status)) return true;
+    return member.status !== 'kicked' && member.permissions?.[permission] !== false
+      && this.defaultPermissions.get(chatId)?.[permission] !== false;
   }
 
   async fetch(request) {
@@ -144,7 +148,9 @@ export class Telegram {
       } else {
         assert.equal(params.use_independent_chat_permissions, true);
         assert.equal(typeof params.permissions, 'object');
-        members.set(params.user_id, { status: 'restricted', permissions: params.permissions, until_date: 0 });
+        const restored = Object.keys(params.permissions).length > 0 && Object.values(params.permissions).every(value => value === true);
+        members.set(params.user_id, restored ? { status: 'member' }
+          : { status: 'restricted', permissions: params.permissions, until_date: 0 });
       }
       return Response.json({ ok: true, result: true });
     } catch (error) {

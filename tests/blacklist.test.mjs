@@ -5,7 +5,7 @@ import { database, dispatch, runtime, telegram } from './worker-runtime.mjs';
 
 test('user cleans indexed spam only: Given a blacklisted account with indexed and unindexed history, When a new message arrives, Then the sender cannot rejoin and only eligible indexed messages are explicitly cleared', async () => {
   await database.exec('INSERT INTO blacklisted_users (bot_id, user_id, added_at) VALUES (123, 22, 1)');
-  await database.exec('INSERT INTO recent_messages VALUES (123, -10012, 70, 22, unixepoch() - 60)');
+  await database.exec('INSERT INTO recent_messages (bot_id, chat_id, message_id, sender_id, sent_at) VALUES (123, -10012, 70, 22, unixepoch() - 60)');
   for (const target of [message(70), message(71), message(72, 11), message(81)]) telegram.send(target);
   // A deployment without single-message deletion must still complete indexed cleanup.
   telegram.faults.set('deleteMessage', () => Response.json({ ok: false, error_code: 403 }, { status: 403 }));

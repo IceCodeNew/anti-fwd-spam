@@ -210,7 +210,7 @@ class Moderator:
         self, update: TelegramUpdate, sources: tuple[int, ...], account_response: AppResponse | None
     ) -> AppResponse:
         """Moderate the sender and each matched source with independent retry progress."""
-        response = account_response or await self.actions.delete_and_mute(update.message)
+        response = account_response or await self.delete_current(update)
         for identifier in sources:
             if account_response is not None and identifier == user_id(update.message, include_bots=True):
                 continue
@@ -290,7 +290,7 @@ class Moderator:
         reply = (
             f"Recovery not completed; superseded by newer moderation. Check membership.\nID: {identifier}"
             if response.needs_confirmation
-            else f"Account removed from D1 blacklists; may rejoin this group.\nID: {identifier}"
+            else f"Account removed from D1 blacklists; access restored in this group.\nID: {identifier}"
         )
         return await self._finish_command(update, reply, response)
 
@@ -378,13 +378,18 @@ class Moderator:
         """Stop pending inference or moderation based on content that an edit replaced."""
         now = int(time.time())
         if update.sent_at is not None and recent(update.sent_at, now):
-            referenced = (
+            identifier = user_id(update.message)
+            classify = (
                 reply_target(update.message) is not None
                 or isinstance(update.message.get("external_reply"), dict)
                 or isinstance(update.message.get("quote"), dict)
+                or (
+                    identifier is not None
+                    and await self.store.is_established(self.actions.bot_id, update.chat_id, identifier)
+                )
             )
             await ModelTasks(self.store, self.actions.bot_id).cancel_edit(
-                (update.chat_id, update.message_id), update.sent_at, now, edit_revision(update), referenced=referenced
+                (update.chat_id, update.message_id), update.sent_at, now, edit_revision(update), classify=classify
             )
 
     def quotes_reported_spam(self, update: TelegramUpdate) -> bool:
@@ -406,6 +411,23 @@ class Moderator:
         unique_id = sticker_unique_id(message)
         return unique_id is not None and await self.store.is_sticker_blacklisted(self.actions.bot_id, unique_id)
 
+    async def delete_current(self, update: TelegramUpdate, *, mute: bool = True) -> AppResponse:
+        """Fence immediate deletion and muting after a later account recovery."""
+        identifier = user_id(update.message, include_bots=True)
+
+        async def can_act() -> bool:
+            return (
+                identifier is None
+                or (await self.store.newer_allow(self.actions.bot_id, identifier, update.update_id)) is None
+            )
+
+        try:
+            return await self.actions.delete_and_mute(
+                update.message, mute=mute, can_act=can_act, update_id=update.update_id
+            )
+        except EvidenceError:
+            return AppResponse(503, "moderation storage unavailable; retry pending")
+
     async def check_content(self, update: TelegramUpdate) -> AppResponse:
         """Apply local rules, then queue profile checks and Jev for new messages and referenced edits.
 
@@ -420,18 +442,26 @@ class Moderator:
             or isinstance(message.get("external_reply"), dict)
             or isinstance(message.get("quote"), dict)
         )
+        identifier = user_id(message)
+        pattern_match = matches_spam_pattern(message)
+        established = (
+            identifier is not None
+            and (pattern_match or (update.edited and not referenced))
+            and await self.store.is_established(self.actions.bot_id, update.chat_id, identifier)
+        )
+        spam = pattern_match and not established
         sender = message.get("from")
         bot_sender = isinstance(sender, dict) and sender.get("is_bot") is True and "sender_chat" not in message
-        if not referenced or bot_sender:
+        if not spam and (not referenced or bot_sender):
             try:
-                spam = matches_spam_pattern(message) or await self.matches_sticker(message)
+                spam = await self.matches_sticker(message)
             except EvidenceError:
                 return AppResponse(503, "sticker list unavailable; retry pending")
-            if spam:
-                return await self.actions.delete_and_mute(message, mute=mute)
+        if spam:
+            return await self.delete_current(update, mute=mute)
         if (
-            (update.edited and not referenced)
-            or user_id(message) is None
+            (update.edited and not referenced and not established)
+            or identifier is None
             or not MODEL_CONTENT_FIELDS.intersection(message)
         ):
             return AppResponse(200, "ignored")
@@ -528,8 +558,25 @@ class Moderator:
                 update.message
             )
         ):
+            command = any(
+                isinstance(entities := update.message.get(field), list)
+                and any(isinstance(entity, dict) and entity.get("type") == "bot_command" for entity in entities)
+                for field in ("entities", "caption_entities")
+            )
+            eligible = (
+                not update.edited
+                and user_id(update.message) is not None
+                and bool(MODEL_CONTENT_FIELDS.intersection(update.message))
+                and not command
+                and not any(plugin.matches(update) for plugin in self.reply_plugins)
+            )
             await self.store.remember_message(
-                self.actions.bot_id, update.chat_id, update.message_id, identifier, update.sent_at
+                self.actions.bot_id,
+                update.chat_id,
+                update.message_id,
+                identifier,
+                update.sent_at,
+                activity_eligible=eligible,
             )
 
     async def check_account_blacklist(self, update: TelegramUpdate) -> AppResponse | None:
@@ -540,6 +587,7 @@ class Moderator:
         try:
             if await self.store.is_blacklisted(self.actions.bot_id, identifier):
                 await self.index_message(update)
+                await self.store.invalidate_activity(self.actions.bot_id, update.chat_id, update.message_id)
                 return await self.moderate_account(update, identifier, subject_id=identifier)
         except EvidenceError:
             return AppResponse(503, "account moderation storage unavailable; retry pending")

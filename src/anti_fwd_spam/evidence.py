@@ -12,15 +12,17 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
 RETENTION_SECONDS = 3 * 24 * 60 * 60
+# This deletion window also delays activity credit against farming; retention changes require behavior review.
 MESSAGE_WINDOW_SECONDS = 48 * 60 * 60
 DELETE_BATCH_SIZE = 100
 # Ban progress saved before the report finishes; a target-removal result replaces it.
 BANNED = "banned"
 BAN_FAILED = "ban failed"
 ALLOW_REQUESTED = "allow requested"
+ACCESS_RECOVERING = "access recovering"
 UNBANNED = "unbanned"
 ALLOWED = "allowed"
-ALLOW_MARKERS = (ALLOW_REQUESTED, UNBANNED, ALLOWED)
+ALLOW_MARKERS = (ALLOW_REQUESTED, ACCESS_RECOVERING, UNBANNED, ALLOWED)
 
 
 class EvidenceError(Exception):
@@ -89,6 +91,53 @@ class ReportStore:
                 .run()
             )
 
+    async def claim_access_recovery(self, bot_id: int, update_id: int) -> bool:
+        """Claim one permission-changing request before calling Telegram; uncertain success is not retried."""
+        with storage_errors():
+            row = await (
+                self.database.prepare(
+                    "UPDATE reports SET moderation_result = ? WHERE bot_id = ? AND update_id = ? AND subject_id = 0 "
+                    "AND moderation_result = ? AND response_status IS NULL AND NOT EXISTS "
+                    "(SELECT 1 FROM automatic_mutes AS m WHERE m.bot_id = reports.bot_id "
+                    "AND m.chat_id = json_extract(reports.raw_update, '$.message.chat.id') "
+                    "AND m.user_id = reports.command_source_id AND m.update_id > reports.update_id) "
+                    "AND NOT EXISTS (SELECT 1 FROM reports AS newer WHERE newer.bot_id = reports.bot_id "
+                    "AND newer.subject_id = 0 AND newer.command_source_id = reports.command_source_id "
+                    "AND newer.update_id > reports.update_id "
+                    "AND json_extract(newer.raw_update, '$.message.chat.id') = "
+                    "json_extract(reports.raw_update, '$.message.chat.id') "
+                    "AND newer.moderation_result IN (?, ?, ?, ?)) RETURNING bot_id"
+                )
+                .bind(ACCESS_RECOVERING, bot_id, update_id, ALLOW_REQUESTED, *ALLOW_MARKERS)
+                .first()
+            )
+        return row is not None
+
+    async def release_access_recovery(self, bot_id: int, update_id: int) -> None:
+        """Retry only an explicitly rejected recovery, never a request with an unknown outcome."""
+        with storage_errors():
+            await (
+                self.database.prepare(
+                    "UPDATE reports SET moderation_result = ? WHERE bot_id = ? AND update_id = ? "
+                    "AND subject_id = 0 AND moderation_result = ? AND response_status IS NULL"
+                )
+                .bind(ALLOW_REQUESTED, bot_id, update_id, ACCESS_RECOVERING)
+                .run()
+            )
+
+    async def later_mute(self, bot_id: int, identifier: int, chat_id: int, update_id: int) -> bool:
+        """Preserve a newer issued mute, including one waiting for Telegram confirmation."""
+        with storage_errors():
+            row = (
+                await self.database.prepare(
+                    "SELECT 1 FROM automatic_mutes WHERE bot_id = ? AND chat_id = ? AND user_id = ? "
+                    "AND update_id > ? LIMIT 1"
+                )
+                .bind(bot_id, chat_id, identifier, update_id)
+                .first()
+            )
+        return row is not None
+
     async def confirm_unban(self, bot_id: int, update_id: int) -> None:
         """Checkpoint Telegram success before attempting any atomic blacklist removal."""
         with storage_errors():
@@ -97,7 +146,7 @@ class ReportStore:
                     "UPDATE reports SET moderation_result = ? WHERE bot_id = ? AND update_id = ? "
                     "AND subject_id = 0 AND moderation_result = ?",
                 )
-                .bind(UNBANNED, bot_id, update_id, ALLOW_REQUESTED)
+                .bind(UNBANNED, bot_id, update_id, ACCESS_RECOVERING)
                 .run()
             )
 
@@ -109,7 +158,7 @@ class ReportStore:
             row = await (
                 self.database.prepare(
                     "SELECT update_id FROM reports WHERE bot_id = ? AND subject_id = 0 "
-                    "AND command_source_id = ? AND moderation_result IN (?, ?, ?) "
+                    "AND command_source_id = ? AND moderation_result IN (?, ?, ?, ?) "
                     "AND (? IS NULL OR update_id > ?) "
                     "AND (? IS NULL OR json_extract(raw_update, '$.message.chat.id') = ?) "
                     "ORDER BY update_id DESC LIMIT 1",
@@ -153,8 +202,17 @@ class ReportStore:
                         "((n.subject_id = ? OR (n.subject_id = 0 AND "
                         "COALESCE(json_extract(n.raw_update, '$.message.reply_to_message.from.id'), "
                         "json_extract(n.raw_update, '$.edited_message.reply_to_message.from.id')) = ?)) "
-                        "AND (n.ban_claimed = 1 OR n.moderation_result = ? OR n.moderation_result LIKE '%; banned'))))"
-                    ).bind(ALLOWED, *key, UNBANNED, *key, identifier, identifier, identifier, BANNED),
+                        "AND (n.ban_claimed = 1 OR n.moderation_result = ? OR n.moderation_result LIKE '%; banned')))) "
+                        "AND NOT EXISTS (SELECT 1 FROM automatic_mutes AS m WHERE m.bot_id = reports.bot_id "
+                        "AND m.chat_id = json_extract(reports.raw_update, '$.message.chat.id') "
+                        "AND m.user_id = reports.command_source_id AND m.update_id > reports.update_id) "
+                        "AND NOT EXISTS (SELECT 1 FROM reports AS newer WHERE newer.bot_id = reports.bot_id "
+                        "AND newer.subject_id = 0 AND newer.command_source_id = reports.command_source_id "
+                        "AND newer.update_id > reports.update_id "
+                        "AND json_extract(newer.raw_update, '$.message.chat.id') = "
+                        "json_extract(reports.raw_update, '$.message.chat.id') "
+                        "AND newer.moderation_result IN (?, ?, ?, ?))"
+                    ).bind(ALLOWED, *key, UNBANNED, *key, identifier, identifier, identifier, BANNED, *ALLOW_MARKERS),
                     self.database.prepare(
                         "DELETE FROM blacklisted_users WHERE bot_id = ? AND user_id = ? AND EXISTS "
                         "(SELECT 1 FROM reports WHERE bot_id = ? AND update_id = ? AND subject_id = 0 "
@@ -196,7 +254,7 @@ class ReportStore:
                 self.database.prepare(
                     "INSERT INTO blacklisted_sources (source_id) SELECT ? WHERE NOT EXISTS "
                     "(SELECT 1 FROM reports WHERE bot_id = ? AND subject_id = 0 AND command_source_id = ? "
-                    "AND moderation_result IN (?, ?, ?) AND update_id > ?) "
+                    "AND moderation_result IN (?, ?, ?, ?) AND update_id > ?) "
                     "ON CONFLICT DO NOTHING",
                 )
                 .bind(source_id, bot_id, source_id, *ALLOW_MARKERS, update_id)
@@ -260,7 +318,7 @@ class ReportStore:
                 self.database.prepare(
                     "INSERT INTO blacklisted_users (bot_id, user_id, added_at, username) SELECT ?, ?, ?, ? "
                     "WHERE NOT EXISTS (SELECT 1 FROM reports WHERE bot_id = ? AND subject_id = 0 "
-                    "AND command_source_id = ? AND moderation_result IN (?, ?, ?) "
+                    "AND command_source_id = ? AND moderation_result IN (?, ?, ?, ?) "
                     "AND (? IS NULL OR update_id > ?)) ON CONFLICT(bot_id, user_id) DO UPDATE "
                     "SET username = COALESCE(excluded.username, blacklisted_users.username)",
                 )
@@ -278,15 +336,16 @@ class ReportStore:
             )
         return row is not None
 
-    async def claim_mute(self, bot_id: int, chat_id: int, message_id: int, now: int) -> bool:
+    async def claim_mute(self, target: tuple[int, int, int], now: int, *, user_id: int, update_id: int | None) -> bool:
         """Claim a message once, including edits delivered under a different update ID."""
         with storage_errors():
             row = await (
                 self.database.prepare(
-                    "INSERT INTO automatic_mutes (bot_id, chat_id, message_id, expires_at) VALUES (?, ?, ?, ?) "
+                    "INSERT INTO automatic_mutes (bot_id, chat_id, message_id, expires_at, user_id, update_id) "
+                    "VALUES (?, ?, ?, ?, ?, ?) "
                     "ON CONFLICT(bot_id, chat_id, message_id) DO NOTHING RETURNING bot_id",
                 )
-                .bind(bot_id, chat_id, message_id, now + RETENTION_SECONDS)
+                .bind(*target, now + RETENTION_SECONDS, user_id, update_id)
                 .first()
             )
         return row is not None
@@ -300,22 +359,49 @@ class ReportStore:
                 .run()
             )
 
-    async def remember_message(
+    async def is_established(self, bot_id: int, chat_id: int, user_id: int) -> bool:
+        """Require ten naturally matured observations for this bot, group and member."""
+        with storage_errors():
+            row = await (
+                self.database.prepare(
+                    "SELECT 1 FROM member_activity WHERE bot_id = ? AND chat_id = ? AND user_id = ? "
+                    "AND matured_count >= 10",
+                )
+                .bind(bot_id, chat_id, user_id)
+                .first()
+            )
+        return row is not None
+
+    async def remember_message(  # noqa: PLR0913 - Message identity, original age and eligibility are independent inputs.
         self,
         bot_id: int,
         chat_id: int,
         message_id: int,
         sender_id: int,
         sent_at: int,
+        *,
+        activity_eligible: bool = False,
     ) -> None:
-        """Index identifiers only; edits and redelivery must not refresh message age."""
+        """Index identifiers only; edits and redelivery cannot refresh age or upgrade activity eligibility."""
         with storage_errors():
             await (
                 self.database.prepare(
-                    "INSERT INTO recent_messages (bot_id, chat_id, message_id, sender_id, sent_at) "
-                    "VALUES (?, ?, ?, ?, ?) ON CONFLICT(bot_id, chat_id, message_id) DO NOTHING",
+                    "INSERT INTO recent_messages (bot_id, chat_id, message_id, sender_id, sent_at, activity_eligible) "
+                    "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(bot_id, chat_id, message_id) DO NOTHING",
                 )
-                .bind(bot_id, chat_id, message_id, sender_id, sent_at)
+                .bind(bot_id, chat_id, message_id, sender_id, sent_at, int(activity_eligible))
+                .run()
+            )
+
+    async def invalidate_activity(self, bot_id: int, chat_id: int, message_id: int) -> None:
+        """Disqualify a moderated message without allowing retries or edits to restore its credit."""
+        with storage_errors():
+            await (
+                self.database.prepare(
+                    "UPDATE recent_messages SET activity_eligible = 0 "
+                    "WHERE bot_id = ? AND chat_id = ? AND message_id = ?",
+                )
+                .bind(bot_id, chat_id, message_id)
                 .run()
             )
 
@@ -332,7 +418,7 @@ class ReportStore:
             result = await (
                 self.database.prepare(
                     "SELECT message_id FROM recent_messages WHERE bot_id = ? AND chat_id = ? AND sender_id = ? "
-                    "AND message_id < ? AND sent_at > ? ORDER BY message_id LIMIT ?",
+                    "AND message_id < ? AND sent_at > ? AND history_removed = 0 ORDER BY message_id LIMIT ?",
                 )
                 .bind(
                     bot_id, chat_id, sender_id, before_message_id, now - MESSAGE_WINDOW_SECONDS, DELETE_BATCH_SIZE + 1
@@ -342,12 +428,12 @@ class ReportStore:
             return [int(row.message_id) for row in result.results]
 
     async def forget_messages(self, bot_id: int, chat_id: int, message_ids: list[int]) -> None:
-        """Remove only the batch Telegram confirmed, leaving failed batches retryable."""
+        """Mark confirmed history removals without discarding their replay-deduplication identities."""
         with storage_errors():
             await (
                 self.database.prepare(
-                    "DELETE FROM recent_messages WHERE bot_id = ? AND chat_id = ? "
-                    "AND message_id IN (SELECT value FROM json_each(?))",
+                    "UPDATE recent_messages SET activity_eligible = 0, history_removed = 1 "
+                    "WHERE bot_id = ? AND chat_id = ? AND message_id IN (SELECT value FROM json_each(?))",
                 )
                 .bind(bot_id, chat_id, json.dumps(message_ids))
                 .run()
@@ -454,13 +540,25 @@ class ReportStore:
             .bind(now)
             .run()
         )
-        await (
-            self.database.prepare(
-                "DELETE FROM recent_messages WHERE rowid IN "
-                "(SELECT rowid FROM recent_messages WHERE sent_at <= ? ORDER BY sent_at LIMIT 1000)",
-            )
-            .bind(now - MESSAGE_WINDOW_SECONDS)
-            .run()
+        cutoff = now - MESSAGE_WINDOW_SECONDS
+        # Credit and removal use the same bounded selection; either both commit or neither does.
+        await self.database.batch(
+            [
+                self.database.prepare(
+                    "WITH expired AS (SELECT bot_id, chat_id, sender_id, activity_eligible FROM recent_messages "
+                    "WHERE rowid IN (SELECT rowid FROM recent_messages WHERE sent_at <= ? "
+                    "ORDER BY sent_at, rowid LIMIT 1000)) "
+                    "INSERT INTO member_activity (bot_id, chat_id, user_id, matured_count) "
+                    "SELECT bot_id, chat_id, sender_id, MIN(10, COUNT(*)) FROM expired "
+                    "WHERE activity_eligible = 1 GROUP BY bot_id, chat_id, sender_id "
+                    "ON CONFLICT(bot_id, chat_id, user_id) DO UPDATE "
+                    "SET matured_count = MIN(10, member_activity.matured_count + excluded.matured_count)",
+                ).bind(cutoff),
+                self.database.prepare(
+                    "DELETE FROM recent_messages WHERE rowid IN "
+                    "(SELECT rowid FROM recent_messages WHERE sent_at <= ? ORDER BY sent_at, rowid LIMIT 1000)",
+                ).bind(cutoff),
+            ],
         )
         await (
             self.database.prepare(

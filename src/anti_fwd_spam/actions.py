@@ -7,7 +7,17 @@ from dataclasses import dataclass, replace
 from http import HTTPStatus
 from typing import TYPE_CHECKING
 
-from .evidence import ALLOW_REQUESTED, ALLOWED, BAN_FAILED, BANNED, DELETE_BATCH_SIZE, UNBANNED, EvidenceError
+from .evidence import (
+    ACCESS_RECOVERING,
+    ALLOW_MARKERS,
+    ALLOW_REQUESTED,
+    ALLOWED,
+    BAN_FAILED,
+    BANNED,
+    DELETE_BATCH_SIZE,
+    UNBANNED,
+    EvidenceError,
+)
 from .telegram import DeleteOutcome, TelegramError, call_method, delete_message
 
 if TYPE_CHECKING:
@@ -109,6 +119,7 @@ class Actions:
         *,
         can_act: Callable[[], Awaitable[bool]] | None = None,
         mute: bool = True,
+        update_id: int | None = None,
     ) -> AppResponse:
         """Delete one message and permanently mute its sender, preserving administrators and history."""
         chat, message_id = message.get("chat"), message.get("message_id")
@@ -125,12 +136,13 @@ class Actions:
             return AppResponse(503 if error.retryable else 200, "automatic authority check failed")
         if can_act is not None and not await can_act():
             return AppResponse(200, "moderation cancelled")
+        await self.store.invalidate_activity(self.bot_id, chat_id, message_id)
         response = await self._delete_target(chat_id, message_id)
         identifier = user_id(message)
         if not mute or not response.target_removed or identifier is None or chat.get("type") != "supergroup":
             return replace(response, body=response.body + "; mute skipped")
         try:
-            response = await self._mute(chat_id, message_id, identifier, response.body, can_act)
+            response = await self._mute((chat_id, message_id), identifier, response.body, can_act, update_id)
         except EvidenceError:
             response = AppResponse(503, "mute storage unavailable; retry pending")
         return response
@@ -154,29 +166,74 @@ class Actions:
         self, update: TelegramUpdate, identifier: int, saved: StoredReport, update_id: int
     ) -> AppResponse:
         key = (self.bot_id, update_id)
-        if await self.store.command_source(*key) != identifier or saved.moderation_result not in {
-            ALLOW_REQUESTED,
-            UNBANNED,
-            ALLOWED,
-        }:
+        if await self.store.command_source(*key) != identifier or saved.moderation_result not in ALLOW_MARKERS:
             return AppResponse(503, "allow request not saved; retry pending")
-        if await self.store.later_confirmed_ban(self.bot_id, identifier, update.chat_id, update_id):
-            return AppResponse(200, "allow superseded by a newer ban; check membership", needs_confirmation=True)
-        if saved.moderation_result == ALLOW_REQUESTED:
-            result = await call_method(
-                self.fetcher,
-                self.token,
-                "unbanChatMember",
-                {"chat_id": update.chat_id, "user_id": identifier, "only_if_banned": True},
-            )
-            if result is not True:
-                return AppResponse(503, "unban failed; retry pending")
-            await self.store.confirm_unban(*key)
-        if await self.store.later_confirmed_ban(self.bot_id, identifier, update.chat_id, update_id):
+        if await self._allow_superseded(identifier, update.chat_id, update_id):
             return AppResponse(200, "allow superseded by newer moderation; check membership", needs_confirmation=True)
-        if not await self.store.complete_allow(self.bot_id, identifier, update_id):
+        if saved.moderation_result == ACCESS_RECOVERING:
+            return AppResponse(200, "recovery uncertain; check membership", needs_confirmation=True)
+        if saved.moderation_result == ALLOW_REQUESTED:
+            response = await self._restore_access(update, identifier, update_id)
+            if response is not None:
+                return response
+        if await self._allow_superseded(identifier, update.chat_id, update_id) or not await self.store.complete_allow(
+            self.bot_id, identifier, update_id
+        ):
             return AppResponse(200, "allow superseded by newer moderation; check membership", needs_confirmation=True)
         return AppResponse(200, ALLOWED)
+
+    async def _allow_superseded(self, identifier: int, chat_id: int, update_id: int) -> bool:
+        return (
+            await self.store.later_confirmed_ban(self.bot_id, identifier, chat_id, update_id)
+            or await self.store.later_mute(self.bot_id, identifier, chat_id, update_id)
+            or (await self.store.newer_allow(self.bot_id, identifier, update_id, chat_id=chat_id)) is not None
+        )
+
+    async def _restore_access(self, update: TelegramUpdate, identifier: int, update_id: int) -> AppResponse | None:
+        """Own one external restoration; an uncertain claim never repeats it."""
+        key = (self.bot_id, update_id)
+        status = await self.member_status(update.chat_id, identifier)
+        if not await self.store.claim_access_recovery(*key):
+            current = await self.store.save(key, update.raw_json, int(time.time()), 0)
+            if current.status is not None:
+                return AppResponse(current.status, current.body)
+            return (
+                None
+                if current.moderation_result in {UNBANNED, ALLOWED}
+                else AppResponse(200, "recovery uncertain or superseded; check membership", needs_confirmation=True)
+            )
+        if await self._allow_superseded(identifier, update.chat_id, update_id):
+            return AppResponse(200, "allow superseded by newer moderation; check membership", needs_confirmation=True)
+        if status in {"restricted", "kicked"} and not await self._send_access_recovery(
+            update.chat_id, identifier, status, key
+        ):
+            return AppResponse(503, "membership recovery failed; retry pending")
+        if await self._allow_superseded(identifier, update.chat_id, update_id):
+            return AppResponse(200, "allow superseded by newer moderation; check membership", needs_confirmation=True)
+        await self.store.confirm_unban(*key)
+        return None
+
+    async def _send_access_recovery(self, chat_id: int, identifier: int, status: str, key: tuple[int, int]) -> bool:
+        """Release a recovery claim only when Telegram explicitly refused it."""
+        method = "restrictChatMember" if status == "restricted" else "unbanChatMember"
+        params: dict[str, object] = {"chat_id": chat_id, "user_id": identifier}
+        if status == "restricted":
+            params.update(
+                permissions=dict.fromkeys([*MUTE_PERMISSIONS, "can_react_to_messages", "can_edit_tag"], True),
+                use_independent_chat_permissions=True,
+                until_date=0,
+            )
+        else:
+            params["only_if_banned"] = True
+        try:
+            result = await call_method(self.fetcher, self.token, method, params)
+        except TelegramError as error:
+            if error.rejected:
+                await self.store.release_access_recovery(*key)
+            raise
+        if result is False:
+            await self.store.release_access_recovery(*key)
+        return result is True
 
     async def ban_joiner(
         self,
@@ -292,6 +349,7 @@ class Actions:
             return AppResponse(200, "moderation cancelled")
         # A report deletes its target unless the target is already removed or the ban waits for a retry.
         if target.message_id is not None and response.status == HTTPStatus.OK and not response.target_removed:
+            await self.store.invalidate_activity(self.bot_id, chat_id, target.message_id)
             deletion = await self._delete_target(chat_id, target.message_id)
             response = replace(deletion, body=f"{deletion.body}; {response.body}", sender_banned=response.sender_banned)
         if response.target_removed:
@@ -471,19 +529,20 @@ class Actions:
 
     async def _mute(
         self,
-        chat_id: int,
-        message_id: int,
+        target: tuple[int, int],
         identifier: int,
         deletion: str,
         can_act: Callable[[], Awaitable[bool]] | None,
+        update_id: int | None,
     ) -> AppResponse:
+        chat_id, message_id = target
         mute_key = (self.bot_id, chat_id, message_id)
         claimed = False
         try:
             status = await self.member_status(chat_id, identifier)
             if status in ADMIN_STATUSES or status == "kicked":
                 return AppResponse(200, deletion + "; mute skipped")
-            claimed = await self.store.claim_mute(*mute_key, int(time.time()))
+            claimed = await self.store.claim_mute(mute_key, int(time.time()), user_id=identifier, update_id=update_id)
             if not claimed:
                 return AppResponse(200, deletion + "; mute retry skipped; check permissions if needed")
             can_mute = False
@@ -508,9 +567,14 @@ class Actions:
             )
             if result is not True:
                 return AppResponse(503, deletion + "; mute failed")
+            confirmed = can_act is None or await can_act()
         except TelegramError as error:
             # A lost response can hide success followed by an administrator's manual unmute.
             if claimed and error.rejected and error.retryable:
                 await self.store.release_mute(*mute_key)
             return AppResponse(503 if error.retryable else 200, deletion + "; mute failed")
-        return AppResponse(200, deletion + "; muted")
+        return AppResponse(
+            200,
+            deletion + ("; muted" if confirmed else "; late mute needs permission confirmation; check membership"),
+            needs_confirmation=not confirmed,
+        )

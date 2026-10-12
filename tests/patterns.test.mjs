@@ -165,7 +165,8 @@ test('user: Given a contact whose account biography matches a rule, When the car
   assert.equal(telegram.canSend(22), false);
 });
 
-test('user: Given an external quote whose own text matches a rule, When Jev finds no promotion, Then regex does not decide punishment', async () => {
+test('user: Given an established member with an external quote whose own text matches a rule, When Jev finds no promotion, Then regex does not decide punishment', async () => {
+  await database.prepare('INSERT INTO member_activity VALUES (123,-10012,22,10)').run();
   const target = { ...message(), text: '看头像q <contact> 这是广告，别点',
     external_reply: { origin: { type: 'hidden_user', sender_user_name: '未知' } },
     quote: { text: '看头像q <contact>' } };
@@ -388,7 +389,8 @@ test('user: Given an unreferenced disabled-group replacement notice from an admi
   assert.equal(telegram.members.get(22).status, 'administrator');
 });
 
-test('user: Given a referenced disabled-group notice, When received, Then local maintenance filtering is bypassed and Jev receives it', async () => {
+test('user: Given an established member with a referenced disabled-group notice, When received, Then Jev decides the maintenance-pattern match', async () => {
+  await database.prepare('INSERT INTO member_activity VALUES (123,-10012,22,10)').run();
   model.probability = 0;
   const target = { ...message(), text: '本群已停用，请加入新群继续讨论：https://example.invalid/new-group',
     reply_to_message: { ...message(80), text: '群里正在讨论活动安排' } };

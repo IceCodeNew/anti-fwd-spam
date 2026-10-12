@@ -91,6 +91,7 @@ beforeEach(async () => {
   Object.assign(model, { probability: 0, profile: null, profiles: new Map(), state: null, response: null });
   await database.prepare('DELETE FROM reports').run();
   await database.prepare('DELETE FROM recent_messages').run();
+  await database.prepare('DELETE FROM member_activity').run();
   await database.prepare('DELETE FROM automatic_mutes').run();
   await database.prepare('DELETE FROM blacklisted_users').run();
   await database.prepare('DELETE FROM blacklisted_sticker_sets').run();
@@ -121,8 +122,11 @@ export async function dispatch(update, options = {}) {
   const response = await runtime.dispatchFetch('https://worker.test/webhook', {
     method: 'POST', headers, body: JSON.stringify(update), ...options,
   });
+  const buffered = new Response(await response.arrayBuffer(), {
+    status: response.status, statusText: response.statusText, headers: response.headers,
+  });
   await backgroundTasksSettled();
-  return response;
+  return buffered;
 }
 
 // A task is still running while it is unclaimed or its lease is active.

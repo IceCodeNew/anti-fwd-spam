@@ -12,7 +12,7 @@ Use `/bs @source_bot` to register a source bot, including a guest bot that sends
 
 Ordinary message filtering deletes the triggering message and can permanently mute a human sender without adding an account blacklist entry. Join-profile filtering instead permanently bans the matched new member and deletes the join notice, recording the confirmed account ban. Administrators and group owners are protected. Deleted messages cannot be restored.
 
-To undo an account ban, use an identity in `REPORTER_IDS` to send `/allow @username` or `/allow <account ID>` in the affected supergroup. Known usernames are retained on confirmed account bans and checked against that account's current numeric profile. Prefer the numeric ID for legacy entries without a name, renamed or ambiguous accounts, or when Telegram cannot resolve the identity. The command removes this bot's account entry and the matching shared source entry, and lets the account rejoin the current group; it does not automatically add them back. It leaves other groups' bans, other bots' account entries, sticker lists, and current-member mute permissions unchanged. This is not a lasting exemption from future advertisements or new reports.
+To undo an account ban or permanent mute, use an identity in `REPORTER_IDS` to send `/allow @username` or `/allow <account ID>` in the affected supergroup. Known usernames are retained on confirmed account bans and checked against that account's current numeric profile. Prefer the numeric ID for legacy entries without a name, renamed or ambiguous accounts, or when Telegram cannot resolve the identity. The command removes this bot's account entry and the matching shared source entry, unbans a kicked account or lifts a restricted member's personal restrictions in the current group. It does not automatically add a removed account back, change group-wide default permissions, or affect other groups' bans/restrictions, other bots' account entries, or sticker lists. This is not a lasting exemption from future advertisements or new reports.
 
 Inspect D1 in the Cloudflare dashboard. Replace the example IDs with the moderation bot ID and the value from your database:
 
@@ -36,7 +36,7 @@ DELETE FROM blacklisted_stickers
 WHERE bot_id = 123456789 AND file_unique_id = 'example_unique_id';
 ```
 
-Manual database removal affects future filtering; lift its existing Telegram restriction separately. `/allow` handles account-ban recovery together with list removal, but a current member's mute still needs separate recovery. Keep member information private when viewing or exporting D1 data.
+Manual database removal affects future filtering; lift its existing Telegram restriction separately. `/allow` handles account-ban and mute recovery together with list removal; confirmed recovery is not repeated during cleanup retries. If the command reports uncertain recovery, inspect membership/permissions before sending a new command; the old request will not blindly repeat a permission-changing operation. Keep member information private when viewing or exporting D1 data.
 
 ## Delivery and troubleshooting
 
@@ -63,6 +63,6 @@ curl --silent --show-error --fail-with-body \
 
 The bot sends bounded message context and selected profile data to Jev only when Jev is enabled. It does not download or inspect media. Review provider terms before enabling it.
 
-D1 keeps reports, temporary processing records, and moderation progress for a limited retention period. The recent-message index stores identifiers and timestamps rather than message text; pending model tasks may temporarily retain submitted content until classification finishes. Source, account, and sticker blacklists remain until removed. Exact retention constants are maintained in `src/anti_fwd_spam/evidence.py` and cleanup is performed by the scheduled Worker trigger.
+D1 keeps reports, temporary processing records, and moderation progress for a limited retention period. The recent-message index stores identifiers and timestamps rather than message text; pending model tasks may temporarily retain submitted content until classification finishes. Source, account, and sticker blacklists remain until removed. Member-activity counters persist after their observations expire, capped at the maturity threshold; changing the message index window changes how quickly that threshold can be earned. Exact retention constants are maintained in `src/anti_fwd_spam/evidence.py` and cleanup is performed by the scheduled Worker trigger.
 
 Keep tokens, secrets, member IDs, report JSON, and database exports out of public logs and repository files.

@@ -136,6 +136,8 @@ DISABLED_GROUP_NOTICE_RE = re.compile(
     r"|[^。\uff01\uff1f\n]{0,80}点击\s*(?:新地址|新链接|https?://\S+))"
 )
 
+CAMPAIGN_COMMAND_RE = re.compile(r"@[A-Za-z0-9_]{5,32}\s+campaign_[0-9]+(?:\s+[A-Za-z0-9_]+)?")
+
 SPAM_PATTERNS = (
     re.compile(r"@[A-Za-z0-9_]{5,32}\s+campaign_[0-9]+"),
     re.compile(r"([💰🔴])(?:\s*\1){3,}"),

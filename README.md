@@ -47,6 +47,8 @@ The complete copy-pasteable setup is in [Deployment setup](docs/setup.md). Start
 
 Reporting identity, administrator protection, source attribution, sticker handling, and false-positive recovery are defined by [the behavior contract](docs/behavior.md).
 
+A reply or quote whose own text or caption is a complete `@username campaign_<digits>` invocation (optionally followed by one argument made of ASCII letters, digits or underscores) is filtered locally. Ordinary mentions, warnings and reports stay on their existing paths; referenced authors and associated bots are not punished by this check.
+
 ## Optional Jev classification
 
 Jev is used after local rules, blacklist checks, sticker checks, and report handling. It receives the bounded message context selected by the bot; media is not downloaded or inspected. A provider may charge for requests and may receive user-provided text and profile data, so review its terms before enabling the feature.

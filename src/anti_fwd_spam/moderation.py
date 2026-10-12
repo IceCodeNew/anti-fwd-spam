@@ -13,6 +13,7 @@ from .constants import MAX_TELEGRAM_ID, MODEL_CONTENT_FIELDS
 from .evidence import MESSAGE_WINDOW_SECONDS, EvidenceError, ReportStore
 from .model import join_model_input, model_input, profile_ids
 from .policy import (
+    matches_campaign_command,
     matches_spam_pattern,
     parse_update,
     reply_target,
@@ -422,13 +423,15 @@ class Moderator:
         )
         sender = message.get("from")
         bot_sender = isinstance(sender, dict) and sender.get("is_bot") is True and "sender_chat" not in message
-        if not referenced or bot_sender:
+        if referenced and not bot_sender:
+            spam = matches_campaign_command(message)
+        else:
             try:
                 spam = matches_spam_pattern(message) or await self.matches_sticker(message)
             except EvidenceError:
                 return AppResponse(503, "sticker list unavailable; retry pending")
-            if spam:
-                return await self.actions.delete_and_mute(message, mute=mute)
+        if spam:
+            return await self.actions.delete_and_mute(message, mute=mute)
         if (
             (update.edited and not referenced)
             or user_id(message) is None

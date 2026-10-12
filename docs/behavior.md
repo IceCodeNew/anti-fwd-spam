@@ -24,7 +24,7 @@ For a new group message, processing follows this order:
 3. Route a join notice to independent checks of its new members, rather than its inviter.
 4. For other messages, match explicit source identities and account blacklists.
 5. Index an eligible message for possible later history cleanup, then apply reply reports and remaining command handling.
-6. Apply local text, profile, sticker, and maintenance rules to messages without a reference and to actual bot senders even when referenced.
+6. Apply local text, profile, sticker, and maintenance rules to messages without a reference and to actual bot senders even when referenced. For referenced human messages, apply only the complete authored campaign-invocation check.
 7. Queue Jev classification for the remaining eligible input.
 8. Leave the message unchanged when no rule or model decision reaches the configured threshold.
 
@@ -49,7 +49,9 @@ flowchart TD
     J -->|No report| R{Actual bot sender?}
     R -->|Yes| O[Existing local rules on current message]
     R -->|No| M{Reference present?}
-    M -->|Yes| N[Jev with bounded reference context]
+    M -->|Yes| W{Complete campaign invocation in current text or caption?}
+    W -->|Yes| P[Action 1 on current sender]
+    W -->|No| N[Jev with bounded reference context]
     M -->|No| O
     O -->|Match| P[Action 1 on current sender]
     O -->|No match, human sender| N
@@ -58,7 +60,11 @@ flowchart TD
     N -->|Below threshold or unavailable| Q[Leave message unchanged]
 ```
 
-Human messages with a same-chat reply, external reply, or quote bypass local regex and sticker-list checks so Jev can interpret their context. Actual bot senders, including guest bots, still undergo the existing local checks on their own message even when replying; they do not enter Jev. Referenced content and guest caller metadata never substitute for the current sender's content or identity. A forum topic attachment that is not an explicit reply does not count as a reference.
+Human messages with a same-chat reply, external reply, or quote bypass general local regex and sticker-list checks so Jev can interpret their context.
+
+The exception is a complete invocation in the current text or caption: after trimming whitespace, `@username campaign_<digits>` with one optional argument made of ASCII letters, digits or underscores triggers Action 1 without requiring Jev. Usernames contain 5–32 ASCII letters, digits or underscores; campaign digits are ASCII and separators are whitespace. This exception does not read nicknames, biographies, referenced text or guest caller metadata. Bare mentions, explanatory prose, warnings and reports do not match the complete-invocation check; existing report routing still takes precedence. It neither registers the named bot as a source nor punishes any referenced author or caller.
+
+Actual bot senders, including guest bots, still undergo the existing local checks on their own message even when replying; they do not enter Jev. Referenced content and guest caller metadata never substitute for the current sender's content or identity. A forum topic attachment that is not an explicit reply does not count as a reference.
 
 ## Moderation decision map
 

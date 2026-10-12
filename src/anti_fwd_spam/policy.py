@@ -15,7 +15,15 @@ from .constants import (
     SUPPORTED_FORWARD_ORIGINS,
     TOKEN_PART_COUNT,
 )
-from .rules import DISABLED_GROUP_NOTICE_RE, SPAM_PATTERNS
+from .rules import CAMPAIGN_COMMAND_RE, DISABLED_GROUP_NOTICE_RE, SPAM_PATTERNS
+
+
+def matches_campaign_command(message: dict[str, object]) -> bool:
+    """Match a complete authored invocation, never profile or reference content."""
+    return any(
+        isinstance(text := message.get(field), str) and CAMPAIGN_COMMAND_RE.fullmatch(text.strip()) is not None
+        for field in ("text", "caption")
+    )
 
 
 def matches_spam_pattern(message: dict[str, object]) -> bool:

@@ -965,5 +965,213 @@
       "kind": "synthetic negative control",
       "notes": "An advertising public target cannot replace the account's own promotional intent; the own biography explicitly limits this to research."
     }
+  },
+  {
+    "name": "recruitment-contact-only-channel-reply",
+    "spam": true,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "@<recruiter>",
+      "reply_to_message": {
+        "sender_chat": {
+          "type": "channel",
+          "title": "📣示例集团&直招1390 U红包🧧"
+        },
+        "text": "❤️泰国 | 斯里兰卡 | 迪拜【3国联动招聘】 ⭐示例集团直招：推广 | 招商 | 行政 | 后勤 | 技术等岗位 🔥推广招商：底薪1670U+高提成，经验优先，待遇优厚 💰综合薪资20K-30K，纯中文办..."
+      }
+    },
+    "source": {
+      "date": "2026-10-12",
+      "kind": "sanitized screenshot reconstruction",
+      "notes": "Only visible quote and current contact text reconstructed; company, sender and contact identities replaced. Quote visibly truncated after 纯中文办; unseen continuation and biographies are unknown. No D1 record or original Telegram reply metadata available; alternate reply shapes do not claim recovered metadata."
+    }
+  },
+  {
+    "name": "recruitment-contact-only-external-quote",
+    "spam": true,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "@<recruiter>",
+      "external_reply": {
+        "origin": {
+          "type": "channel",
+          "chat": {
+            "type": "channel",
+            "title": "📣示例集团&直招1390 U红包🧧"
+          }
+        }
+      },
+      "quote": {
+        "text": "❤️泰国 | 斯里兰卡 | 迪拜【3国联动招聘】 ⭐示例集团直招：推广 | 招商 | 行政 | 后勤 | 技术等岗位 🔥推广招商：底薪1670U+高提成，经验优先，待遇优厚 💰综合薪资20K-30K，纯中文办..."
+      }
+    },
+    "source": {
+      "date": "2026-10-12",
+      "kind": "sanitized screenshot reconstruction",
+      "notes": "Only visible quote and current contact text reconstructed; company, sender and contact identities replaced. Quote visibly truncated after 纯中文办; unseen continuation and biographies are unknown. No D1 record or original Telegram reply metadata available; alternate reply shapes do not claim recovered metadata."
+    }
+  },
+  {
+    "name": "recruitment-campaign-authored-body",
+    "spam": true,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "❤️泰国 | 斯里兰卡 | 迪拜【3国联动招聘】 ⭐示例集团直招：推广 | 招商 | 行政 | 后勤 | 技术等岗位 🔥推广招商：底薪1670U+高提成，经验优先，待遇优厚 💰综合薪资20K-30K，纯中文办...\n报名联系 @<recruiter>"
+    },
+    "source": {
+      "date": "2026-10-12",
+      "kind": "synthetic boundary control",
+      "notes": "Pairs current-sender intent and quoted recruitment context; all contacts, organizations and identities are placeholders. Not a recovered production update."
+    }
+  },
+  {
+    "name": "recruitment-quoted-explicit-promotion",
+    "spam": true,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "岗位很多，待遇好，想去的联系 @<recruiter>",
+      "reply_to_message": {
+        "sender_chat": {
+          "type": "channel",
+          "title": "📣示例集团&直招1390 U红包🧧"
+        },
+        "text": "❤️泰国 | 斯里兰卡 | 迪拜【3国联动招聘】 ⭐示例集团直招：推广 | 招商 | 行政 | 后勤 | 技术等岗位 🔥推广招商：底薪1670U+高提成，经验优先，待遇优厚 💰综合薪资20K-30K，纯中文办..."
+      }
+    },
+    "source": {
+      "date": "2026-10-12",
+      "kind": "synthetic boundary control",
+      "notes": "Pairs current-sender intent and quoted recruitment context; all contacts, organizations and identities are placeholders. Not a recovered production update."
+    }
+  },
+  {
+    "name": "recruitment-quote-warning-with-contact",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "不要联系 @<recruiter>，这类海外高提成招聘有风险，我已举报。",
+      "reply_to_message": {
+        "sender_chat": {
+          "type": "channel",
+          "title": "📣示例集团&直招1390 U红包🧧"
+        },
+        "text": "❤️泰国 | 斯里兰卡 | 迪拜【3国联动招聘】 ⭐示例集团直招：推广 | 招商 | 行政 | 后勤 | 技术等岗位 🔥推广招商：底薪1670U+高提成，经验优先，待遇优厚 💰综合薪资20K-30K，纯中文办..."
+      }
+    },
+    "source": {
+      "date": "2026-10-12",
+      "kind": "synthetic boundary control",
+      "notes": "Pairs current-sender intent and quoted recruitment context; all contacts, organizations and identities are placeholders. Not a recovered production update."
+    }
+  },
+  {
+    "name": "recruitment-quote-verification",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "@<recruiter> 是这条招聘里的联系人吗？有人核实过吗？",
+      "external_reply": {
+        "origin": {
+          "type": "channel",
+          "chat": {
+            "type": "channel",
+            "title": "📣示例集团&直招1390 U红包🧧"
+          }
+        }
+      },
+      "quote": {
+        "text": "❤️泰国 | 斯里兰卡 | 迪拜【3国联动招聘】 ⭐示例集团直招：推广 | 招商 | 行政 | 后勤 | 技术等岗位 🔥推广招商：底薪1670U+高提成，经验优先，待遇优厚 💰综合薪资20K-30K，纯中文办..."
+      }
+    },
+    "source": {
+      "date": "2026-10-12",
+      "kind": "synthetic boundary control",
+      "notes": "Pairs current-sender intent and quoted recruitment context; all contacts, organizations and identities are placeholders. Not a recovered production update."
+    }
+  },
+  {
+    "name": "recruitment-quote-report-contact",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "管理员请处理这条招聘广告，联系人 @<recruiter>。",
+      "reply_to_message": {
+        "sender_chat": {
+          "type": "channel",
+          "title": "📣示例集团&直招1390 U红包🧧"
+        },
+        "text": "❤️泰国 | 斯里兰卡 | 迪拜【3国联动招聘】 ⭐示例集团直招：推广 | 招商 | 行政 | 后勤 | 技术等岗位 🔥推广招商：底薪1670U+高提成，经验优先，待遇优厚 💰综合薪资20K-30K，纯中文办..."
+      }
+    },
+    "source": {
+      "date": "2026-10-12",
+      "kind": "synthetic boundary control",
+      "notes": "Pairs current-sender intent and quoted recruitment context; all contacts, organizations and identities are placeholders. Not a recovered production update."
+    }
+  },
+  {
+    "name": "recruitment-ordinary-job-contact-reply",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "@<recruiter>",
+      "reply_to_message": {
+        "from": {
+          "first_name": "Member"
+        },
+        "text": "本地市图书馆招聘行政助理，月薪20K-30K，正规劳动合同，工作地点和岗位职责见官网。"
+      }
+    },
+    "source": {
+      "date": "2026-10-12",
+      "kind": "synthetic boundary control",
+      "notes": "Pairs current-sender intent and quoted recruitment context; all contacts, organizations and identities are placeholders. Not a recovered production update."
+    }
+  },
+  {
+    "name": "recruitment-ordinary-overseas-job",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "迪拜一家公开注册的软件公司招聘后端工程师，月薪20K-30K迪拉姆，岗位职责是维护支付系统，申请请走公司官网。"
+    },
+    "source": {
+      "date": "2026-10-12",
+      "kind": "synthetic boundary control",
+      "notes": "Pairs current-sender intent and quoted recruitment context; all contacts, organizations and identities are placeholders. Not a recovered production update."
+    }
+  },
+  {
+    "name": "recruitment-isolated-contact",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "@<recruiter>"
+    },
+    "source": {
+      "date": "2026-10-12",
+      "kind": "synthetic boundary control",
+      "notes": "Pairs current-sender intent and quoted recruitment context; all contacts, organizations and identities are placeholders. Not a recovered production update."
+    }
   }
 ]

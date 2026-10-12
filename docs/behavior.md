@@ -9,7 +9,7 @@ The Worker accepts authenticated Telegram `message` and `edited_message` updates
 A reporting identity is either a configured user ID or a configured sender-chat ID. A sender-chat identity is evaluated on its own; a compatibility `from` field cannot authorize it. An ordinary user must be a genuine non-bot sender whose ID is configured. Authorization is checked again on redelivery and retry.
 
 - A listed `/bs` command is handled before automatic filtering. `/bs @username` registers the named source without immediately moderating a reply target. A bare `/bs` reply registers the target's inline bot, or its actual bot sender when there is no inline bot; registration must succeed before the target and registered source receive Action 2. The guest caller is not a source or moderation target. Sticker registration and target validation still apply.
-- A listed `/allow @username` or `/allow <account ID>` in a supergroup removes the selected account from this bot's account blacklist and the shared source blacklist, then permits it to rejoin that supergroup. Telegram unban confirmation precedes blacklist removal. Existing members, restrictions, other groups' bans, other bots' account entries, and sticker lists are unchanged. Recorded usernames are checked against the account's current profile before first resolution, then stay pinned on retry; unresolved, renamed or ambiguous identities require the numeric ID. `/allow` uses the same configured reporting identities as `/bs`, not administrator status alone; edited, private-chat and basic-group forms do not change state.
+- A listed `/allow @username` or `/allow <account ID>` in a supergroup removes the selected account from this bot's account blacklist and the shared source blacklist and restores its access there. A kicked account is unbanned; a restricted member's personal restrictions are lifted without changing group-wide defaults. Telegram restoration confirmation precedes blacklist removal. Ordinary members, administrators, other groups' bans/restrictions, other bots' account entries, and sticker lists are unchanged. Recorded usernames are checked against the account's current profile before first resolution, then stay pinned on retry; unresolved, renamed or ambiguous identities require the numeric ID. `/allow` uses the same configured reporting identities as `/bs`, not administrator status alone; edited, private-chat and basic-group forms do not change state.
 - An unlisted bare `/bs` reply to a valid group target records evidence but does not register a source or punish an account.
 - An unlisted reply that mentions the bot records evidence and ends routing.
 - An explicit unlisted `/bs` argument continues through ordinary filtering instead of registering a source.
@@ -24,7 +24,7 @@ For a new group message, processing follows this order:
 3. Route a join notice to independent checks of its new members, rather than its inviter.
 4. For other messages, match explicit source identities and account blacklists.
 5. Index an eligible message for possible later history cleanup, then apply reply reports and remaining command handling.
-6. Apply local text, profile, sticker, and maintenance rules to messages without a reference and to actual bot senders even when referenced.
+6. Apply all current-message text, nickname, contact-name and maintenance regexes before Jev for human senders below the mature-message threshold, with or without a reference. Established senders use Jev for regex matches. Sticker checks retain their existing reference boundary, and bot senders retain local-only filtering.
 7. Queue Jev classification for the remaining eligible input.
 8. Leave the message unchanged when no rule or model decision reaches the configured threshold.
 
@@ -48,9 +48,15 @@ flowchart TD
     J -->|Unlisted| L[Save evidence only]
     J -->|No report| R{Actual bot sender?}
     R -->|Yes| O[Existing local rules on current message]
-    R -->|No| M{Reference present?}
-    M -->|Yes| N[Jev with bounded reference context]
-    M -->|No| O
+    R -->|No| M{Ten naturally matured observations?}
+    M -->|No| W[Current-message regex checks, including replies]
+    W -->|Match| P[Action 1 on current sender]
+    W -->|No match| X[Existing sticker boundary and own-profile checks]
+    M -->|Yes| Y[Existing sticker boundary, no direct regex punishment]
+    X -->|Local match| P
+    X -->|No match| N[Jev with bounded current and reference context]
+    Y -->|Sticker match| P
+    Y -->|No match| N
     O -->|Match| P[Action 1 on current sender]
     O -->|No match, human sender| N
     O -->|No match, bot sender| Q[Leave message unchanged]
@@ -58,7 +64,11 @@ flowchart TD
     N -->|Below threshold or unavailable| Q[Leave message unchanged]
 ```
 
-Human messages with a same-chat reply, external reply, or quote bypass local regex and sticker-list checks so Jev can interpret their context. Actual bot senders, including guest bots, still undergo the existing local checks on their own message even when replying; they do not enter Jev. Referenced content and guest caller metadata never substitute for the current sender's content or identity. A forum topic attachment that is not an explicit reply does not count as a reference.
+A human sender's mature-message count selects one policy for all text/profile regexes. Below the threshold, a match in current text, caption, nickname, contact name or available own/contact biography can trigger Action 1 before Jev, including on replies and quotes. This intentionally stricter low-history policy may also match warnings or exact examples; operators can recover the account with `/allow`. At or above the threshold, regex matches are evidence for Jev rather than direct punishment. Source-separated reference context remains available to the model.
+
+Referenced text, reference-author profiles and guest caller metadata never count as current-sender regex evidence. Existing command and reply-report routing takes precedence. A campaign-like text match neither registers its named bot as a source nor punishes that bot or the referenced author. Human reference messages still bypass sticker-list checks; this membership policy does not broaden sticker enforcement.
+
+Actual bot senders, including guest bots, still undergo the existing local checks on their own message even when replying; they do not enter Jev. Referenced content and guest caller metadata never substitute for the current sender's content or identity. A forum topic attachment that is not an explicit reply does not count as a reference.
 
 ## Moderation decision map
 
@@ -104,11 +114,19 @@ Existing account blacklists and registered bot sources apply to joined accounts 
 
 A match permanently bans only that joined account, preventing rejoining, and records the confirmed ban in the existing bot-scoped account blacklist. It also removes the shared join notice and cleans eligible indexed history of that account, not the inviter. Normal co-joiners stay in the group; administrators and owners remain protected. A confirmed ban is not repeated when notice deletion needs retry. Each member has an independent durable task and moderation subject, so one failed lookup, decision, or action does not overwrite another's progress.
 
+## Member maturity
+
+Established membership means this bot has observed ten qualifying messages in this group that reached natural expiry in its history index. The persistent counter is scoped by bot, group and account and saturates at ten; it is not Telegram's complete lifetime history or a guarantee of benign intent. Missing counters start below the threshold; pre-migration rows are not credited because their eligibility is unknown.
+
+New human-authored content can qualify. Bots, chat identities, commands, reply reports, service events and edit-only observations do not earn credit. Duplicate delivery and edits do not refresh a message's age or upgrade its eligibility. Automatic moderation disqualifies the triggering observation before deletion while retaining its deduplication key. Confirmed history cleanup retains ineligible removal tombstones until natural expiry, excludes them from later cleanup queries, and prevents replay from reintroducing credit. Only natural expiry earns credit, never receipt or moderation deletion.
+
+Expiry aggregates credit and deletes exactly the same bounded set of observations in one transaction. A failed batch does neither, and retry cannot credit twice. The history window owned by `MESSAGE_WINDOW_SECONDS` in `evidence.py` is also the account-farming delay: shortening it changes how quickly an account can establish trust. Telegram's Bot API does not expose historical join time; this policy relies on aged observations rather than claiming verified continuous membership for 24 hours.
+
 ## Local filtering
 
-Local checks run before Jev on messages without a reference and on actual bot senders with references. General local patterns inspect authored text, captions, shared contact display names, and sender nicknames; deferred profile checks inspect the available sender and contact-account biographies after Telegram lookups. A separate maintenance pattern checks only current text and captions for a same-sentence claim that a group or channel is disabled, moved, or replaced followed by a request to join a new destination. Administrators are protected before Action 1, so ordinary administrator notices remain intact.
+Text/profile regex checks run before Jev for low-history human senders and actual bot senders, regardless of references. General local patterns inspect authored text, captions, shared contact display names, and sender nicknames; deferred profile checks inspect the available sender and contact-account biographies after Telegram lookups. A separate maintenance pattern checks only current text and captions for a same-sentence claim that a group or channel is disabled, moved, or replaced followed by a request to join a new destination. Administrators are protected before Action 1, so ordinary administrator notices remain intact.
 
-A local match ends model classification for that message. The same local regex and sticker checks apply to new and edited bot messages regardless of a reference; human reference messages keep the Jev path. Floods found only in referenced content do not count as a local match. Bots receive deletion only for a content match, while administrator/anonymous-group protection still applies. A registered source match uses Action 2 on the bot separately from content filtering.
+A permitted local match ends model classification for that message. All text/profile regexes share the mature-member gate; established humans instead receive Jev classification. The same local regex and sticker checks apply to new and edited bot messages regardless of a reference. Floods found only in referenced content do not count as a local match. Bots receive deletion only for a content match, while administrator/anonymous-group protection still applies. A registered source match uses Action 2 on the bot separately from content filtering.
 
 ## Jev classification
 
@@ -122,12 +140,12 @@ The inclusive score threshold is the `SPAM_THRESHOLD` value maintained in `src/a
 
 ## Edits and retries
 
-An edit fences older model work for that message. An edited message still passes source and report routing. An edited human message without a reference can use local rules; an eligible referenced human edit starts fresh Jev classification. Bot messages use local rules even when referenced and never enter Jev. Edits do not rerun automatic account-blacklist checks.
+An edit fences older model work for that message. An edited message still passes source and report routing. An edited low-history human message without a reference can use immediate local rules but does not start fresh profile classification; an eligible referenced edit or established member's edit starts fresh Jev classification. Bot messages use local rules even when referenced and never enter Jev. Edits do not rerun automatic account-blacklist checks.
 
 Webhook delivery retries and scheduled task retries are separate. Durable task leases prevent concurrent work from repeating a completed moderation action. A confirmed deletion or ban is not repeated after a later redelivery; uncertain operations remain retryable or require manual inspection.
 
-Within retained evidence, `/allow` fences older source registration and moderation events and cancels superseded account tasks. Completed command redelivery does not undo a subsequent new ban. This is replay protection, not a permanent allowlist: a new advertisement, join, or trusted report can trigger moderation again. Already-issued Telegram requests require outcome handling; unresolved overlap requires manual inspection rather than silently claiming recovery. Deleting blacklist rows does not restore deleted history or unmute a restricted current member.
+Within retained evidence, `/allow` fences older source registration and moderation events and cancels superseded account tasks. Membership restoration is durably claimed before contacting Telegram, so concurrent deliveries cannot repeat it. Explicit rejection permits retry; an unknown remote outcome or lost success checkpoint retains the claim and requires manual inspection rather than another restoration. A newer same-group recovery, ban, or issued mute supersedes an older incomplete recovery. Completed command redelivery does not undo a subsequent new ban or mute. This is replay protection, not a permanent allowlist: a new advertisement, join, or trusted report can trigger moderation again. Already-issued Telegram requests require outcome handling; unresolved overlap requires manual inspection rather than silently claiming recovery. Deleting blacklist rows manually does not restore deleted history or lift Telegram restrictions. `/allow` explicitly restores current-group access, but it cannot restore removed messages. Already-issued overlapping mute requests require permission inspection rather than a blind compensating unmute.
 
 ## Stored state and privacy
 
-The bot stores report evidence, moderation progress, bounded pending model input, message identifiers, and long-lived source/account/sticker blacklists in D1. Recent-message indexes contain identifiers and timestamps rather than message text. Pending model content is cleared after classification finishes. Retention and cleanup are implementation-owned; operators should keep database exports and member information private.
+The bot stores report evidence, moderation progress, bounded pending model input, message identifiers, and long-lived source/account/sticker blacklists in D1. Recent-message indexes contain identifiers, timestamps and activity eligibility rather than message text. Persistent member-activity rows contain only scoped identifiers and a capped mature-message count. Pending model content is cleared after classification finishes. Retention and cleanup are implementation-owned; operators should keep database exports and member information private.

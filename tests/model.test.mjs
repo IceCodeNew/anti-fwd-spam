@@ -97,7 +97,8 @@ test('user: Given a same-chat reply that endorses a spam message, When Jev flags
   assert.equal(model.state.context.reply.reply_to_message, undefined);
 });
 
-test('user: Given a quoted ad with a sender whose biography matches a rule, When Jev rejects promotion, Then the quote and sender remain', async () => {
+test('user: Given an established member quoting an ad and matching profile, When Jev rejects promotion, Then the quote and sender remain', async () => {
+  await database.prepare('INSERT INTO member_activity VALUES (123,-10012,22,10)').run();
   const current = { ...message(), text: '看头像q <contact> 这是广告，别点',
     reply_to_message: { ...message(80, 11), text: '看头像q <contact>' } };
   model.profiles.set(22, { bio: '看头像q <contact>' });

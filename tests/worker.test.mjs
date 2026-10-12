@@ -124,7 +124,9 @@ test('user expires mute identifiers: Given an automatic restriction, When redeli
   assert.equal((await dispatch(update)).status, 200);
   const rows = async () => (await database.prepare('SELECT * FROM automatic_mutes').all()).results;
   const [saved] = await rows();
-  assert.deepEqual(Object.keys(saved).sort(), ['bot_id', 'chat_id', 'expires_at', 'message_id']);
+  assert.deepEqual(Object.keys(saved).sort(), ['bot_id', 'chat_id', 'expires_at', 'message_id', 'update_id', 'user_id']);
+  assert.equal(saved.user_id, 22);
+  assert.equal(saved.update_id, update.update_id);
   assert.ok(saved.expires_at >= before + 259200 && saved.expires_at <= Math.floor(Date.now() / 1000) + 259200);
   // Represent an earlier attempt so an accidental TTL refresh cannot hide within the same second.
   saved.expires_at -= 60;
@@ -355,7 +357,7 @@ test('user preserves message age: Given duplicate updates, edits and messages ou
     await dispatch({ edited_message: { ...msg, edit_date: now } });
   }
   const rows = (await database.prepare('SELECT * FROM recent_messages').all()).results;
-  assert.deepEqual(rows, [{ bot_id: 123, chat_id: chat.id, message_id: 70, sender_id: 22, sent_at: recent.date }]);
+  assert.deepEqual(rows, [{ bot_id: 123, chat_id: chat.id, message_id: 70, sender_id: 22, sent_at: recent.date, activity_eligible: 1, history_removed: 0 }]);
 
   assert.equal((await dispatch(report())).status, 200);
 
@@ -379,7 +381,7 @@ test('user expires message identifiers: Given an indexed message and a controlle
   assert.equal((await evidence()).length, 1);
 });
 
-test('user recovers indexing: Given unavailable index storage, When delivery resumes after storage recovers, Then sender filtering succeeds while source history cleanup waits for storage', async () => {
+test('user recovers indexing: Given unavailable index storage, When a source update arrives, Then moderation waits for safe activity invalidation and resumes after storage recovers', async () => {
   const recent = { ...message(70), date: Math.floor(Date.now() / 1000) - 60 };
   telegram.send(recent);
   await database.prepare('ALTER TABLE recent_messages RENAME TO unavailable_messages').run();
@@ -389,7 +391,8 @@ test('user recovers indexing: Given unavailable index storage, When delivery res
     const spam = { ...message(71), via_bot: { id: 7788, is_bot: true } };
     telegram.send(spam);
     assert.equal((await dispatch({ update_id: 71, message: spam })).status, 503);
-    assert.equal(telegram.has(71), false);
+    assert.equal(telegram.has(71), true);
+    assert.equal(telegram.canSend(22), true);
   } finally {
     await database.prepare('ALTER TABLE unavailable_messages RENAME TO recent_messages').run();
   }
@@ -550,7 +553,7 @@ test('user resumes target deletion: Given a confirmed ban and temporary target-d
   assert.equal(telegram.has(82), false);
 });
 
-test('user retains evidence during failure: Given unavailable report storage, When a report or source match arrives, Then reports wait and automatic sender filtering proceeds while source bans wait', async () => {
+test('user retains evidence during failure: Given unavailable report storage, When a report or source match arrives, Then moderation waits rather than bypassing account-recovery fences', async () => {
   await database.prepare('ALTER TABLE reports RENAME TO unavailable_reports').run();
   try {
     const update = report();
@@ -560,8 +563,8 @@ test('user retains evidence during failure: Given unavailable report storage, Wh
     assert.equal(telegram.canSend(22), true);
     update.message = { ...message(), via_bot: { id: 7788, is_bot: true } };
     assert.equal((await dispatch(update)).status, 503);
-    assert.equal(telegram.has(81), false);
-    assert.equal(telegram.canSend(22), false);
+    assert.equal(telegram.has(81), true);
+    assert.equal(telegram.canSend(22), true);
     assert.equal(telegram.canJoin(7788), true);
   } finally {
     await database.prepare('ALTER TABLE unavailable_reports RENAME TO reports').run();

@@ -167,18 +167,46 @@ test('allow: invalid arguments, non-supergroups, edited commands and commands fo
   assert.deepEqual(telegram.getChatCalls, []);
 });
 
-test('allow: only_if_banned preserves current members, restrictions and administrator privileges', async () => {
+test('allow: restores a permanently restricted member without removing them or changing administrator privileges', async () => {
   for (const [index, member] of [
+    { status: 'restricted', permissions: { can_send_messages: false, can_react_to_messages: false, can_edit_tag: false }, until_date: 0 },
     { status: 'member' },
-    { status: 'restricted', permissions: { can_send_messages: false }, until_date: 0 },
     { status: 'administrator' },
+    { status: 'creator' },
+    { status: 'left' },
   ].entries()) {
     await seed();
     telegram.members.set(22, structuredClone(member));
+    telegram.defaultPermissions.set(chat.id, { can_change_info: false, can_invite_users: false });
+    telegram.groups.set(-10099, new Map([[22, { status: 'restricted', permissions: { can_send_messages: false }, until_date: 0 }]]));
     const before = await blacklists();
-    assert.equal((await dispatch(command('/allow 22', 370 + index))).status, 200);
-    assert.deepEqual(await blacklists(), withoutTarget(before));
-    assert.deepEqual(telegram.members.get(22), member, 'an existing member must not be removed or have permissions changed');
+    const fetch = telegram.fetch, restores = [];
+    telegram.fetch = async request => {
+      if (new URL(request.url).pathname.endsWith('/restrictChatMember')) restores.push(await request.clone().json());
+      return fetch.call(telegram, request);
+    };
+    try {
+      const { response, unbans } = await dispatchWithUnbans(command('/allow 22', 370 + index));
+      assert.equal(response.status, 200);
+      assert.deepEqual(await blacklists(), withoutTarget(before));
+      if (member.status === 'restricted') {
+        assert.equal(telegram.members.get(22).status, 'member', 'all personal restrictions must be lifted');
+        assert.equal(telegram.canSend(22), true);
+        assert.equal(telegram.canSend(22, 'can_invite_users'), false, 'group defaults still apply after personal restoration');
+        assert.equal(restores.length, 1);
+        assert.equal(restores[0].until_date, 0);
+        assert.equal(restores[0].use_independent_chat_permissions, true);
+        assert.equal(restores[0].permissions.can_react_to_messages, true);
+        assert.equal(restores[0].permissions.can_edit_tag, true);
+        assert.ok(Object.values(restores[0].permissions).every(value => value === true));
+      } else {
+        assert.deepEqual(restores, [], 'ordinary members and privileged accounts need no permission operation');
+        assert.deepEqual(telegram.members.get(22), member);
+      }
+      assert.deepEqual(unbans, [], 'non-banned accounts must not be unbanned');
+      assert.equal(telegram.canSend(22, 'can_send_messages', -10099), false, 'another group remains restricted');
+      assert.deepEqual(telegram.defaultPermissions.get(chat.id), { can_change_info: false, can_invite_users: false });
+    } finally { telegram.fetch = fetch; }
   }
 });
 
@@ -211,8 +239,52 @@ test('allow: rejected lookups and failed unbans stay retryable with blacklist ro
     assert.deepEqual(await blacklists(), before);
     telegram.faults.clear();
     assert.equal((await dispatch(update)).status, 200);
-    assert.equal(telegram.canJoin(22), true);
-    assert.deepEqual(await blacklists(), withoutTarget(before));
+    if (scenario.method.startsWith('unban') && scenario.status === 500) {
+      assert.equal(telegram.canJoin(22), false, 'an unknown remote outcome must not be retried over a later ban');
+      assert.deepEqual(await blacklists(), before);
+      assert.match(telegram.replies.at(-1).text, /not completed|uncertain|check membership/i);
+      assert.equal((await evidence(update)).moderation_result, 'access recovering');
+    } else {
+      assert.equal(telegram.canJoin(22), true);
+      assert.deepEqual(await blacklists(), withoutTarget(before));
+    }
+  }
+});
+
+test('allow: failed or malformed membership checks and unmute confirmations retain both lists until retry succeeds', async () => {
+  const cases = [
+    { method: 'getChatMember:22', response: { ok: false, error_code: 429 }, status: 429 },
+    { method: 'getChatMember:22', response: { ok: false, error_code: 400 }, status: 400 },
+    { method: 'getChatMember:22', response: { ok: true, result: { status: 'restricted', user: { id: 33 } } }, status: 200 },
+    { method: 'getChatMember:22', response: { ok: true, result: { status: 'unknown', user: { id: 22 } } }, status: 200 },
+    { method: 'restrictChatMember:22', response: { ok: false, error_code: 429 }, status: 429 },
+    { method: 'restrictChatMember:22', response: { ok: false, error_code: 400 }, status: 400 },
+    { method: 'restrictChatMember:22', response: { ok: true, result: false }, status: 200 },
+    { method: 'restrictChatMember:22', response: { ok: true, result: 1 }, status: 200 },
+  ];
+  for (const [index, scenario] of cases.entries()) {
+    await seed();
+    telegram.members.set(22, { status: 'restricted', permissions: { can_send_messages: false }, until_date: 0 });
+    const before = await blacklists(), update = command('/allow 22', 800 + index);
+    telegram.faults.set(scenario.method, async () => {
+      assert.deepEqual(await blacklists(), before, 'blacklists remain before remote confirmation');
+      assert.equal((await evidence(update))?.response_status, null);
+      return Response.json(scenario.response, { status: scenario.status });
+    });
+    assert.equal((await dispatch(update)).status, 503);
+    assert.equal(telegram.canSend(22), false);
+    assert.deepEqual(await blacklists(), before);
+    telegram.faults.clear();
+    assert.equal((await dispatch(update)).status, 200);
+    if (scenario.method.startsWith('restrict') && scenario.response.result === 1) {
+      assert.equal(telegram.members.get(22).status, 'restricted');
+      assert.deepEqual(await blacklists(), before);
+      assert.match(telegram.replies.at(-1).text, /not completed|uncertain|check membership/i);
+      assert.equal((await evidence(update)).moderation_result, 'access recovering');
+    } else {
+      assert.equal(telegram.members.get(22).status, 'member');
+      assert.deepEqual(await blacklists(), withoutTarget(before));
+    }
   }
 });
 
@@ -240,6 +312,162 @@ test('allow: blacklist deletions are atomic and a storage retry after confirmed 
     assert.deepEqual(telegram.members.get(22), { status: 'member' });
     assert.deepEqual(await blacklists(), withoutTarget(before));
   }
+});
+
+test('allow: retry after confirmed unmute and failed list cleanup cannot undo a fresh mute', async () => {
+  await seed();
+  telegram.members.set(22, { status: 'restricted', permissions: { can_send_messages: false }, until_date: 0 });
+  const before = await blacklists(), update = command('/allow 22', 820);
+  await database.prepare(`CREATE TRIGGER reject_unmute_cleanup BEFORE DELETE ON blacklisted_sources
+    WHEN OLD.source_id=22 BEGIN SELECT RAISE(ABORT, 'blacklist unavailable'); END`).run();
+  try {
+    assert.equal((await dispatch(update)).status, 503);
+    assert.equal(telegram.members.get(22).status, 'member');
+    assert.equal((await evidence(update))?.moderation_result, 'unbanned', 'existing recovery checkpoint stays compatible');
+    assert.deepEqual(await blacklists(), before);
+  } finally { await database.prepare('DROP TRIGGER reject_unmute_cleanup').run(); }
+  const freshMute = { status: 'restricted', permissions: { can_send_messages: false, can_send_polls: false }, until_date: 0 };
+  telegram.members.set(22, structuredClone(freshMute));
+  let repeatedRestores = 0;
+  telegram.faults.set('restrictChatMember:22', () => { repeatedRestores += 1; return Response.json({ ok: true, result: true }); });
+  assert.equal((await dispatch(update)).status, 200);
+  assert.equal(repeatedRestores, 0, 'confirmed membership recovery is not repeated on a D1 cleanup retry');
+  assert.deepEqual(telegram.members.get(22), freshMute);
+  assert.deepEqual(await blacklists(), withoutTarget(before));
+});
+
+test('allow: old rejected local mute is fenced, new spam can mute and completed allow cannot undo it', async () => {
+  const older = { update_id: 830, message: { ...message(830), text: '@campaign_bot campaign_1' } };
+  telegram.send(older.message);
+  telegram.faults.set('restrictChatMember:22', () => Response.json({ ok: false, error_code: 429 }, { status: 429 }));
+  assert.equal((await dispatch(older)).status, 503);
+  assert.equal(telegram.has(830), false);
+  assert.equal(telegram.canSend(22), true);
+  telegram.faults.clear();
+  const update = command('/allow 22', 831);
+  assert.equal((await dispatch(update)).status, 200);
+  assert.equal((await dispatch(older)).status, 200);
+  assert.equal(telegram.canSend(22), true, 'allow fences the rejected old mute even after its claim was released');
+  const fresh = { update_id: 832, message: { ...message(832), text: '@campaign_bot campaign_2' } };
+  const history = message(829);
+  telegram.send(history);
+  telegram.send(fresh.message);
+  assert.equal((await dispatch(fresh)).status, 200);
+  assert.equal(telegram.canSend(22), false, 'new advertising is not permanently exempt');
+  assert.equal(telegram.has(history.message_id), true, 'only the new triggering message is removed');
+  assert.equal((await dispatch(update)).status, 200);
+  assert.equal(telegram.canSend(22), false, 'completed allow redelivery must not undo a new mute');
+});
+
+for (const restriction of ['automatic', 'manual']) {
+  test(`allow: concurrent redelivery cannot issue a stale second restoration after a fresh ${restriction} mute`, async () => {
+    telegram.members.set(22, { status: 'restricted', permissions: { can_send_messages: false }, until_date: 0 });
+    const update = command('/allow 22', 850);
+    const entered = Promise.withResolvers(), release = Promise.withResolvers();
+    let checks = 0;
+    telegram.faults.set('getChatMember:22', async () => {
+      checks += 1;
+      if (checks === 2) { entered.resolve(); await release.promise; }
+      return Response.json({ ok: true, result: { status: 'restricted', user: message().from } });
+    });
+    const first = dispatch(update), second = dispatch(update);
+    await Promise.race([entered.promise, Promise.all([first, second])]);
+    telegram.faults.clear();
+    try {
+      assert.equal((await first).status, 200);
+      if (restriction === 'automatic') {
+        const fresh = { update_id: 851, message: { ...message(851), text: '@campaign_bot campaign_9' } };
+        telegram.send(fresh.message);
+        assert.equal((await dispatch(fresh)).status, 200);
+      } else {
+        telegram.members.set(22, { status: 'restricted', permissions: { can_send_messages: false }, until_date: 0 });
+      }
+      assert.equal(telegram.canSend(22), false);
+    } finally {
+      release.resolve();
+      await second;
+      telegram.faults.clear();
+    }
+    assert.equal(telegram.canSend(22), false, 'a stale concurrent command must not lift a fresh restriction');
+  });
+}
+
+test('allow: an incomplete old recovery cannot supersede a newer confirmed local mute', async () => {
+  const update = command('/allow 22', 860);
+  telegram.members.set(22, { status: 'restricted', permissions: { can_send_messages: false }, until_date: 0 });
+  telegram.faults.set('getChatMember:22', () => Response.json({ ok: false, error_code: 429 }, { status: 429 }));
+  assert.equal((await dispatch(update)).status, 503);
+  telegram.faults.clear();
+  const fresh = { update_id: 861, message: { ...message(861), text: '@campaign_bot campaign_9' } };
+  telegram.send(fresh.message);
+  assert.equal((await dispatch(fresh)).status, 200);
+  assert.equal(telegram.canSend(22), false);
+  assert.equal((await dispatch(update)).status, 200);
+  assert.equal(telegram.canSend(22), false);
+  assert.match(telegram.replies.at(-1).text, /not completed|superseded|check membership/i);
+});
+
+test('allow: a lost recovery checkpoint does not repeat restoration over a fresh manual restriction', async () => {
+  const update = command('/allow 22', 870);
+  telegram.members.set(22, { status: 'restricted', permissions: { can_send_messages: false }, until_date: 0 });
+  await database.prepare("CREATE TRIGGER reject_access_checkpoint BEFORE UPDATE OF moderation_result ON reports WHEN NEW.moderation_result='unbanned' BEGIN SELECT RAISE(ABORT,'checkpoint unavailable'); END").run();
+  try { assert.equal((await dispatch(update)).status, 503); }
+  finally { await database.prepare('DROP TRIGGER reject_access_checkpoint').run(); }
+  assert.equal(telegram.canSend(22), true);
+  const fresh = { status: 'restricted', permissions: { can_send_messages: false, can_send_polls: false }, until_date: 0 };
+  telegram.members.set(22, structuredClone(fresh));
+  assert.equal((await dispatch(update)).status, 200);
+  assert.deepEqual(telegram.members.get(22), fresh);
+  assert.match(telegram.replies.at(-1).text, /not completed|uncertain|check membership/i);
+});
+
+test('allow: an older separate recovery cannot restore over a newer completed recovery and manual restriction', async () => {
+  const entered = Promise.withResolvers(), release = Promise.withResolvers();
+  telegram.members.set(22, { status: 'restricted', permissions: { can_send_messages: false }, until_date: 0 });
+  telegram.faults.set('getChatMember:22', async () => {
+    entered.resolve(); await release.promise;
+    return Response.json({ ok: true, result: { status: 'restricted', user: message().from } });
+  });
+  const older = dispatch(command('/allow 22', 880));
+  await entered.promise;
+  telegram.faults.clear();
+  assert.equal((await dispatch(command('/allow 22', 881))).status, 200);
+  const fresh = { status: 'restricted', permissions: { can_send_messages: false, can_send_polls: false }, until_date: 0 };
+  telegram.members.set(22, structuredClone(fresh));
+  release.resolve();
+  assert.equal((await older).status, 200);
+  assert.deepEqual(telegram.members.get(22), fresh);
+  assert.match(telegram.replies.at(-1).text, /not completed|superseded|check membership/i);
+});
+
+test('allow: an older in-flight mute requests manual inspection without undoing a fresh mute', async () => {
+  const entered = Promise.withResolvers(), release = Promise.withResolvers();
+  const older = { update_id: 840, message: { ...message(840), text: '@campaign_bot campaign_1' } };
+  telegram.send(older.message);
+  telegram.faults.set('restrictChatMember:22', async () => {
+    entered.resolve();
+    await release.promise;
+    telegram.members.set(22, { status: 'restricted', permissions: { can_send_messages: false }, until_date: 0 });
+    return Response.json({ ok: true, result: true });
+  });
+  const pending = dispatch(older);
+  await Promise.race([entered.promise, pending.then(() => { throw new Error('old mute was never issued'); })]);
+  let response;
+  try {
+    telegram.faults.clear();
+    assert.equal((await dispatch(command('/allow 22', 841))).status, 200);
+    const fresh = { update_id: 842, message: { ...message(842), text: '@campaign_bot campaign_2' } };
+    telegram.send(fresh.message);
+    assert.equal((await dispatch(fresh)).status, 200);
+    assert.equal(telegram.canSend(22), false);
+  } finally {
+    release.resolve();
+    response = await pending;
+    telegram.faults.clear();
+  }
+  assert.equal(response.status, 200);
+  assert.match(await response.text(), /late mute.*check membership/i, 'late success cannot be reported as settled recovery');
+  assert.equal(telegram.canSend(22), false, 'automatic compensation must not undo a fresh mute');
 });
 
 test('allow: retry rechecks reporter authorization and remains pinned when the username changes ownership', async () => {

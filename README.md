@@ -43,9 +43,11 @@ The complete copy-pasteable setup is in [Deployment setup](docs/setup.md). Start
 - **Register a source:** send `/bs @source_bot` from a trusted identity. Registered sources include bots that send messages directly, including guest bots.
 - **Block and report a bot source:** reply with bare `/bs` to a direct bot message, or to an inline message when both its sender and source should be handled.
 - **Register a sticker set:** send its complete `https://t.me/addstickers/<set_name>` URL with `/bs`.
-- **Undo an account ban:** from a trusted identity in the affected supergroup, send `/allow @username` or `/allow <account ID>` to remove its blacklist entries and allow rejoining. See [Operations](docs/operations.md) for username lookup limits and other false-positive recovery.
+- **Undo a ban or mute:** from a trusted identity in the affected supergroup, send `/allow @username` or `/allow <account ID>` to remove its blacklist entries and restore access. See [Operations](docs/operations.md) for username lookup limits and other false-positive recovery.
 
 Reporting identity, administrator protection, source attribution, sticker handling, and false-positive recovery are defined by [the behavior contract](docs/behavior.md).
+
+Local text/profile regexes apply before Jev until a member has ten qualifying observed messages that have naturally aged out of the history index. Established members use Jev instead of direct regex punishment. This is a stricter low-history policy, including replies and quotes; matched messages may be removed even when they are examples or warnings. Reporting and administrator protections remain in place. See [the behavior contract](docs/behavior.md#member-maturity) for counting and retention boundaries.
 
 ## Optional Jev classification
 

@@ -101,9 +101,7 @@ async def enrich_profiles(
 
 
 def deferred_regex_match(state: dict[str, object]) -> bool:
-    """Match available profile fields only for messages without a reference."""
-    if isinstance(state.get("context"), dict):
-        return False
+    """Match only the current sender and contact profile fields, never reference profiles."""
     contact = state.get("contact")
     values = [state.get("bio")]
     if isinstance(contact, dict):
@@ -160,7 +158,7 @@ class ModelTasks:
         return row is not None
 
     async def cancel_edit(
-        self, target: tuple[int, int], sent_at: int, now: int, revision: int, *, referenced: bool
+        self, target: tuple[int, int], sent_at: int, now: int, revision: int, *, classify: bool
     ) -> None:
         """Fence older work once for each new Telegram edit."""
         with storage_errors():
@@ -184,7 +182,7 @@ class ModelTasks:
                     now,
                     now + RETENTION_SECONDS,
                     revision,
-                    referenced,
+                    classify,
                 )
                 .run()
             )
@@ -192,7 +190,7 @@ class ModelTasks:
     async def enqueue_edit(
         self, target: tuple[int, int], sent_at: int, state: dict[str, object], now: int, revision: int
     ) -> bool:
-        """Classify a referenced edit only once after its older work was fenced."""
+        """Classify an eligible edit only once after its older work was fenced."""
         with storage_errors():
             row = (
                 await self.database.prepare(
@@ -394,14 +392,20 @@ class ModelTasks:
                 return False
             response = await actions.ban_joiner(target, update, can_act=can_act)
         else:
-            response = await actions.delete_and_mute(target, can_act=can_act, mute=payload.get("mute") is not False)
+            update_id = payload.get("update_id")
+            response = await actions.delete_and_mute(
+                target,
+                can_act=can_act,
+                mute=payload.get("mute") is not False,
+                update_id=update_id if type(update_id) is int else None,
+            )
         return response.status == HTTPStatus.SERVICE_UNAVAILABLE
 
     async def _profile_match(
         self, payload: dict[str, object], fetcher: Fetch, token: str, *, can_act: Callable[[], Awaitable[bool]]
     ) -> bool | None:
         state = payload["state"]
-        if not isinstance(state, dict):
+        if not isinstance(state, dict) or not await can_act():
             return False
         target = payload.get("target")
         sender = target["from"] if isinstance(target, dict) else None
@@ -414,13 +418,19 @@ class ModelTasks:
                 return True if await self.store.matching_sources(frozenset({identifier})) else None
             if matches_spam_text(state.get("nickname")):
                 return True
-        if not await can_act():
-            return False
         await enrich_profiles(state, payload.get("profile_ids"), identifier, fetcher, token)
         biography = state.get("bio")
         if payload.get("joining") is True and isinstance(biography, str):
             state["bio"] = biography[:MAX_PROFILE_TEXT]
-        return deferred_regex_match(state)
+        profile_match = deferred_regex_match(state)
+        if not profile_match or payload.get("joining") is True:
+            return profile_match
+        established = (
+            identifier is not None
+            and isinstance(target, dict)
+            and await self.store.is_established(self.bot_id, target["chat"]["id"], identifier)
+        )
+        return not established
 
     async def _owns(self, task: Task, now: int) -> bool:
         with storage_errors():

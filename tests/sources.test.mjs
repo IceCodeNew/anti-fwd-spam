@@ -269,7 +269,7 @@ test('user: Given two listed sources and an already blacklisted sender, When ind
   telegram.members.set(7788, { status: 'member' });
   for (const [id, sender] of [[70, 777], [71, 7788], [72, 22]]) {
     telegram.send(message(id, sender));
-    await database.prepare('INSERT INTO recent_messages VALUES (123, -10012, ?, ?, unixepoch()-60)').bind(id, sender).run();
+    await database.prepare('INSERT INTO recent_messages (bot_id, chat_id, message_id, sender_id, sent_at) VALUES (123, -10012, ?, ?, unixepoch()-60)').bind(id, sender).run();
   }
   const target = { ...message(), via_bot: { id: 777, is_bot: true },
     forward_origin: { type: 'user', date: 1, sender_user: { id: 7788, is_bot: true } } };
@@ -345,7 +345,7 @@ test('user: Given a source match without a valid update identifier, When deliver
 test('user: Given a protected source bot and an ordinary inline sender, When the source matches, Then only the current user message disappears and the bot remains protected', async () => {
   telegram.members.set(7788, { status: 'administrator' });
   telegram.send(message(70, 7788));
-  await database.exec('INSERT INTO recent_messages VALUES (123, -10012, 70, 7788, unixepoch()-60)');
+  await database.exec('INSERT INTO recent_messages (bot_id, chat_id, message_id, sender_id, sent_at) VALUES (123, -10012, 70, 7788, unixepoch()-60)');
   const target = { ...message(), via_bot: { id: 7788, is_bot: true } };
   telegram.send(target);
   assert.equal((await dispatch({ update_id: 804, message: target })).status, 200);

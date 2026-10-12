@@ -264,7 +264,7 @@ for (const status of ['administrator', 'creator']) {
 
 test('user: Given two listed sources and an already blacklisted sender, When indexed cleanup retries after manual unban, Then each subject finishes independently without repeating bans', async () => {
   await database.exec('INSERT INTO blacklisted_sources VALUES (777)');
-  await database.exec('INSERT INTO blacklisted_users VALUES (123, 22, 1)');
+  await database.exec('INSERT INTO blacklisted_users (bot_id, user_id, added_at) VALUES (123, 22, 1)');
   telegram.members.set(777, { status: 'kicked' });
   telegram.members.set(7788, { status: 'member' });
   for (const [id, sender] of [[70, 777], [71, 7788], [72, 22]]) {

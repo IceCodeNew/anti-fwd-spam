@@ -6,14 +6,17 @@ import unittest
 from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
+from anti_fwd_spam.constants import MAX_PROFILE_TEXT
 from anti_fwd_spam.model import (
     ModelConfig,
     ModelRetryError,
     extract_profile_handles,
+    join_model_input,
     model_input,
     sender_bio,
     spam_probability,
 )
+from anti_fwd_spam.rules import INSTRUCTIONS, JOIN_PROFILE_INSTRUCTIONS, PROJECT_RECRUITMENT_HINT
 from tests.test_telegram import ClockLoop
 
 if TYPE_CHECKING:
@@ -69,6 +72,35 @@ class StreamingResponse:
 
     def releaseLock(self) -> None:  # noqa: N802 - Match the JavaScript stream API.
         pass
+
+
+class JoinModelInputTests(unittest.TestCase):
+    def test_user_sends_only_joining_members_profile_fields(self) -> None:
+        """Given a joined account, snapshot its own name and username without identity or authored content."""
+        member: dict[str, object] = {
+            "id": 987654321,
+            "is_bot": False,
+            "first_name": "Alice",
+            "last_name": "Example",
+            "username": "synthetic_member",
+            "language_code": "zh",
+            "text": "This account metadata is not an authored message",
+            "bio": "Biography must come from the separate profile lookup",
+        }
+        self.assertEqual(join_model_input(member), {"nickname": "Alice Example", "username": "synthetic_member"})
+        for username in (None, "", 123):
+            with self.subTest(username=username):
+                self.assertEqual(join_model_input({"first_name": "Alice", "username": username}), {"nickname": "Alice"})
+
+    def test_user_bounds_joining_profile_text(self) -> None:
+        """Given oversized account strings, snapshot only bounded profile text."""
+        member: dict[str, object] = {
+            "first_name": "名" * (MAX_PROFILE_TEXT + 1),
+            "username": "u" * (MAX_PROFILE_TEXT + 1),
+        }
+        self.assertEqual(
+            join_model_input(member), {"nickname": "名" * MAX_PROFILE_TEXT, "username": "u" * MAX_PROFILE_TEXT}
+        )
 
 
 class ModelDeadlineTests(unittest.TestCase):
@@ -222,6 +254,42 @@ class ModelStreamTests(unittest.IsolatedAsyncioTestCase):
             state = {**model_input(dict(message)), "bio": bio}
             self.assertEqual(await spam_probability(fetcher, CONFIG, state), 0.01)
             self.assertIn(hint, requests[-1]["questions"]["spam"]["instructions"])
+
+    async def test_user_binds_join_prompt_without_changing_ordinary_tasks(self) -> None:
+        """Given joining and ordinary inputs, bind only joining tasks to the standalone profile prompt."""
+        requests = []
+
+        async def fetcher(url, *, method, headers, body) -> StreamingResponse:
+            requests.append(json.loads(body))
+
+            async def read_body() -> bytes:
+                return b'{"answers":{"spam":{"type":"noul","noul":0.5}}}'
+
+            return StreamingResponse(read_body, asyncio.Event())
+
+        member: dict[str, object] = {"id": 987654321, "first_name": "Member", "username": "synthetic_member"}
+        joined = {**join_model_input(member), "bio": "项目招人合作\uff0c私聊联系 @<contact>"}
+        plain = {**model_input({"from": member, "text": "普通讨论"}), "bio": joined["bio"]}
+        recruitment = {**model_input({"from": member, "text": "找想干事的兄弟合作"}), "bio": joined["bio"]}
+        await spam_probability(fetcher, CONFIG, joined, joining=True)
+        await spam_probability(fetcher, CONFIG, plain)
+        await spam_probability(fetcher, CONFIG, recruitment, joining=False)
+        # Exercise the same hint-bearing state in join mode: ordinary hints must not contaminate its static task.
+        await spam_probability(fetcher, CONFIG, recruitment, joining=True)
+        self.assertEqual(
+            [request["questions"]["spam"]["instructions"] for request in requests],
+            [
+                JOIN_PROFILE_INSTRUCTIONS,
+                INSTRUCTIONS,
+                INSTRUCTIONS + "\n" + PROJECT_RECRUITMENT_HINT,
+                JOIN_PROFILE_INSTRUCTIONS,
+            ],
+        )
+        self.assertEqual(
+            requests[0]["state"],
+            {"nickname": "Member", "username": "synthetic_member", "bio": "项目招人合作\uff0c私聊联系 @<contact>"},
+        )
+        self.assertNotIn(str(member["id"]), json.dumps(requests))
 
     async def test_user_closes_the_stream_after_http_rejection(self) -> None:
         """user: Given rejected credentials and a stalled body, When headers arrive, Then the stream closes."""

@@ -4,7 +4,7 @@ import { chat, message, report } from './telegram-fake.mjs';
 import { database, dispatch, runtime, telegram } from './worker-runtime.mjs';
 
 test('user cleans indexed spam only: Given a blacklisted account with indexed and unindexed history, When a new message arrives, Then the sender cannot rejoin and only eligible indexed messages are explicitly cleared', async () => {
-  await database.exec('INSERT INTO blacklisted_users VALUES (123, 22, 1)');
+  await database.exec('INSERT INTO blacklisted_users (bot_id, user_id, added_at) VALUES (123, 22, 1)');
   await database.exec('INSERT INTO recent_messages VALUES (123, -10012, 70, 22, unixepoch() - 60)');
   for (const target of [message(70), message(71), message(72, 11), message(81)]) telegram.send(target);
   // A deployment without single-message deletion must still complete indexed cleanup.
@@ -26,7 +26,7 @@ test('user cleans indexed spam only: Given a blacklisted account with indexed an
 });
 
 test('user protects administrators and other bots: Given protected senders and an unrelated blacklist, When their messages arrive, Then membership and messages remain unchanged', async () => {
-  await database.exec('INSERT INTO blacklisted_users VALUES (123, 11, 1), (123, 33, 1), (456, 22, 1)');
+  await database.exec('INSERT INTO blacklisted_users (bot_id, user_id, added_at) VALUES (123, 11, 1), (123, 33, 1), (456, 22, 1)');
   telegram.members.set(33, { status: 'creator' });
   for (const id of [11, 33, 22]) {
     const target = message(id, id);
@@ -38,7 +38,7 @@ test('user protects administrators and other bots: Given protected senders and a
 });
 
 test('user resumes indexed cleanup: Given a blacklisted inline sender and rejected batch deletion, When the update retries after manual unban, Then cleanup finishes without re-banning or falling back to single deletion', async () => {
-  await database.exec('INSERT INTO blacklisted_users VALUES (123, 22, 1)');
+  await database.exec('INSERT INTO blacklisted_users (bot_id, user_id, added_at) VALUES (123, 22, 1)');
   const target = { ...message(), via_bot: { id: 7788, is_bot: true, first_name: 'Source' } };
   const update = { update_id: 901, message: target };
   telegram.send(target);
@@ -54,7 +54,7 @@ test('user resumes indexed cleanup: Given a blacklisted inline sender and reject
 });
 
 test('user does not pre-ban: Given a retained blacklist, When the bot gains group permissions, Then nobody is banned before sending a message', async () => {
-  await database.exec('INSERT INTO blacklisted_users VALUES (123, 22, 1)');
+  await database.exec('INSERT INTO blacklisted_users (bot_id, user_id, added_at) VALUES (123, 22, 1)');
   const user = { id: 123, is_bot: true, first_name: 'Moderator' };
   telegram.members.set(123, { status: 'administrator', can_restrict_members: true });
   assert.equal((await dispatch({ update_id: 1000, my_chat_member: {
@@ -66,7 +66,7 @@ test('user does not pre-ban: Given a retained blacklist, When the bot gains grou
 });
 
 test('user cleans an already banned sender: Given an existing ban and rejected ban requests, When a delayed indexed message arrives, Then cleanup succeeds and the existing ban stays intact', async () => {
-  await database.exec('INSERT INTO blacklisted_users VALUES (123, 22, 1)');
+  await database.exec('INSERT INTO blacklisted_users (bot_id, user_id, added_at) VALUES (123, 22, 1)');
   telegram.members.set(22, { status: 'kicked' });
   telegram.faults.set('banChatMember', () => Response.json({ ok: false, error_code: 403 }, { status: 403 }));
   telegram.send(message());
@@ -140,7 +140,7 @@ test('user excludes automatic mutes from shared bans: Given an inline source mat
 });
 
 test('user: Given a blacklisted account, When only an edit of its message arrives, Then the account keeps its membership and message', async () => {
-  await database.exec('INSERT INTO blacklisted_users VALUES (123, 22, 1)');
+  await database.exec('INSERT INTO blacklisted_users (bot_id, user_id, added_at) VALUES (123, 22, 1)');
   telegram.send(message());
   assert.equal((await dispatch({ update_id: 1, edited_message: message() })).status, 200);
   assert.equal(telegram.has(81), true);
@@ -148,7 +148,7 @@ test('user: Given a blacklisted account, When only an edit of its message arrive
 });
 
 test('user removes false positives: Given an account blacklist entry, When the operator deletes it before a new message, Then the sender and message remain unaffected', async () => {
-  await database.exec('INSERT INTO blacklisted_users VALUES (123, 22, 1), (456, 22, 1)');
+  await database.exec('INSERT INTO blacklisted_users (bot_id, user_id, added_at) VALUES (123, 22, 1), (456, 22, 1)');
   await database.exec('DELETE FROM blacklisted_users WHERE bot_id = 123 AND user_id = 22');
   telegram.send(message());
   assert.equal((await dispatch({ update_id: 901, message: message() })).status, 200);
@@ -157,7 +157,7 @@ test('user removes false positives: Given an account blacklist entry, When the o
 });
 
 test('user retries account moderation storage: Given a blacklisted sender and unavailable message indexing, When delivery fails then storage recovers, Then the response identifies a moderation storage failure and retry completes the ban and cleanup', async () => {
-  await database.exec('INSERT INTO blacklisted_users VALUES (123, 22, 1)');
+  await database.exec('INSERT INTO blacklisted_users (bot_id, user_id, added_at) VALUES (123, 22, 1)');
   await database.exec("CREATE TRIGGER reject_index BEFORE INSERT ON recent_messages BEGIN SELECT RAISE(ABORT, 'unavailable'); END");
   const update = { update_id: 901, message: message() };
   telegram.send(update.message);
@@ -177,7 +177,7 @@ test('user retries account moderation storage: Given a blacklisted sender and un
 
 for (const mode of ['automatic source match', 'administrator report']) {
   test(`user keeps basic-group filtering: Given blacklisted accounts in a basic group, When an ${mode} arrives, Then the target disappears without changing membership or other history`, async () => {
-    await database.exec('INSERT INTO blacklisted_users VALUES (123, 11, 1), (123, 22, 1)');
+    await database.exec('INSERT INTO blacklisted_users (bot_id, user_id, added_at) VALUES (123, 11, 1), (123, 22, 1)');
     const target = { ...message(), chat: { ...chat, type: 'group' } };
     const update = mode === 'administrator report' ? report(target) : {
       update_id: 901,

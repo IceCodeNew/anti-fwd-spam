@@ -9,9 +9,9 @@ from http import HTTPStatus
 from typing import TYPE_CHECKING
 
 from .actions import Actions, AppResponse, BanTarget, user_id
-from .constants import MODEL_CONTENT_FIELDS
+from .constants import MAX_TELEGRAM_ID, MODEL_CONTENT_FIELDS
 from .evidence import MESSAGE_WINDOW_SECONDS, EvidenceError, ReportStore
-from .model import model_input, profile_ids
+from .model import join_model_input, model_input, profile_ids
 from .policy import (
     matches_spam_pattern,
     parse_update,
@@ -20,7 +20,7 @@ from .policy import (
     sticker_unique_id,
 )
 from .reporting import Reporting, ReportingPlugin
-from .sources import replied_source, resolve_source, source_argument, sticker_set_argument
+from .sources import command_argument, replied_source, resolve_source, sticker_set_argument
 from .tasks import ModelTasks
 from .telegram import DeleteOutcome, Fetch, TelegramError, call_method, delete_message
 
@@ -83,11 +83,14 @@ def reported_target(update: TelegramUpdate) -> BanTarget | None:
         or target_id <= 0
     ):
         return None
+    sender = target.get("from")
+    username = sender.get("username") if isinstance(sender, dict) and "sender_chat" not in target else None
     return BanTarget(
         update.chat_id,
         user_id(target, include_bots=True) if update.chat_type == "supergroup" else None,
         update.message_id,
         target_id,
+        username=username if isinstance(username, str) else None,
     )
 
 
@@ -124,9 +127,14 @@ class Moderator:
         self.command_plugins = (
             ReportingPlugin(
                 "command",
-                lambda update: source_argument(update.message, self.bot_username) is not None,
+                lambda update: command_argument(update.message, self.bot_username, "/bs") is not None,
                 self.source_command,
                 self.record_denied_source,
+            ),
+            ReportingPlugin(
+                "allow",
+                lambda update: command_argument(update.message, self.bot_username, "/allow") is not None,
+                self.allow_command,
             ),
         )
         self.reply_plugins = (
@@ -166,6 +174,8 @@ class Moderator:
         if not update.in_group:
             return AppResponse(200, "ignored")
         try:
+            if "new_chat_members" in update.message:
+                return await self.check_join(update)
             sources = await self.store.matching_sources(update.sources) if update.sources else ()
         except EvidenceError:
             return AppResponse(503, "source list unavailable; retry pending")
@@ -177,9 +187,7 @@ class Moderator:
         account_response = await self.check_account_blacklist(update)
         if sources:
             return await self.moderate_sources(update, sources, account_response)
-        if account_response is not None:
-            return account_response
-        return await self.moderate_unmatched(update)
+        return account_response if account_response is not None else await self.moderate_unmatched(update)
 
     async def moderate_unmatched(self, update: TelegramUpdate) -> AppResponse:
         """Index a message without blacklist matches, then handle a report or check its content."""
@@ -216,7 +224,7 @@ class Moderator:
 
     async def source_command(self, update: TelegramUpdate) -> AppResponse:
         """Register sources, moderate bare replies, then acknowledge and clean the command."""
-        argument = source_argument(update.message, self.bot_username)
+        argument = command_argument(update.message, self.bot_username, "/bs")
         if update.edited or argument is None:
             return AppResponse(200, "command ignored")
         target = reply_target(update.message)
@@ -254,11 +262,58 @@ class Moderator:
                 return response
         if response.needs_confirmation:
             reply += "\nBan result is uncertain; check membership before submitting a new report."
-        return await self._finish_source_command(update, reply, response)
+        return await self._finish_command(update, reply, response)
+
+    async def allow_command(self, update: TelegramUpdate) -> AppResponse:
+        """Remove this account's blacklist rules and lift its ban in the current supergroup."""
+        argument = command_argument(update.message, self.bot_username, "/allow")
+        if update.edited or update.chat_type != "supergroup" or argument is None or update.update_id is None:
+            return AppResponse(200, "allow ignored")
+        identifier = await self._allow_identity(argument, update.update_id)
+        if identifier is None or identifier <= 0:
+            return await self._finish_command(
+                update,
+                "Use /allow @username or /allow <account ID> in this supergroup.",
+                AppResponse(200, "allow ignored"),
+            )
+        saved = await self.store.save((self.actions.bot_id, update.update_id), update.raw_json, int(time.time()), 0)
+        await self.store.pin_command_source(self.actions.bot_id, update.update_id, identifier)
+        identifier = await self.store.command_source(self.actions.bot_id, update.update_id)
+        if identifier is None:
+            raise EvidenceError
+        response = AppResponse(saved.status, saved.body) if saved.status is not None else None
+        if response is None:
+            await self.store.request_allow(self.actions.bot_id, update.update_id)
+            response = await self.actions.allow_account(update, identifier)
+        if response.status != HTTPStatus.OK:
+            return response
+        reply = (
+            f"Recovery not completed; superseded by newer moderation. Check membership.\nID: {identifier}"
+            if response.needs_confirmation
+            else f"Account removed from D1 blacklists; may rejoin this group.\nID: {identifier}"
+        )
+        return await self._finish_command(update, reply, response)
+
+    async def _allow_identity(self, argument: str, update_id: int) -> int | None:
+        """Resolve a pinned, numeric or uniquely recorded private account identity."""
+        pinned = await self.store.command_source(self.actions.bot_id, update_id)
+        if pinned is not None:
+            return pinned
+        if len(argument) <= len(str(MAX_TELEGRAM_ID)) and argument.isascii() and argument.isdecimal():
+            identifier = int(argument)
+            return identifier if 0 < identifier <= MAX_TELEGRAM_ID else None
+        if not argument.startswith("@") or any(character.isspace() for character in argument):
+            return None
+        candidates = await self.store.blacklisted_username(self.actions.bot_id, argument[1:])
+        if len(candidates) not in {0, 1}:
+            return None
+        return await resolve_source(
+            self.fetcher, self.config.bot_token, argument[1:], known_id=candidates[0] if candidates else None
+        )
 
     async def record_denied_source(self, update: TelegramUpdate) -> AppResponse | None:
         """Keep a bare reply command as evidence without registering its source."""
-        if source_argument(update.message, self.bot_username) != "" or not update.in_group:
+        if command_argument(update.message, self.bot_username, "/bs") != "" or not update.in_group:
             return None
         return await self.record_report(update)
 
@@ -270,7 +325,7 @@ class Moderator:
         await self.store.save(key, update.raw_json, int(time.time()), 0)
         return AppResponse(200, "report recorded")
 
-    async def _finish_source_command(self, update: TelegramUpdate, reply: str, response: AppResponse) -> AppResponse:
+    async def _finish_command(self, update: TelegramUpdate, reply: str, response: AppResponse) -> AppResponse:
         """Acknowledge the result and retain commands that require manual inspection."""
         try:
             await call_method(
@@ -316,7 +371,7 @@ class Moderator:
         identifier = await self.store.command_source(bot_id, update_id)
         if identifier is None:
             raise EvidenceError
-        await self.store.add_source(identifier)
+        await self.store.add_source(identifier, bot_id=bot_id, update_id=update_id)
         return identifier
 
     async def cancel_model_task(self, update: TelegramUpdate) -> None:
@@ -389,6 +444,7 @@ class Moderator:
             },
             "mute": mute,
             "profile_ids": profile_ids(message),
+            "update_id": update.update_id,
         }
         tasks = ModelTasks(self.store, self.actions.bot_id)
         if update.edited:
@@ -401,10 +457,62 @@ class Moderator:
             self.background = self.run_task(tasks, update.chat_id, update.message_id)
         return AppResponse(200, "model task recorded")
 
-    async def run_task(self, tasks: ModelTasks, chat_id: int, message_id: int) -> None:
+    async def check_join(self, update: TelegramUpdate) -> AppResponse:
+        """Classify joining accounts independently, never the notice's inviter."""
+        now = int(time.time())
+        if (
+            update.edited
+            or update.chat_type != "supergroup"
+            or update.sent_at is None
+            or not recent(update.sent_at, now)
+        ):
+            return AppResponse(200, "join ignored")
+        tasks = ModelTasks(self.store, self.actions.bot_id)
+        queued: list[int] = []
+        seen: set[int] = set()
+        members = update.message.get("new_chat_members")
+        if not isinstance(members, list):
+            return AppResponse(400, "invalid joined members")
+        for member in members:
+            identifier = member["id"]
+            if identifier in seen or identifier == self.actions.bot_id:
+                continue
+            seen.add(identifier)
+            if (await self.store.newer_allow(self.actions.bot_id, identifier, update.update_id)) is not None:
+                continue
+            if member["is_bot"] and not (
+                await self.store.is_blacklisted(self.actions.bot_id, identifier)
+                or await self.store.matching_sources(frozenset({identifier}))
+            ):
+                continue
+            payload: dict[str, object] = {
+                "state": join_model_input(member),
+                "target": {
+                    "chat": {"id": update.chat_id, "type": update.chat_type},
+                    "message_id": update.message_id,
+                    "from": member,
+                },
+                "joining": True,
+                "update_id": update.update_id,
+                "update_json": update.raw_json,
+            }
+            if await tasks.enqueue(
+                update.chat_id, update.message_id, update.sent_at, payload, now, subject_id=identifier
+            ):
+                queued.append(identifier)
+        if queued:
+            self.background = self.run_join_tasks(tasks, update, queued[:3])
+        return AppResponse(200, "join tasks recorded")
+
+    async def run_join_tasks(self, tasks: ModelTasks, update: TelegramUpdate, subjects: list[int]) -> None:
+        """Start a bounded number of independent member tasks; the scheduler resumes the rest."""
+        for identifier in subjects:
+            await self.run_task(tasks, update.chat_id, update.message_id, subject_id=identifier)
+
+    async def run_task(self, tasks: ModelTasks, chat_id: int, message_id: int, *, subject_id: int = 0) -> None:
         """Check the biography and classify after the webhook response; the scheduled trigger retries failures."""
         now = int(time.time())
-        task = await tasks.claim(now, (chat_id, message_id))
+        task = await tasks.claim(now, (chat_id, message_id), subject_id=subject_id)
         if task is not None:
             await tasks.run(task, self.fetcher, self.config.bot_token, self.models, now)
 
@@ -432,15 +540,24 @@ class Moderator:
         try:
             if await self.store.is_blacklisted(self.actions.bot_id, identifier):
                 await self.index_message(update)
-                return await self.moderate_account(update, identifier, subject_id=0)
+                return await self.moderate_account(update, identifier, subject_id=identifier)
         except EvidenceError:
             return AppResponse(503, "account moderation storage unavailable; retry pending")
         return None
 
     async def moderate_account(self, update: TelegramUpdate, identifier: int, *, subject_id: int) -> AppResponse:
         """Route a message-triggered account ban."""
+        sender = update.message.get("from")
+        username = sender.get("username") if isinstance(sender, dict) and sender.get("id") == identifier else None
         return await self.actions.delete_history_and_ban(
-            BanTarget(update.chat_id, identifier, update.message_id + 1), update, subject_id=subject_id
+            BanTarget(
+                update.chat_id,
+                identifier,
+                update.message_id + 1,
+                username=username if isinstance(username, str) else None,
+            ),
+            update,
+            subject_id=subject_id,
         )
 
     async def report(
@@ -453,7 +570,7 @@ class Moderator:
         subjects = [(target, 0)]
         if source_id is not None and source_id != target.user_id:
             identifier = source_id if update.chat_type == "supergroup" else None
-            subjects.append((replace(target, user_id=identifier), source_id))
+            subjects.append((replace(target, user_id=identifier, username=None), source_id))
         response = AppResponse(200, "report recorded")
         needs_confirmation = False
         for subject, progress_id in subjects:

@@ -68,7 +68,7 @@ export class Telegram {
       assert.equal(request.headers.get('content-type'), 'application/json');
       assert.ok(url.pathname.startsWith(`/bot${token}/`));
       const method = url.pathname.slice(`/bot${token}/`.length);
-      assert.ok(['deleteMessage', 'deleteMessages', 'getChatMember', 'restrictChatMember', 'banChatMember', 'getChat', 'sendMessage'].includes(method));
+      assert.ok(['deleteMessage', 'deleteMessages', 'getChatMember', 'restrictChatMember', 'banChatMember', 'unbanChatMember', 'getChat', 'sendMessage'].includes(method));
       const params = await request.json();
       if (method === 'getChat') {
         assert.match(params.chat_id, /^@[A-Za-z0-9_]{1,32}$/);
@@ -124,6 +124,12 @@ export class Telegram {
         return Response.json({ ok: true, result: { ...member, user: {
           ...message(1, params.user_id).from, is_bot: params.user_id === 123,
         } } });
+      }
+      if (method === 'unbanChatMember') {
+        if ('only_if_banned' in params) assert.equal(typeof params.only_if_banned, 'boolean');
+        // Telegram otherwise removes a current member to make them rejoin.
+        if (member.status === 'kicked' || !params.only_if_banned) members.set(params.user_id, { status: 'left' });
+        return Response.json({ ok: true, result: true });
       }
       if (['creator', 'administrator'].includes(member.status)) {
         return Response.json({ ok: false, error_code: 400, description: 'Bad Request: user is an administrator' }, { status: 400 });

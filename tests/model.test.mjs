@@ -243,11 +243,11 @@ test('user: Given a permanent deletion rejection, When spam is detected, Then re
   assert.equal(telegram.has(81), true);
 });
 
-test('user: Given service events or non-user senders, When a new update arrives, Then the model cannot remove it', async () => {
+test('user: Given unrelated service events or non-user senders, When a new update arrives, Then the model cannot remove it', async () => {
   model.probability = 1;
   const service = message();
   delete service.text;
-  service.new_chat_members = [message().from];
+  service.left_chat_member = message().from;
   const channel = { ...message(), sender_chat: { id: -10099, type: 'channel' } };
   const bot = { ...message(), from: { ...message().from, is_bot: true } };
   for (const target of [service, channel, bot]) {

@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
 from anti_fwd_spam.constants import MODEL_PROVIDERS, SPAM_THRESHOLD
-from anti_fwd_spam.model import ModelConfig, model_input, spam_probability
+from anti_fwd_spam.model import ModelConfig, join_model_input, model_input, spam_probability
 from tests.test_model import StreamingResponse
 
 if TYPE_CHECKING:
@@ -29,9 +29,21 @@ class JevAcceptanceTests(unittest.IsolatedAsyncioTestCase):
         config = ModelConfig(url, model, os.environ[provider])
         message = case["message"]
         assert isinstance(message, dict)
+        joining = case.get("mode") == "join_profile"
+        if joining:
+            member = message["from"]
+            assert isinstance(member, dict)
+            state = join_model_input(member)
+        else:
+            state = model_input(message)
         bio = case.get("bio")
-        state = {**model_input(message), "bio": bio if isinstance(bio, str) else None}
-        probability = await spam_probability(self.fetcher, config, state)
+        state["bio"] = bio if isinstance(bio, str) else None
+        if "profile_targets" in case:
+            state["profile_targets"] = case["profile_targets"]
+        if joining:
+            probability = await spam_probability(self.fetcher, config, state, joining=True)
+        else:
+            probability = await spam_probability(self.fetcher, config, state)
         self.assertIsNotNone(probability, "Jev must return a valid score")
         if probability is not None:
             self.assertEqual(probability >= SPAM_THRESHOLD, case["spam"], f"Jev score: {probability}")

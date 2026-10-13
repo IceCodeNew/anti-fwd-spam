@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import unittest
-from itertools import permutations
+from itertools import permutations, product
 
 from anti_fwd_spam.policy import matches_spam_pattern, matches_spam_text
 
@@ -40,11 +40,16 @@ class SpamPatternTests(unittest.TestCase):
             "手速快来搞 日赚1W",
             "手速快莱 日收1W",
             "手\U000e010a速\U000e0145快\U000e013e来搞 日撸\U000e01d41W",
+            "手速快日撸1W",
+            "来搞日赚1W",
+            "日🔥入上万\uff0c莱",
             "只吸引对的人",
-            "攻击测试打死目标",
+            "CC攻击测试打死目标",
+            "DDOS攻击测试打穿",
+            "日死目标\nCC攻击测试",
+            "攻击测试DDOS日穿",
+            "接攻击测试",
             "攻击测试打穿",
-            "日死目标\n攻击测试",
-            "攻击测试日穿",
             "我把“批量出售飞机号”这个昵称举报了。",
             "请举报这个广告\uff1a\n" + DDOS_CAMPAIGN,
         ):
@@ -56,11 +61,10 @@ class SpamPatternTests(unittest.TestCase):
 
     def test_user_combines_elements_without_order_or_cross_field_matching(self) -> None:
         for elements in (
-            ("接", "CC", "攻击"),
+            *product(("DDOS", "CC"), ("攻击",), ("接", "打死", "打穿", "日死", "日穿")),
+            *product(("攻击测试",), ("接", "打死", "打穿", "日死", "日穿")),
             ("代发", "24小时"),
-            ("洗米", "日赚"),
-            ("手速快", "莱", "日收"),
-            ("攻击测试", "日穿"),
+            *product(("洗米", "洗钱", "手速快", "来", "莱"), ("日赚", "日收", "日撸", "日入")),
         ):
             for order in permutations(elements):
                 with self.subTest(order=order):
@@ -76,7 +80,7 @@ class SpamPatternTests(unittest.TestCase):
             "我们遭到DDOS攻击",
             "接DDOS防御",
             "接攻击",
-            "接access攻击测试",
+            "接access攻击",
             "广告",
             "代发",
             "24小时在线",
@@ -84,13 +88,12 @@ class SpamPatternTests(unittest.TestCase):
             "出售飞机号",
             "来洗米\uff0c放进电饭锅。",
             "日赚九千",
-            "手速快日撸1W",
-            "来搞日赚1W",
             "手速快来搞",
             "只吸引对的人\n",
             " 只吸引对的人",
             "只吸引对的人。",
             "攻击测试",
+            "DDOS打死目标",
             "打穿目标",
             "国庆快乐呀大家",
         ):

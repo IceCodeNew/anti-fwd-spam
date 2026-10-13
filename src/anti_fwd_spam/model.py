@@ -24,6 +24,8 @@ from .constants import (
 from .policy import display_name, reply_target
 from .rules import (
     COUNTERFEIT_CARD_HINT,
+    EARNINGS_PITCH_HINT,
+    EARNINGS_PITCH_RE,
     INSTRUCTIONS,
     JOIN_PROFILE_INSTRUCTIONS,
     ORDINARY_CONTEXT_HINTS,
@@ -89,7 +91,14 @@ def contextual_hints(state: dict[str, object]) -> tuple[str, ...]:
     message = state.get("message")
     if not isinstance(message, dict):
         return ()
-    hints: list[str] = []
+    hints = (
+        [EARNINGS_PITCH_HINT]
+        if any(
+            isinstance(value := message.get(field), str) and EARNINGS_PITCH_RE.search(value)
+            for field in ("text", "caption")
+        )
+        else []
+    )
     contact = state.get("contact")
     card_name = contact.get("card_name") if isinstance(contact, dict) else None
     if isinstance(card_name, str) and any(word in card_name for word in ("假币", "假钞")):

@@ -1452,5 +1452,23 @@
     "spam": false,
     "message": {"from": {"first_name": "测试用户"}, "text": "这是赌博广告，请管理员处理", "reply_to_message": {"from": {"first_name": "其他用户"}, "text": "欢迎", "reply_markup": {"inline_keyboard": [[{"text": "百家乐开户下注，联系客服"}]]}}},
     "source": {"kind": "synthetic boundary control", "notes": "A referenced button is evidence about the referenced author, not the reporting sender."}
+  },
+  {
+    "name": "income-obfuscated-caption",
+    "spam": true,
+    "message": {"from": {"first_name": "Member"}, "caption": "日\ufe0f撸\ufe0f1W abcd"},
+    "source": {"kind": "synthetic positive control", "notes": "A short daily-income pitch remains solicitation without a contact or recruitment verb, including in captions."}
+  },
+  {
+    "name": "income-emoji-game-record",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "今天打游戏日💎撸1W经验，终于升级了"},
+    "source": {"kind": "synthetic boundary control", "notes": "Emoji-split game earnings are a personal record, not an income opportunity."}
+  },
+  {
+    "name": "income-obfuscated-warning",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "日\ufe0f撸\ufe0f1W是骗局，大家别信，请举报"},
+    "source": {"kind": "synthetic boundary control", "notes": "An explicit warning retains its exemption even when it repeats an obfuscated earnings pitch."}
   }
 ]

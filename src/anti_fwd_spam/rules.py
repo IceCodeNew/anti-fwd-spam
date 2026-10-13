@@ -11,6 +11,13 @@ import re
 # Profile handle extraction (not a moderation match).
 PROFILE_HANDLE_RE = re.compile(r"(?<![A-Za-z0-9_/@])@([A-Za-z0-9_]{1,32})(?![A-Za-z0-9_])")
 
+EARNINGS_PITCH_RE = re.compile(r"(?:日[\W_]*[撸薅]|[转轉倒][\W_]*手)")
+EARNINGS_PITCH_HINT = (
+    "短句收益招徕: 单独许诺日撸、日薅上万, 或转手、倒手一件赚取数千, 已经构成赚钱项目或转售获利广告, "
+    "不要求另有招募动词、商品名或联系方式。随机字母尾串和不可见字符不改变该收益承诺。"
+    "个人已实现收入或交易记录、游戏经验值、询问、警告和引用举报仍不是推广。"
+)
+
 PROJECT_RECRUITMENT_HINT = (
     "项目合作招募: 当前正文“找想干事的兄弟合作”, 同时sender简介表示项目大量找人合作、"
     "点击此号码看简介做项目并提供联系人入口, 这是面向群成员的垃圾招募, 概率按广告判断。"

@@ -55,6 +55,8 @@ Jev is used after local rules, blacklist checks, sticker checks, and report hand
 
 The model uses the current sender's intent as the primary evidence. Referenced content and profile data remain source-separated. A narrow project-recruitment hint is added only when the current message and sender biography both support that interpretation. A score at or above the configured inclusive threshold triggers the same current-message moderation action; see [Jev checks](docs/jev-checks.md) for the validation procedure.
 
+Message classification also treats direct attempts to override moderation instructions or force a score as spam. Discussing defenses or reporting a quoted prompt-injection example does not itself count as an attack.
+
 Read [Jev checks](docs/jev-checks.md) before running live model tests. Provider configuration belongs in deployment secrets, not in repository files.
 
 ## Documentation map

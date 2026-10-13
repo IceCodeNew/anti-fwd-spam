@@ -181,8 +181,8 @@ SPAM_PATTERNS = (
     re.compile(r"(?is)\A(?=.*(?:(?<![a-z])(?:ddos|cc)(?![a-z])|攻击测试))(?=.*攻击)(?=.*(?:接|[打日][死穿]))"),
     # Advertising distribution.
     re.compile(r"广[\W_]{0,2}告[\W_]{0,2}代[\W_]{0,2}发|(?is:\A(?=.*代发)(?=.*(?:24\s*(?:小时|h)|全天)))"),
-    # Bulk sales and an exact account-supplier offer.
-    re.compile(r"批量出[售手]|\A源头直出飞机号\Z"),
+    # Bulk sales and direct-supplier offers.
+    re.compile(r"(?:批量|源头)(?:出售|出手|直出|直发|直卖)"),
     # Income.
     re.compile(r"(?s)\A(?=.*(?:洗[米钱]|手\W*速\W*快|[来莱]))(?=.*日\W*[赚收撸入])"),
     # Exact phrase.

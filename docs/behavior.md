@@ -135,7 +135,7 @@ Local patterns are grouped by content:
 | Sexual solicitation | `极品`/`新人`/`童颜`/`嫩` followed by optional `小` and `萝莉` (not followed by `塔`); or any of `萝莉`/`约炮`/`包夜`/`外围`/`楼凤` immediately followed by `上门`/`包夜`/`资源`. Individual type or offer words do not suffice. |
 | Attack services | Any of DDOS/CC/`攻击测试`, plus `攻击`, plus any of `接`/`打死`/`打穿`/`日死`/`日穿`. DDOS/CC are case-insensitive and cannot be embedded in other Latin words. `攻击测试` itself satisfies `攻击`; it is not a testing exemption. |
 | Advertising distribution | `广告代发` with zero to two non-word characters or underscores between adjacent characters; or `代发` plus `24小时`/`24h`/`全天` (case-insensitive, allowing whitespace after `24`). |
-| Bulk sales and account supply | `批量出售` or `批量出手`; or `源头直出飞机号` as the exact whole field, without surrounding whitespace or punctuation. |
+| Bulk sales and direct supply | `批量` or `源头` immediately followed by any of `出售`, `出手`, `直出`, `直发`, or `直卖`; no product suffix or whole-field restriction. |
 | Income | Any of `日赚`/`日收`/`日撸`/`日入` plus any of `洗米`/`洗钱`/`手速快`/`来`/`莱`. Non-word separators, including invisible characters, are allowed within `手速快` and between `日` and its income verb. |
 | Exact phrase | `只吸引对的人` as the exact whole field, without surrounding whitespace or punctuation. |
 

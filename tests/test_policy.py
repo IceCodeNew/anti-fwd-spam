@@ -100,7 +100,6 @@ class SpamPatternTests(unittest.TestCase):
             "看头像加QQ音乐",
             "@sample CAMPAIGN_123",
             "💰 💰 💰",
-            DISTRIBUTION_CAMPAIGN,
             "广###告代发",
             "广a告代发",
             "广新告代发",
@@ -133,6 +132,8 @@ class SpamPatternTests(unittest.TestCase):
         ):
             with self.subTest(text=text):
                 self.assertFalse(matches_spam_pattern({"text": text}))
+        self.assertTrue(matches_spam_pattern({"text": DISTRIBUTION_CAMPAIGN}))
+        self.assertFalse(matches_spam_text(DISTRIBUTION_CAMPAIGN))
         self.assertFalse(matches_spam_pattern({"text": "请举报", "reply_to_message": {"text": DDOS_CAMPAIGN}}))
         self.assertFalse(matches_spam_pattern({"text": "请举报", "reply_to_message": {"text": "源头直出飞机号"}}))
 

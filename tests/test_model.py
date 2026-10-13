@@ -10,13 +10,14 @@ from anti_fwd_spam.constants import MAX_PROFILE_TEXT
 from anti_fwd_spam.model import (
     ModelConfig,
     ModelRetryError,
+    contextual_hints,
     extract_profile_handles,
     join_model_input,
     model_input,
     sender_bio,
     spam_probability,
 )
-from anti_fwd_spam.rules import INSTRUCTIONS, JOIN_PROFILE_INSTRUCTIONS, PROJECT_RECRUITMENT_HINT
+from anti_fwd_spam.rules import COUNTERFEIT_CARD_HINT, INSTRUCTIONS, JOIN_PROFILE_INSTRUCTIONS, PROJECT_RECRUITMENT_HINT
 from tests.test_telegram import ClockLoop
 
 if TYPE_CHECKING:
@@ -75,6 +76,38 @@ class StreamingResponse:
 
 
 class JoinModelInputTests(unittest.TestCase):
+    def test_button_text_is_visible_but_callback_and_reference_are_isolated(self) -> None:
+        markup = {
+            "inline_keyboard": [
+                [
+                    {
+                        "text": "Advertising offer",
+                        "url": "https://example.invalid/offer",
+                        "callback_data": "private-callback",
+                    }
+                ]
+            ]
+        }
+        state = model_input(
+            {
+                "from": {"first_name": "Member"},
+                "text": "请核实",
+                "reply_to_message": {"text": "sample", "reply_markup": markup},
+            }
+        )
+        content, context = state["message"], state["context"]
+        assert isinstance(content, dict)
+        assert isinstance(context, dict)
+        reference = context["reply"]
+        assert isinstance(reference, dict)
+        self.assertNotIn("reply_markup", content)
+        self.assertEqual(reference["reply_markup"], ["Advertising offer", "https://example.invalid/offer"])
+        state = model_input({"from": {"first_name": "Member"}, "text": "offer", "reply_markup": markup})
+        content = state["message"]
+        assert isinstance(content, dict)
+        self.assertEqual(content["reply_markup"], ["Advertising offer", "https://example.invalid/offer"])
+        self.assertNotIn("private-callback", json.dumps(state))
+
     def test_user_sends_only_joining_members_profile_fields(self) -> None:
         """Given a joined account, snapshot its own name and username without identity or authored content."""
         member: dict[str, object] = {
@@ -101,6 +134,23 @@ class JoinModelInputTests(unittest.TestCase):
         self.assertEqual(
             join_model_input(member), {"nickname": "名" * MAX_PROFILE_TEXT, "username": "u" * MAX_PROFILE_TEXT}
         )
+
+
+class CardHintTests(unittest.TestCase):
+    def test_hint_uses_only_the_current_visible_card_not_profiles_or_references(self) -> None:
+        card = {"first_name": "假币真用可过机找妹扫街没问题"}
+        for text in (None, "管理员请处理这张广告名片", "这张名片是不是广告"):
+            message: dict[str, object] = {"from": {"first_name": "Member"}, "contact": card}
+            if text is not None:
+                message["text"] = text
+            self.assertIn(COUNTERFEIT_CARD_HINT, contextual_hints(model_input(message)))
+        for related_message in (
+            {"from": {"first_name": "Member"}, "contact": {"first_name": "普通商户"}},
+            {"from": {"first_name": "Member"}, "reply_to_message": {"contact": card}},
+        ):
+            state = model_input(dict(related_message))
+            state["bio"] = "假钞销售"
+            self.assertNotIn(COUNTERFEIT_CARD_HINT, contextual_hints(state))
 
 
 class ModelDeadlineTests(unittest.TestCase):

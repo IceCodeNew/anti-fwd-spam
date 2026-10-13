@@ -295,6 +295,18 @@ test('user: Given structured text, When spam is detected, Then its text is evalu
   }
 });
 
+test('user: visible inline buttons reach Jev with reference isolation and no callback data', async () => {
+  const target = message();
+  target.text = 'Please check this sample';
+  target.reply_markup = { inline_keyboard: [[{ text: 'Advertising offer', url: 'https://example.invalid/offer', callback_data: 'private-callback' }]] };
+  target.reply_to_message = { ...message(80, 11), reply_markup: { inline_keyboard: [[{ text: 'Referenced offer' }]] } };
+  telegram.send(target);
+  assert.equal((await dispatch({ update_id: 10, message: target })).status, 200);
+  assert.deepEqual(model.state.message.reply_markup, ['Advertising offer', 'https://example.invalid/offer']);
+  assert.deepEqual(model.state.context.reply.reply_markup, ['Referenced offer']);
+  assert.equal(JSON.stringify(model.state).includes('private-callback'), false);
+});
+
 test('user: Given an oversized answer containing a spam score, When evaluated, Then the message remains', async () => {
   model.response = new Response('{"answers":{"spam":{"type":"noul","noul":1}}}'.padEnd(65537));
   telegram.send(message());

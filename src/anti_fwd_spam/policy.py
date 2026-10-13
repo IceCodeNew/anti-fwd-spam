@@ -15,7 +15,7 @@ from .constants import (
     SUPPORTED_FORWARD_ORIGINS,
     TOKEN_PART_COUNT,
 )
-from .rules import DISABLED_GROUP_NOTICE_RE, SPAM_PATTERNS
+from .rules import AUTHORED_SPAM_PATTERNS, SPAM_PATTERNS
 
 
 def matches_spam_pattern(message: dict[str, object]) -> bool:
@@ -23,7 +23,7 @@ def matches_spam_pattern(message: dict[str, object]) -> bool:
     if any(matches_spam_text(text) for text in _pattern_texts(message)):
         return True
     return any(
-        isinstance(text := message.get(field), str) and DISABLED_GROUP_NOTICE_RE.search(text) is not None
+        isinstance(text := message.get(field), str) and any(pattern.search(text) for pattern in AUTHORED_SPAM_PATTERNS)
         for field in ("text", "caption")
     )
 

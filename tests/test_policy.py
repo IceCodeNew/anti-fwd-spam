@@ -40,7 +40,17 @@ class SpamPatternTests(unittest.TestCase):
             "全天在线\uff0c需要代发",
             "代发 24H",
             "批量出售飞机号",
-            "批量出手",
+            "源头直出飞机号",
+            *(
+                prefix + verb + suffix
+                for prefix, verb, suffix in product(
+                    ("批量", "源头"), ("出售", "出手", "直出", "直发", "直卖"), ("", "服务器")
+                )
+            ),
+            "源头直出飞机号是卖什么\uff1f",
+            "有人发“源头直出飞机号”\uff0c请举报。",
+            "源头直出飞机号\n别信这种广告",
+            " 源头直出飞机号",
             "来洗米 日入上W",
             "小白莱洗钱 日赚九千",
             "日收8千\n洗米",
@@ -103,6 +113,13 @@ class SpamPatternTests(unittest.TestCase):
             "24小时在线",
             "批量",
             "出售飞机号",
+            "源头直供",
+            "源头直接发货",
+            "源头直 出",
+            "源头",
+            "直卖",
+            "源头 出售",
+            "出售源头",
             "来洗米\uff0c放进电饭锅。",
             "日赚九千",
             "手速快来搞",
@@ -117,6 +134,7 @@ class SpamPatternTests(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertFalse(matches_spam_pattern({"text": text}))
         self.assertFalse(matches_spam_pattern({"text": "请举报", "reply_to_message": {"text": DDOS_CAMPAIGN}}))
+        self.assertFalse(matches_spam_pattern({"text": "请举报", "reply_to_message": {"text": "源头直出飞机号"}}))
 
     def test_user_matches_disabled_group_replacement_notice(self) -> None:
         """user: Given a disabled-group replacement notice, When matched, Then local filtering flags it."""

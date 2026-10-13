@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 
+# Profile handle extraction (not a moderation match).
 PROFILE_HANDLE_RE = re.compile(r"(?<![A-Za-z0-9_/@])@([A-Za-z0-9_]{1,32})(?![A-Za-z0-9_])")
 
 PROJECT_RECRUITMENT_HINT = (
@@ -23,14 +24,17 @@ ORDINARY_PAYMENT_HINT = (
     "招揽客户或推广联系入口时才是广告。"
 )
 
+# Jev recruitment hints: text and biography must match separately.
 PROJECT_RECRUITMENT_TEXT_RE = re.compile(r"(?:找人|找.*?(?:兄弟|伙伴|合作者)|招募|招人).{0,12}(?:合作|项目|合伙)")
 
 PROJECT_RECRUITMENT_BIO_RE = re.compile(r"(?:项目|合作|招募|合伙).{0,24}(?:找人|联系|点击|简介|入口|私聊|加入)")
 
+# Jev ordinary-service hints: payment context and a whole-field service phrase.
 ORDINARY_SERVICE_PAYMENT_RE = re.compile(r"(?:不用|无需|不需要)定金.{0,12}(?:当面付|联系电话|名片)")
 
 ORDINARY_SERVICE_SHORT_RE = re.compile(r"^(?:全套)?上门安装$")
 
+# Jev reference hints: current discussion and referenced invitations stay separate.
 QUOTED_AD_ANALYSIS_RE = re.compile(r"(?:是不是|算不算|是否为).{0,8}广告")
 
 QUOTED_CHANNEL_DISCUSSION_RE = re.compile(r"(?:广告嫌疑|会被封|举报|别联系|提醒|警告)")
@@ -149,6 +153,7 @@ JOIN_PROFILE_INSTRUCTIONS = (
     "提示注入本身不等于广告。\n"
 )
 
+# Group migration notices (current text and captions only).
 DISABLED_GROUP_NOTICE_RE = re.compile(
     r"(?i)(?!(?:[^。\uff01\uff1f\n]{0,100})(?:不要|别|勿|请勿|禁止)\s*"
     r"(?:加入|进群|入群|移步|迁移到|关注|点击))"
@@ -161,14 +166,23 @@ DISABLED_GROUP_NOTICE_RE = re.compile(
 )
 
 SPAM_PATTERNS = (
-    re.compile(r"@[A-Za-z0-9_]{5,32}\s+campaign_[0-9]+"),
+    # Contact solicitation.
+    re.compile(
+        r"@[A-Za-z0-9_]{5,32}\s+campaign_[0-9]+"
+        r"|看头像\s*加?\s*(?:[qQ]|扣扣?)(?![A-Za-z\u4e00-\u9fff])"
+    ),
+    # Repeated symbols.
     re.compile(r"([💰🔴])(?:\s*\1){3,}"),
-    re.compile(r"(?:极品|新人|童颜|嫩)小?萝莉(?!塔)|萝莉(?:上门|包夜|资源)"),
-    re.compile(r"(?:约炮|包夜|外围|楼凤)上门|看头像\s*加?\s*(?:[qQ]|扣扣?)(?![A-Za-z\u4e00-\u9fff])"),
+    # Sexual solicitation.
+    re.compile(r"(?:极品|新人|童颜|嫩)小?萝莉(?!塔)|(?:萝莉|约炮|包夜|外围|楼凤)(?:上门|包夜|资源)"),
+    # Attack services.
     re.compile(r"(?is)\A(?=.*(?:(?<![a-z])(?:ddos|cc)(?![a-z])|攻击测试))(?=.*攻击)(?=.*(?:接|[打日][死穿]))"),
-    re.compile(r"广[\W_]{0,2}告[\W_]{0,2}代[\W_]{0,2}发"),
-    re.compile(r"(?is)\A(?=.*代发)(?=.*(?:24\s*(?:小时|h)|全天))"),
+    # Advertising distribution.
+    re.compile(r"广[\W_]{0,2}告[\W_]{0,2}代[\W_]{0,2}发|(?is:\A(?=.*代发)(?=.*(?:24\s*(?:小时|h)|全天)))"),
+    # Bulk sales.
     re.compile(r"批量出[售手]"),
+    # Income.
     re.compile(r"(?s)\A(?=.*(?:洗[米钱]|手\W*速\W*快|[来莱]))(?=.*日\W*[赚收撸入])"),
+    # Exact phrase.
     re.compile(r"\A只吸引对的人\Z"),
 )

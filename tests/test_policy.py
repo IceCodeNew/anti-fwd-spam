@@ -20,6 +20,14 @@ DISTRIBUTION_CAMPAIGN = "承接广*告*戴*發\uff0c十万精准各行业裙  \n
 class SpamPatternTests(unittest.TestCase):
     def test_user_matches_reviewed_phrases_in_authored_fields(self) -> None:
         for text in (
+            *(
+                kind + offer
+                for kind, offer in product(("萝莉", "约炮", "包夜", "外围", "楼凤"), ("上门", "包夜", "资源"))
+            ),
+            "极品小萝莉",
+            "看头像加Q",
+            "@sample campaign_123",
+            "💰 💰 💰 💰",
             DDOS_CAMPAIGN,
             "接ddos攻击",
             "接非法CC攻击",
@@ -73,6 +81,15 @@ class SpamPatternTests(unittest.TestCase):
 
     def test_user_keeps_unapproved_variants_and_reference_text_out(self) -> None:
         for text in (
+            "极品小萝莉塔",
+            "萝莉",
+            "外围",
+            "包夜",
+            "资源",
+            "上门",
+            "看头像加QQ音乐",
+            "@sample CAMPAIGN_123",
+            "💰 💰 💰",
             DISTRIBUTION_CAMPAIGN,
             "广###告代发",
             "广a告代发",

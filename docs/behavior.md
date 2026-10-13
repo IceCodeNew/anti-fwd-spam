@@ -126,7 +126,20 @@ Expiry aggregates credit and deletes exactly the same bounded set of observation
 
 Text/profile regex checks run before Jev for low-history human senders and actual bot senders, regardless of references. General local patterns inspect authored text, captions, shared contact display names, and sender nicknames; deferred profile checks inspect the available sender and contact-account biographies after Telegram lookups. A separate maintenance pattern checks only current text and captions for a same-sentence claim that a group or channel is disabled, moved, or replaced followed by a request to join a new destination. Administrators are protected before Action 1, so ordinary administrator notices remain intact.
 
-Local phrases include `广告代发` with zero to two non-word characters or underscores between adjacent characters, and `批量出售` or `批量出手`. Attack-service rules require any one of DDOS/CC/`攻击测试`, `攻击`, and any one of `接`/`打死`/`打穿`/`日死`/`日穿` (case-insensitive, without embedding DDOS/CC in other Latin words). `攻击测试` is attack-service wording and itself satisfies the `攻击` element; it is not a testing exemption. Income rules require any one of `日赚`/`日收`/`日撸`/`日入` plus any one of `洗米`/`洗钱`/`手速快`/`来`/`莱`. Another co-occurrence rule requires both `代发` and `24小时`/`24h`/`全天`. Co-occurrence is within one inspected field, in any order and across line breaks. The income rule tolerates non-word separators, including invisible characters, within `手速快` and between `日` and its income verb. `只吸引对的人` matches only the exact whole field, without surrounding whitespace or punctuation.
+Local patterns are grouped by content:
+
+| Category | Matching conditions |
+| --- | --- |
+| Contact solicitation | An `@` handle of 5–32 ASCII letters, digits or underscores, whitespace, then `campaign_` and digits; or `看头像`, optional whitespace and `加`, followed by Q/q/扣/扣扣, not immediately followed by a Latin letter or a character in U+4E00–U+9FFF. |
+| Repeated symbols | At least four identical 💰 or 🔴 symbols, optionally separated by whitespace. |
+| Sexual solicitation | `极品`/`新人`/`童颜`/`嫩` followed by optional `小` and `萝莉` (not followed by `塔`); or any of `萝莉`/`约炮`/`包夜`/`外围`/`楼凤` immediately followed by `上门`/`包夜`/`资源`. Individual type or offer words do not suffice. |
+| Attack services | Any of DDOS/CC/`攻击测试`, plus `攻击`, plus any of `接`/`打死`/`打穿`/`日死`/`日穿`. DDOS/CC are case-insensitive and cannot be embedded in other Latin words. `攻击测试` itself satisfies `攻击`; it is not a testing exemption. |
+| Advertising distribution | `广告代发` with zero to two non-word characters or underscores between adjacent characters; or `代发` plus `24小时`/`24h`/`全天` (case-insensitive, allowing whitespace after `24`). |
+| Bulk sales | `批量出售` or `批量出手`. |
+| Income | Any of `日赚`/`日收`/`日撸`/`日入` plus any of `洗米`/`洗钱`/`手速快`/`来`/`莱`. Non-word separators, including invisible characters, are allowed within `手速快` and between `日` and its income verb. |
+| Exact phrase | `只吸引对的人` as the exact whole field, without surrounding whitespace or punctuation. |
+
+Co-occurrence (`plus`) is within one inspected field, in any order and across line breaks. Adjacent phrase components retain their stated order. Group migration notices remain a separate current-text/caption-only category as described above.
 
 These local rules do not exempt warnings, questions or quoted wording embedded in the current sender's own text. A low-history human can therefore receive Action 1 for such discussion; `/allow` restores access but cannot restore a deleted message. Established humans receive semantic Jev classification instead. Text contained only in a Telegram reply or quote remains outside local matching. The obfuscated `承接广*告*戴*發` template is not a separate local rule.
 

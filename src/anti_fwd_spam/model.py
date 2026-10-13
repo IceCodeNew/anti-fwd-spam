@@ -23,6 +23,9 @@ from .constants import (
 )
 from .policy import display_name, reply_target
 from .rules import (
+    COUNTERFEIT_CARD_HINT,
+    EARNINGS_PITCH_HINT,
+    EARNINGS_PITCH_RE,
     INSTRUCTIONS,
     JOIN_PROFILE_INSTRUCTIONS,
     ORDINARY_CONTEXT_HINTS,
@@ -88,10 +91,21 @@ def contextual_hints(state: dict[str, object]) -> tuple[str, ...]:
     message = state.get("message")
     if not isinstance(message, dict):
         return ()
+    hints = (
+        [EARNINGS_PITCH_HINT]
+        if any(
+            isinstance(value := message.get(field), str) and EARNINGS_PITCH_RE.search(value)
+            for field in ("text", "caption")
+        )
+        else []
+    )
+    contact = state.get("contact")
+    card_name = contact.get("card_name") if isinstance(contact, dict) else None
+    if isinstance(card_name, str) and any(word in card_name for word in ("假币", "假钞")):
+        hints.append(COUNTERFEIT_CARD_HINT)
     text = message.get("text")
     if not isinstance(text, str):
-        return ()
-    hints: list[str] = []
+        return tuple(hints)
     bio = state.get("bio")
     if isinstance(bio, str) and PROJECT_RECRUITMENT_TEXT_RE.search(text) and PROJECT_RECRUITMENT_BIO_RE.search(bio):
         hints.append(PROJECT_RECRUITMENT_HINT)
@@ -163,7 +177,7 @@ def message_content(message: dict[str, object]) -> dict[str, object]:
         value = message.get(field)
         if isinstance(value, dict):
             content[field] = {key: value[key] for key in keys if key in value}
-    for field in ("rich_message", "checklist", "poll"):
+    for field in ("rich_message", "checklist", "poll", "reply_markup"):
         if field in message:
             content[field] = _structured_text(message[field])
     return content

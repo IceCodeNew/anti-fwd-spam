@@ -5,6 +5,7 @@ import { message, report } from './telegram-fake.mjs';
 
 model.enabled = true;
 const campaign = '@synthetic_bot campaign_001 synthetic_marker';
+const bulkOffer = '承接广*告*戴*發，十万精准各行业裙\n包效果 包效果 @sample_contact';
 function referenced(current, kind) {
   const earlier = { ...message(80, 11), text: 'ordinary discussion' };
   if (kind === 'same_chat') current.reply_to_message = earlier;
@@ -13,7 +14,7 @@ function referenced(current, kind) {
   return current;
 }
 
-for (const text of [campaign, '💰'.repeat(192), '萝莉上门', '看头像q <contact>', '本群已停用，请加入新群 https://example.invalid/group']) {
+for (const text of [campaign, bulkOffer, '💰'.repeat(192), '萝莉上门', '看头像q <contact>', '本群已停用，请加入新群 https://example.invalid/group']) {
   for (const context of ['same_chat', 'external', 'quote']) {
     test(`user: a low-history member's own ${JSON.stringify(Array.from(text).slice(0, 25).join(''))} in ${context} is locally moderated under the shared policy`, async () => {
       await setBindings({ EXPERIENTIAL_API_KEY: undefined });
@@ -48,7 +49,7 @@ for (const [field, edited] of [['caption', false], ['caption', true], ['nickname
 }
 
 for (const [reference, edited] of [['none', false], ['same_chat', false], ['external', true], ['none', true]]) {
-  for (const text of [campaign, '💰'.repeat(192), `请警惕 ${campaign}，不要点击`, '本群已停用，请加入新群 https://example.invalid/group']) {
+  for (const text of [campaign, bulkOffer, '💰'.repeat(192), `请警惕 ${campaign}，不要点击`, '本群已停用，请加入新群 https://example.invalid/group']) {
     test(`user: ten matured observations send ${JSON.stringify(Array.from(text).slice(0, 20).join(''))} in ${reference}, edited=${edited} to Jev instead of direct regex punishment`, async () => {
       await database.prepare('INSERT INTO member_activity VALUES (123,-10012,22,10)').run();
       model.profiles.set(22, { bio: campaign });

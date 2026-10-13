@@ -53,7 +53,7 @@ Local text/profile regexes apply before Jev until a member has ten qualifying ob
 
 Jev is used after local rules, blacklist checks, sticker checks, and report handling. It receives the bounded message context selected by the bot; media is not downloaded or inspected. A provider may charge for requests and may receive user-provided text and profile data, so review its terms before enabling the feature.
 
-The model uses the current sender's intent as the primary evidence. Referenced content and profile data remain source-separated. A narrow project-recruitment hint is added only when the current message and sender biography both support that interpretation. A score at or above the configured inclusive threshold triggers the same current-message moderation action; see [Jev checks](docs/jev-checks.md) for the validation procedure.
+The model uses the current sender's intent as the primary evidence, including visible contact-card pitches and button text/URLs. Callback data is excluded. A narrow full-message template additionally covers an obfuscated bulk-advertising offer in current text/captions under the existing member-maturity policy. Referenced content and profile data remain source-separated. A narrow project-recruitment hint is added only when the current message and sender biography both support that interpretation. A score at or above the configured inclusive threshold triggers the same current-message moderation action; see [Jev checks](docs/jev-checks.md) for the validation procedure.
 
 Message classification also treats direct attempts to override moderation instructions or force a score as spam. Discussing defenses or reporting a quoted prompt-injection example does not itself count as an attack.
 

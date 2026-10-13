@@ -1213,6 +1213,18 @@
     "source": {"kind": "sanitized HTML export", "notes": "Contact replaced; product claims are unverified advertising text, not model specifications."}
   },
   {
+    "name": "api-wholesale-short-offer",
+    "spam": true,
+    "message": {"from": {"first_name": "Member"}, "text": "A模型0.2，B模型0.6，一手渠道供应，招代理，量大另议。"},
+    "source": {"kind": "synthetic contrast", "notes": "Wholesale offer without the export's model names or explicit API keyword."}
+  },
+  {
+    "name": "api-supplier-verification",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "代理说他只做源头，对接下游，量大可谈。我想核实这家API供应商是不是骗局。"},
+    "source": {"kind": "synthetic contrast", "notes": "The sender questions a third-party supplier rather than offering a service."}
+  },
+  {
     "name": "export-payment-group-assistant",
     "spam": true,
     "message": {"from": {"first_name": "Member"}, "text": "带个跑分搬发消息群助理 70U一天加提成 不用押 有兴趣的私我"},

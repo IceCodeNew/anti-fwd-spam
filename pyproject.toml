@@ -2,12 +2,12 @@
 name = "anti-fwd-spam"
 version = "0.1.0"
 description = "Telegram provenance filter for Cloudflare Python Workers"
-requires-python = ">=3.13,<3.15"
+requires-python = ">=3.15,<3.16"
 dependencies = []
 
 [dependency-groups]
 dev = [
-  "ruff==0.16.10",
+  "ruff==0.17.0",
   "workers-py==1.17.7",
   "workers-runtime-sdk==1.9.3",
 ]

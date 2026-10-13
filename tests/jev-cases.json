@@ -1356,5 +1356,65 @@
     "spam": false,
     "message": {"from": {"first_name": "Member"}, "text": "有人发“播放器招CPS代理”，请管理员处理。"},
     "source": {"kind": "synthetic boundary control", "notes": "Reporting the same offer must remain non-promotional."}
+  },
+  {
+    "name": "resale-profit-punctuation",
+    "spam": true,
+    "message": {"from": {"first_name": "Member"}, "text": "轉.手.一.臺.搞3.K"},
+    "source": {"kind": "operator-reviewed sanitized export", "notes": "Per-item resale profit pitch with punctuation splitting and no product or contact."}
+  },
+  {
+    "name": "resale-profit-emoji",
+    "spam": true,
+    "message": {"from": {"first_name": "Member"}, "text": "轉🔥手🔥一🔥臺🔥搞3🔥K"},
+    "source": {"kind": "synthetic variant", "notes": "Emoji separators preserve the resale profit pitch."}
+  },
+  {
+    "name": "resale-profit-invisible",
+    "spam": true,
+    "message": {"from": {"first_name": "Member"}, "text": "转\u200b手\u200b一\u200b台\u200b搞3K"},
+    "source": {"kind": "synthetic variant", "notes": "Zero-width separators preserve the resale profit pitch."}
+  },
+  {
+    "name": "resale-profit-plain",
+    "spam": true,
+    "message": {"from": {"first_name": "Member"}, "text": "转手一台搞3K"},
+    "source": {"kind": "synthetic boundary control", "notes": "The offer, not obfuscation alone, establishes solicitation."}
+  },
+  {
+    "name": "resale-profit-paraphrase",
+    "spam": true,
+    "message": {"from": {"first_name": "Member"}, "text": "倒💎手💎一💎部💎赚两千"},
+    "source": {"kind": "synthetic variant", "notes": "Different resale verb, amount and emoji."}
+  },
+  {
+    "name": "phone-offer-emoji",
+    "spam": true,
+    "message": {"from": {"first_name": "Member"}, "text": "低🍎價🍎出🍎正🍎品🍎水🍎果🍎機"},
+    "source": {"kind": "synthetic variant", "notes": "Emoji-split supplier offer without a contact."}
+  },
+  {
+    "name": "emoji-ordinary-expression",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "今🌸天🌸真🌸开🌸心"},
+    "source": {"kind": "synthetic boundary control", "notes": "Splitting characters alone is not solicitation."}
+  },
+  {
+    "name": "emoji-personal-completed-sale",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "我🌸昨天🌸转手🌸卖掉自己的旧电脑，收了3K，不卖别的。"},
+    "source": {"kind": "synthetic boundary control", "notes": "Completed personal transaction, not a resale profit invitation."}
+  },
+  {
+    "name": "emoji-resale-report",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "有人发“轉🔥手🔥一🔥臺🔥搞3🔥K”，请管理员处理，别参与。"},
+    "source": {"kind": "synthetic boundary control", "notes": "Authored report of an obfuscated pitch remains non-promotional."}
+  },
+  {
+    "name": "emoji-technical-record",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "版🔧本🔧3.0，吞吐量3K/s，这是测试记录。"},
+    "source": {"kind": "synthetic boundary control", "notes": "Emoji splitting with a technical number is not an income pitch."}
   }
 ]

@@ -1416,5 +1416,41 @@
     "spam": false,
     "message": {"from": {"first_name": "Member"}, "text": "版🔧本🔧3.0，吞吐量3K/s，这是测试记录。"},
     "source": {"kind": "synthetic boundary control", "notes": "Emoji splitting with a technical number is not an income pitch."}
+  },
+  {
+    "name": "counterfeit-card-sales-pitch",
+    "spam": true,
+    "message": {"from": {"first_name": "Member"}, "contact": {"first_name": "假币真用可过机找妹扫街没问题"}},
+    "source": {"kind": "synthetic positive control", "notes": "Visible counterfeit sales claims without accompanying text or a fetched profile."}
+  },
+  {
+    "name": "counterfeit-card-research",
+    "spam": false,
+    "message": {"from": {"first_name": "测试用户"}, "contact": {"first_name": "假钞案件研究"}},
+    "source": {"kind": "synthetic boundary control", "notes": "A research topic mentioning counterfeit cash is not a sales pitch."}
+  },
+  {
+    "name": "counterfeit-card-warning",
+    "spam": false,
+    "message": {"from": {"first_name": "测试用户"}, "text": "这是骗子的名片，请举报，别联系", "contact": {"first_name": "一手假钞可过机可快递可面交"}},
+    "source": {"kind": "synthetic boundary control", "notes": "The sender reports a sales card rather than promoting it."}
+  },
+  {
+    "name": "inline-button-advertising-offer",
+    "spam": true,
+    "message": {"from": {"first_name": "测试用户"}, "text": "今天更新", "reply_markup": {"inline_keyboard": [[{"text": "承接广告代发，包效果", "url": "https://example.invalid/"}]]}},
+    "source": {"kind": "synthetic positive control", "notes": "The offer exists only in the current message's visible button."}
+  },
+  {
+    "name": "inline-button-current-warning",
+    "spam": false,
+    "message": {"from": {"first_name": "测试用户"}, "text": "请举报这个骗子，别下注", "reply_markup": {"inline_keyboard": [[{"text": "百家乐开户下注，联系客服", "url": "https://example.invalid/"}]]}},
+    "source": {"kind": "synthetic boundary control", "notes": "Visible promotional button wording does not override the sender's explicit warning."}
+  },
+  {
+    "name": "inline-button-reference-warning",
+    "spam": false,
+    "message": {"from": {"first_name": "测试用户"}, "text": "这是赌博广告，请管理员处理", "reply_to_message": {"from": {"first_name": "其他用户"}, "text": "欢迎", "reply_markup": {"inline_keyboard": [[{"text": "百家乐开户下注，联系客服"}]]}}},
+    "source": {"kind": "synthetic boundary control", "notes": "A referenced button is evidence about the referenced author, not the reporting sender."}
   }
 ]

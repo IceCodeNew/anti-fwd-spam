@@ -8,6 +8,37 @@ BULK_OFFER = "承接广*告*戴*發\uff0c十万精准各行业裙  \n包效果 �
 
 
 class AuthoredPatternTests(unittest.TestCase):
+    def test_money_symbols_accumulate_only_across_current_inline_button_labels(self) -> None:
+        for labels, expected in (
+            (["💰甲💰", "乙💰"], False),
+            (["💰甲💰", "乙💰\u200b丙💰"], True),
+            (["💰甲💰乙💰丙💰"], True),
+            (["🔴甲🔴", "🔴乙🔴"], False),
+        ):
+            with self.subTest(labels=labels):
+                markup = {"inline_keyboard": [[{"text": label}] for label in labels]}
+                self.assertEqual(matches_spam_pattern({"text": "1", "reply_markup": markup}), expected)
+                self.assertFalse(matches_spam_pattern({"reply_to_message": {"reply_markup": markup}}))
+        self.assertFalse(
+            matches_spam_pattern(
+                {
+                    "text": "💰",
+                    "from": {"first_name": "💰"},
+                    "reply_markup": {
+                        "inline_keyboard": [
+                            [
+                                {
+                                    "text": "💰甲💰",
+                                    "url": "https://example.invalid/💰💰💰💰",
+                                    "callback_data": "💰💰💰💰",
+                                }
+                            ]
+                        ]
+                    },
+                }
+            )
+        )
+
     def test_complete_offers_match_only_the_current_authored_field(self) -> None:
         for field in ("text", "caption"):
             with self.subTest(field=field):

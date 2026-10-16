@@ -17,11 +17,26 @@ from .constants import (
 )
 from .rules import AUTHORED_SPAM_PATTERNS, SPAM_PATTERNS
 
+_BUTTON_MONEY_THRESHOLD = 4
+
 
 def matches_spam_pattern(message: dict[str, object]) -> bool:
-    """Search current text and identity fields without inspecting replies."""
+    """Check current fields and button-symbol totals without inspecting replies."""
     if any(matches_spam_text(text) for text in _pattern_texts(message)):
         return True
+    markup = message.get("reply_markup")
+    keyboard = markup.get("inline_keyboard") if isinstance(markup, dict) else None
+    if isinstance(keyboard, list):
+        money_count = sum(
+            label.count("💰")
+            for row in keyboard
+            if isinstance(row, list)
+            for button in row
+            if isinstance(button, dict)
+            if isinstance(label := button.get("text"), str)
+        )
+        if money_count >= _BUTTON_MONEY_THRESHOLD:
+            return True
     return any(
         isinstance(text := message.get(field), str) and any(pattern.search(text) for pattern in AUTHORED_SPAM_PATTERNS)
         for field in ("text", "caption")

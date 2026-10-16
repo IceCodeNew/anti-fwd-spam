@@ -132,6 +132,7 @@ Local patterns are grouped by content:
 | --- | --- |
 | Contact solicitation | An `@` handle of 5–32 ASCII letters, digits or underscores, whitespace, then `campaign_` and digits; or `看头像`, optional whitespace and `加`, followed by Q/q/扣/扣扣, not immediately followed by a Latin letter or a character in U+4E00–U+9FFF. |
 | Repeated symbols | At least four identical 💰 or 🔴 symbols, optionally separated by whitespace. |
+| Inline-button symbol total | At least four 💰 across the current message's inline-button labels, ignoring intervening text and row boundaries. No URL is required. URLs, callback data, body, profiles and referenced keyboards do not contribute to this total. Other emoji do not count. |
 | Sexual solicitation | `极品`/`新人`/`童颜`/`嫩` followed by optional `小` and `萝莉` (not followed by `塔`); or any of `萝莉`/`约炮`/`包夜`/`外围`/`楼凤` immediately followed by `上门`/`包夜`/`资源`. Individual type or offer words do not suffice. |
 | Attack services | Any of DDOS/CC/`攻击测试`, plus `攻击`, plus any of `接`/`打死`/`打穿`/`日死`/`日穿`. DDOS/CC are case-insensitive and cannot be embedded in other Latin words. `攻击测试` itself satisfies `攻击`; it is not a testing exemption. |
 | Advertising distribution | `广告代发` with zero to two non-word characters or underscores between adjacent characters; or `代发` plus `24小时`/`24h`/`全天` (case-insensitive, allowing whitespace after `24`). |
@@ -139,7 +140,7 @@ Local patterns are grouped by content:
 | Income | Any of `日赚`/`日收`/`日撸`/`日入` plus any of `洗米`/`洗钱`/`手速快`/`来`/`莱`. Non-word separators, including invisible characters, are allowed within `手速快` and between `日` and its income verb. |
 | Exact phrase | `只吸引对的人` as the exact whole field, without surrounding whitespace or punctuation. |
 
-Co-occurrence (`plus`) is within one inspected field, in any order and across line breaks. Adjacent phrase components retain their stated order. Group migration notices remain a separate current-text/caption-only category as described above.
+Co-occurrence (`plus`) is within one inspected field, in any order and across line breaks. Adjacent phrase components retain their stated order. Group migration notices remain a separate current-text/caption-only category as described above. The inline-button total uses the same authority and member-maturity protections as other local matches; actual bots receive deletion only, and guest callers are not moderation targets. It does not classify button wording or apply other text/profile regexes to button labels.
 
 These local rules do not exempt warnings, questions or quoted wording embedded in the current sender's own text. A low-history human can therefore receive Action 1 for such discussion; `/allow` restores access but cannot restore a deleted message. Established humans receive semantic Jev classification instead. Text contained only in a Telegram reply or quote remains outside local matching.
 

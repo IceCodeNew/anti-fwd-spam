@@ -15,28 +15,27 @@ from .constants import (
     SUPPORTED_FORWARD_ORIGINS,
     TOKEN_PART_COUNT,
 )
-from .rules import AUTHORED_SPAM_PATTERNS, SPAM_PATTERNS
-
-_BUTTON_MONEY_THRESHOLD = 4
+from .rules import AUTHORED_SPAM_PATTERNS, REPEATED_SYMBOLS_RE, SPAM_PATTERNS
 
 
 def matches_spam_pattern(message: dict[str, object]) -> bool:
-    """Check current fields and button-symbol totals without inspecting replies."""
-    if any(matches_spam_text(text) for text in _pattern_texts(message)):
+    """Check current visible fields without inspecting replies."""
+    texts = _pattern_texts(message)
+    if any(matches_spam_text(text) for text in texts):
         return True
     markup = message.get("reply_markup")
     keyboard = markup.get("inline_keyboard") if isinstance(markup, dict) else None
     if isinstance(keyboard, list):
-        money_count = sum(
-            label.count("💰")
+        texts.extend(
+            label
             for row in keyboard
             if isinstance(row, list)
             for button in row
             if isinstance(button, dict)
             if isinstance(label := button.get("text"), str)
         )
-        if money_count >= _BUTTON_MONEY_THRESHOLD:
-            return True
+    if REPEATED_SYMBOLS_RE.search("\n".join(texts)):
+        return True
     return any(
         isinstance(text := message.get(field), str) and any(pattern.search(text) for pattern in AUTHORED_SPAM_PATTERNS)
         for field in ("text", "caption")

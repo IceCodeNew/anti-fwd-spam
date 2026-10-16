@@ -8,12 +8,13 @@ BULK_OFFER = "承接广*告*戴*發\uff0c十万精准各行业裙  \n包效果 �
 
 
 class AuthoredPatternTests(unittest.TestCase):
-    def test_money_symbols_accumulate_only_across_current_inline_button_labels(self) -> None:
+    def test_repeated_symbols_accumulate_across_current_visible_fields(self) -> None:
         for labels, expected in (
             (["💰甲💰", "乙💰"], False),
             (["💰甲💰", "乙💰\u200b丙💰"], True),
             (["💰甲💰乙💰丙💰"], True),
-            (["🔴甲🔴", "🔴乙🔴"], False),
+            (["🔴甲🔴", "🔴乙🔴"], True),
+            (["💰甲💰", "🔴乙🔴"], False),
         ):
             with self.subTest(labels=labels):
                 markup = {"inline_keyboard": [[{"text": label}] for label in labels]}
@@ -23,7 +24,7 @@ class AuthoredPatternTests(unittest.TestCase):
             matches_spam_pattern(
                 {
                     "text": "💰",
-                    "from": {"first_name": "💰"},
+                    "from": {"first_name": "ordinary"},
                     "reply_markup": {
                         "inline_keyboard": [
                             [
@@ -35,6 +36,27 @@ class AuthoredPatternTests(unittest.TestCase):
                             ]
                         ]
                     },
+                }
+            )
+        )
+
+        for symbol in ("💰", "🔴"):
+            with self.subTest(symbol=symbol):
+                self.assertTrue(matches_spam_text(f"{symbol}甲{symbol}\n{symbol}\u200b{symbol}"))
+                message = {
+                    "text": symbol,
+                    "from": {"first_name": symbol},
+                    "reply_markup": {"inline_keyboard": [[{"text": f"{symbol}甲{symbol}"}]]},
+                }
+                self.assertTrue(matches_spam_pattern(message))
+                message["text"] = "ordinary"
+                self.assertFalse(matches_spam_pattern(message))
+
+        self.assertFalse(
+            matches_spam_pattern(
+                {
+                    "text": "批量",
+                    "reply_markup": {"inline_keyboard": [[{"text": "出售"}]]},
                 }
             )
         )

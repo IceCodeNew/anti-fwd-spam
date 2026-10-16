@@ -201,6 +201,8 @@ AUTHORED_SPAM_PATTERNS = (
     re.compile(r"\A承接广\*告\*戴\*發\uff0c十万精准各行业裙\s+包效果 包效果 @[A-Za-z0-9_]{5,32}\s*\Z"),
 )
 
+REPEATED_SYMBOLS_RE = re.compile(r"💰(?:[^💰]*💰){3}|🔴(?:[^🔴]*🔴){3}")
+
 SPAM_PATTERNS = (
     # Contact solicitation.
     re.compile(
@@ -208,7 +210,7 @@ SPAM_PATTERNS = (
         r"|看头像\s*加?\s*(?:[qQ]|扣扣?)(?![A-Za-z\u4e00-\u9fff])"
     ),
     # Repeated symbols.
-    re.compile(r"([💰🔴])(?:\s*\1){3,}"),
+    REPEATED_SYMBOLS_RE,
     # Sexual solicitation.
     re.compile(r"(?:极品|新人|童颜|嫩)小?萝莉(?!塔)|(?:萝莉|约炮|包夜|外围|楼凤)(?:上门|包夜|资源)"),
     # Attack services.

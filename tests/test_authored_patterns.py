@@ -8,26 +8,6 @@ BULK_OFFER = "承接广*告*戴*發\uff0c十万精准各行业裙  \n包效果 �
 
 
 class AuthoredPatternTests(unittest.TestCase):
-    def test_income_link_buttons_use_only_complete_current_button_labels(self) -> None:
-        for text in ("💰一天七八万随便拿💰", "💰一天6000\uff0c轻松到手💰", "一\u200b天七💎八万随便拿"):
-            with self.subTest(text=text):
-                markup = {"inline_keyboard": [[{"text": text, "url": "https://example.invalid/offer"}]]}
-                self.assertTrue(matches_spam_pattern({"text": "1", "reply_markup": markup}))
-                self.assertFalse(matches_spam_pattern({"text": "1", "reply_to_message": {"reply_markup": markup}}))
-                self.assertFalse(matches_spam_pattern({"text": text}))
-                self.assertFalse(matches_spam_pattern({"reply_markup": {"inline_keyboard": [[{"text": text}]]}}))
-        for text in (
-            "财富入口",
-            "0本金搬砖",
-            "一天6000步",
-            "一天6000元住院费",
-            "一天七八万随便拿是骗局",
-            "举报一天七八万随便拿",
-        ):
-            with self.subTest(text=text):
-                markup = {"inline_keyboard": [[{"text": text, "url": "https://example.invalid/info"}]]}
-                self.assertFalse(matches_spam_pattern({"reply_markup": markup}))
-
     def test_complete_offers_match_only_the_current_authored_field(self) -> None:
         for field in ("text", "caption"):
             with self.subTest(field=field):

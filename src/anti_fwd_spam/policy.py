@@ -15,28 +15,13 @@ from .constants import (
     SUPPORTED_FORWARD_ORIGINS,
     TOKEN_PART_COUNT,
 )
-from .rules import AUTHORED_SPAM_PATTERNS, INCOME_BUTTON_RE, SPAM_PATTERNS
+from .rules import AUTHORED_SPAM_PATTERNS, SPAM_PATTERNS
 
 
 def matches_spam_pattern(message: dict[str, object]) -> bool:
-    """Search current text, link buttons and identity fields without inspecting replies."""
+    """Search current text and identity fields without inspecting replies."""
     if any(matches_spam_text(text) for text in _pattern_texts(message)):
         return True
-    markup = message.get("reply_markup")
-    keyboard = markup.get("inline_keyboard") if isinstance(markup, dict) else None
-    if isinstance(keyboard, list):
-        for row in keyboard:
-            if not isinstance(row, list):
-                continue
-            for button in row:
-                if (
-                    isinstance(button, dict)
-                    and isinstance(url := button.get("url"), str)
-                    and url.startswith(("https://", "http://", "tg://"))
-                    and isinstance(label := button.get("text"), str)
-                    and INCOME_BUTTON_RE.fullmatch(label)
-                ):
-                    return True
     return any(
         isinstance(text := message.get(field), str) and any(pattern.search(text) for pattern in AUTHORED_SPAM_PATTERNS)
         for field in ("text", "caption")

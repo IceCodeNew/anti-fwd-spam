@@ -5,27 +5,6 @@ import { message, report } from './telegram-fake.mjs';
 
 model.enabled = true;
 
-for (const [isBot, mature] of [[true, false], [false, false], [false, true]]) {
-  test(`user: income buttons obey sender policy with bot=${isBot}, mature=${mature}`, async () => {
-    if (mature) await database.prepare('INSERT INTO member_activity VALUES (123,-10012,22,10)').run();
-    const target = message();
-    target.from.is_bot = isBot;
-    target.text = '1';
-    target.reply_to_message = { ...message(80, 11), text: 'ordinary discussion' };
-    target.reply_markup = { inline_keyboard: [[{ text: '💰一\u200b天七💎八万随便拿💰', url: 'https://example.invalid/offer' }]] };
-    if (isBot) target.guest_bot_caller_user = { id: 11, is_bot: false, first_name: 'Caller' };
-    telegram.send(message(80, 11));
-    telegram.send(target);
-    assert.equal((await dispatch({ update_id: 1, message: target })).status, 200);
-    assert.equal(telegram.has(81), mature);
-    assert.equal(telegram.has(80), true);
-    assert.equal(telegram.canSend(22), isBot || mature);
-    assert.equal(telegram.canSend(11), true);
-    assert.equal(model.state !== null, mature);
-    assert.equal((await database.prepare('SELECT COUNT(*) AS n FROM blacklisted_users').first()).n, 0);
-  });
-}
-
 test('user: Given a spam probability at the threshold, When a new message arrives, Then that message disappears and its sender is permanently muted with history intact', async () => {
   const target = message();
   target.from.first_name = 'Alice';

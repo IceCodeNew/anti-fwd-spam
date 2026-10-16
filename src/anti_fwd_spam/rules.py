@@ -201,6 +201,11 @@ AUTHORED_SPAM_PATTERNS = (
     re.compile(r"\A承接广\*告\*戴\*發\uff0c十万精准各行业裙\s+包效果 包效果 @[A-Za-z0-9_]{5,32}\s*\Z"),
 )
 
+INCOME_BUTTON_RE = re.compile(
+    r"[\W_]*一[\W_]*天[\W_]*(?:七[\W_]*八[\W_]*万[\W_]*随[\W_]*便[\W_]*拿"
+    r"|6000[\W_]*轻[\W_]*松[\W_]*到[\W_]*手)[\W_]*"
+)
+
 SPAM_PATTERNS = (
     # Contact solicitation.
     re.compile(

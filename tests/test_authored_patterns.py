@@ -5,9 +5,60 @@ import unittest
 from anti_fwd_spam.policy import matches_spam_pattern, matches_spam_text
 
 BULK_OFFER = "承接广*告*戴*發\uff0c十万精准各行业裙  \n包效果 包效果 @sample_contact"
+GROUP_ACCOUNT_OFFER = "出+86裙發号 搭配运控端口 不封浩\n2秒發一个裙  日蕟4W @sample_contact"
+DISTRIBUTION_OFFER = "接TG厂吿𠰺发/𠰺查同行裙\n日发千万 统统高质量 @sample_contact"
+SALES_BUTTON = "1️⃣🔥卖薇信号/手机咔/接码等-啥都有"
 
 
 class AuthoredPatternTests(unittest.TestCase):
+    def test_distribution_templates_require_a_complete_current_offer(self) -> None:
+        for offer in (GROUP_ACCOUNT_OFFER, DISTRIBUTION_OFFER):
+            for field in ("text", "caption"):
+                with self.subTest(offer=offer, field=field):
+                    self.assertTrue(matches_spam_pattern({field: " \n" + offer + "\t"}))
+                    for framed in (
+                        "警惕广告\uff1a" + offer,
+                        offer + "\uff0c请勿联系",
+                        "“" + offer + "”",
+                        offer + "\uff1f",
+                    ):
+                        self.assertFalse(matches_spam_pattern({field: framed}))
+                    for contact in ("", "@a", "@" + "x" * 33):
+                        self.assertFalse(matches_spam_pattern({field: offer.replace("@sample_contact", contact)}))
+            self.assertFalse(matches_spam_text(offer))
+            for field in ("from", "contact", "reply_to_message", "quote", "external_reply"):
+                self.assertFalse(matches_spam_pattern({"text": "请核实", field: {"text": offer, "first_name": offer}}))
+            first, second = offer.split("\n")
+            self.assertFalse(matches_spam_pattern({"text": first, "caption": second}))
+
+    def test_exact_button_offer_requires_an_empty_or_numeric_current_body(self) -> None:
+        markup = {"inline_keyboard": [[{"text": SALES_BUTTON}]]}
+        for body in ({}, {"text": ""}, {"text": "1792391006137"}, {"caption": " 123\n"}):
+            with self.subTest(body=body):
+                self.assertTrue(matches_spam_pattern({**body, "reply_markup": markup}))
+        for body in ("请举报这个售号菜单", "分析广告样本", "123abc", "🙂"):
+            for field in ("text", "caption"):
+                self.assertFalse(matches_spam_pattern({field: body, "reply_markup": markup}))
+        self.assertFalse(
+            matches_spam_pattern(
+                {"text": "123", "rich_message": {"text": "请举报这个售号菜单"}, "reply_markup": markup}
+            )
+        )
+        for label in ("警惕\uff1a" + SALES_BUTTON, SALES_BUTTON + "\uff08样本\uff09", "查看教程", "卖账号", ""):
+            self.assertFalse(
+                matches_spam_pattern({"text": "123", "reply_markup": {"inline_keyboard": [[{"text": label}]]}})
+            )
+        for key in ("url", "callback_data"):
+            self.assertFalse(
+                matches_spam_pattern({"reply_markup": {"inline_keyboard": [[{"text": "普通按钮", key: SALES_BUTTON}]]}})
+            )
+        for field in ("reply_to_message", "quote", "external_reply", "from", "contact"):
+            self.assertFalse(
+                matches_spam_pattern({"text": "123", field: {"reply_markup": markup, "first_name": SALES_BUTTON}})
+            )
+        for markup in (None, [], {}, {"inline_keyboard": None}, {"inline_keyboard": [None, [None, {"text": 123}]]}):
+            self.assertFalse(matches_spam_pattern({"text": "123", "reply_markup": markup}))
+
     def test_repeated_symbols_accumulate_across_current_visible_fields(self) -> None:
         for labels, expected in (
             (["💰甲💰", "乙💰"], False),
@@ -43,7 +94,7 @@ class AuthoredPatternTests(unittest.TestCase):
         for symbol in ("💰", "🔴"):
             with self.subTest(symbol=symbol):
                 self.assertTrue(matches_spam_text(f"{symbol}甲{symbol}\n{symbol}\u200b{symbol}"))
-                message = {
+                message: dict[str, object] = {
                     "text": symbol,
                     "from": {"first_name": symbol},
                     "reply_markup": {"inline_keyboard": [[{"text": f"{symbol}甲{symbol}"}]]},

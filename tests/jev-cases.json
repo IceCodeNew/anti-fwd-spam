@@ -1470,5 +1470,123 @@
     "spam": false,
     "message": {"from": {"first_name": "Member"}, "text": "日\ufe0f撸\ufe0f1W是骗局，大家别信，请举报"},
     "source": {"kind": "synthetic boundary control", "notes": "An explicit warning retains its exemption even when it repeats an obfuscated earnings pitch."}
+  },
+  {
+    "name": "portsfish-free-project-car",
+    "spam": true,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "好项目无费用年底带你搞奔驰 @sample_contact"
+    },
+    "source": {
+      "kind": "sanitized export",
+      "notes": "Low-entry-cost income recruitment versus warning, education or completed personal experience."
+    }
+  },
+  {
+    "name": "portsfish-free-crypto-mentoring",
+    "spam": true,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "带几个人赚U,不收学费 @sample_contact"
+    },
+    "source": {
+      "kind": "sanitized export",
+      "notes": "Low-entry-cost income recruitment versus warning, education or completed personal experience."
+    }
+  },
+  {
+    "name": "portsfish-free-project-warning",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "请举报：年底带你搞奔驰，不收学费"
+    },
+    "source": {
+      "kind": "synthetic boundary control",
+      "notes": "Low-entry-cost income recruitment versus warning, education or completed personal experience."
+    }
+  },
+  {
+    "name": "portsfish-free-project-caption-warning",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "caption": "请举报：年底带你搞奔驰，不收学费"
+    },
+    "source": {
+      "kind": "synthetic boundary control",
+      "notes": "Low-entry-cost income recruitment versus warning, education or completed personal experience."
+    }
+  },
+  {
+    "name": "portsfish-free-education",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "开源课程不收学费，代码在项目仓库，欢迎共同学习"
+    },
+    "source": {
+      "kind": "synthetic boundary control",
+      "notes": "Low-entry-cost income recruitment versus warning, education or completed personal experience."
+    }
+  },
+  {
+    "name": "portsfish-completed-car-purchase",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "我去年靠工作攒钱，年底买了奔驰"
+    },
+    "source": {
+      "kind": "synthetic boundary control",
+      "notes": "Low-entry-cost income recruitment versus warning, education or completed personal experience."
+    }
+  },
+  {
+    "name": "portsfish-rich-crypto-brushing",
+    "spam": true,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "",
+      "rich_message": {
+        "text": "招欧易、币安交易所现货买卖刷手，每天做，十几分钟结算，无风险项目小白可做，进频道了解详细 @sample_contact"
+      }
+    },
+    "source": {
+      "kind": "sanitized export",
+      "notes": "Current rich text is visible content; an explicit rich-text warning remains non-promotional."
+    }
+  },
+  {
+    "name": "portsfish-rich-ad-warning",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "",
+      "rich_message": {
+        "text": "警告：有人用“招欧易、币安交易所现货买卖刷手，无风险”招募，请勿参与，已举报"
+      }
+    },
+    "source": {
+      "kind": "synthetic boundary control",
+      "notes": "Current rich text is visible content; an explicit rich-text warning remains non-promotional."
+    }
   }
 ]

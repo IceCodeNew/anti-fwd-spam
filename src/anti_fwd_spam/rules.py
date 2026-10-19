@@ -18,6 +18,15 @@ EARNINGS_PITCH_HINT = (
     "个人已实现收入或交易记录、游戏经验值、询问、警告和引用举报仍不是推广。"
 )
 
+EASY_INCOME_RE = re.compile(r"(?:无费用|无学费|不收学费|年底.{0,8}奔驰|带.{0,8}赚U)")
+EASY_INCOME_EXCLUSION_RE = re.compile(
+    r"(?:警惕|警告|举报|反诈|诈骗|骗局|分析|核实|请问|是不是|是否|[?\uff1f“”「」『』\x22\x27`])"
+)
+EASY_INCOME_HINT = (
+    "面向读者承诺无费用、无学费、带赚U或年底带你买奔驰\uff0c是以轻松收益招人参与项目的广告\uff1b不要求联系方式。"
+    "个人已实现收入、普通薪资、警告、举报和引用分析不算招募。"
+)
+
 PROJECT_RECRUITMENT_HINT = (
     "项目合作招募: 当前正文“找想干事的兄弟合作”, 同时sender简介表示项目大量找人合作、"
     "点击此号码看简介做项目并提供联系人入口, 这是面向群成员的垃圾招募, 概率按广告判断。"
@@ -43,10 +52,6 @@ ORDINARY_SERVICE_SHORT_RE = re.compile(r"^(?:全套)?上门安装$")
 
 # Jev reference hints: current discussion and referenced invitations stay separate.
 QUOTED_AD_ANALYSIS_RE = re.compile(r"(?:是不是|算不算|是否为).{0,8}广告")
-
-QUOTED_CHANNEL_DISCUSSION_RE = re.compile(r"(?:广告嫌疑|会被封|举报|别联系|提醒|警告)")
-
-QUOTED_CHANNEL_INVITE_RE = re.compile(r"(?:欢迎加入|加入).{0,12}(?:频道|群)")
 
 ORDINARY_CONTEXT_HINTS = (
     ORDINARY_PAYMENT_HINT,
@@ -198,8 +203,14 @@ DISABLED_GROUP_NOTICE_RE = re.compile(
 # Whole-message signatures stay out of shared contact and profile checks.
 AUTHORED_SPAM_PATTERNS = (
     DISABLED_GROUP_NOTICE_RE,
+    re.compile(r"\A\s*出\+86裙發号 搭配运控端口 不封浩\s+2秒發一个裙\s+日蕟4W\s+@[A-Za-z0-9_]{5,32}\s*\Z"),
+    re.compile(r"\A\s*接TG厂吿𠰺发/𠰺查同行裙\s+日发千万 统统高质量\s+@[A-Za-z0-9_]{5,32}\s*\Z"),
     re.compile(r"\A承接广\*告\*戴\*發\uff0c十万精准各行业裙\s+包效果 包效果 @[A-Za-z0-9_]{5,32}\s*\Z"),
 )
+
+# Keep explanatory or warning bodies out of this exact sales-menu signature.
+BUTTON_OFFER_BODY_RE = re.compile(r"\A[0-9\s]*\Z")
+BUTTON_OFFER_RE = re.compile(r"\A1️⃣🔥卖薇信号/手机咔/接码等-啥都有\Z")
 
 REPEATED_SYMBOLS_RE = re.compile(r"💰(?:[^💰]*💰){3}|🔴(?:[^🔴]*🔴){3}")
 

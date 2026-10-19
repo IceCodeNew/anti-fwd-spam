@@ -17,7 +17,13 @@ from anti_fwd_spam.model import (
     sender_bio,
     spam_probability,
 )
-from anti_fwd_spam.rules import COUNTERFEIT_CARD_HINT, INSTRUCTIONS, JOIN_PROFILE_INSTRUCTIONS, PROJECT_RECRUITMENT_HINT
+from anti_fwd_spam.rules import (
+    COUNTERFEIT_CARD_HINT,
+    EASY_INCOME_HINT,
+    INSTRUCTIONS,
+    JOIN_PROFILE_INSTRUCTIONS,
+    PROJECT_RECRUITMENT_HINT,
+)
 from tests.test_telegram import ClockLoop
 
 if TYPE_CHECKING:
@@ -137,6 +143,22 @@ class JoinModelInputTests(unittest.TestCase):
 
 
 class CardHintTests(unittest.TestCase):
+    def test_easy_income_hint_stays_in_current_unframed_text_or_caption(self) -> None:
+        offer = "好项目无费用年底带你搞奔驰 @sample_contact"
+        for field in ("text", "caption"):
+            self.assertIn(EASY_INCOME_HINT, contextual_hints({"message": {field: offer}}))
+            for warning in ("请举报\uff1a", "请问是否可信\uff1a", "警告\uff1a", "诈骗广告\uff1a", "“"):
+                self.assertNotIn(EASY_INCOME_HINT, contextual_hints({"message": {field: warning + offer}}))
+        for state in (
+            {"message": {"text": "请核实"}, "bio": offer},
+            {"message": {"text": "请核实"}, "context": {"reply": {"text": offer}}},
+            {"message": {"text": "正常讨论"}, "contact": {"card_name": offer}},
+            {"message": {"text": "举报", "caption": offer}},
+            {"message": {"text": None, "caption": 123}},
+            {"nickname": offer, "bio": offer},
+        ):
+            self.assertNotIn(EASY_INCOME_HINT, contextual_hints(dict(state)))
+
     def test_hint_uses_only_the_current_visible_card_not_profiles_or_references(self) -> None:
         card = {"first_name": "假币真用可过机找妹扫街没问题"}
         for text in (None, "管理员请处理这张广告名片", "这张名片是不是广告"):

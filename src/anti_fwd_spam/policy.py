@@ -15,7 +15,7 @@ from .constants import (
     SUPPORTED_FORWARD_ORIGINS,
     TOKEN_PART_COUNT,
 )
-from .rules import AUTHORED_SPAM_PATTERNS, REPEATED_SYMBOLS_RE, SPAM_PATTERNS
+from .rules import AUTHORED_SPAM_PATTERNS, BUTTON_OFFER_BODY_RE, BUTTON_OFFER_RE, REPEATED_SYMBOLS_RE, SPAM_PATTERNS
 
 
 def matches_spam_pattern(message: dict[str, object]) -> bool:
@@ -26,14 +26,24 @@ def matches_spam_pattern(message: dict[str, object]) -> bool:
     markup = message.get("reply_markup")
     keyboard = markup.get("inline_keyboard") if isinstance(markup, dict) else None
     if isinstance(keyboard, list):
-        texts.extend(
+        labels = [
             label
             for row in keyboard
             if isinstance(row, list)
             for button in row
             if isinstance(button, dict)
             if isinstance(label := button.get("text"), str)
-        )
+        ]
+        if (
+            "rich_message" not in message
+            and all(
+                isinstance(text := message.get(field, ""), str) and BUTTON_OFFER_BODY_RE.fullmatch(text)
+                for field in ("text", "caption")
+            )
+            and any(BUTTON_OFFER_RE.fullmatch(label) for label in labels)
+        ):
+            return True
+        texts.extend(labels)
     if REPEATED_SYMBOLS_RE.search("\n".join(texts)):
         return True
     return any(

@@ -26,6 +26,9 @@ from .rules import (
     COUNTERFEIT_CARD_HINT,
     EARNINGS_PITCH_HINT,
     EARNINGS_PITCH_RE,
+    EASY_INCOME_EXCLUSION_RE,
+    EASY_INCOME_HINT,
+    EASY_INCOME_RE,
     INSTRUCTIONS,
     JOIN_PROFILE_INSTRUCTIONS,
     ORDINARY_CONTEXT_HINTS,
@@ -36,8 +39,6 @@ from .rules import (
     PROJECT_RECRUITMENT_HINT,
     PROJECT_RECRUITMENT_TEXT_RE,
     QUOTED_AD_ANALYSIS_RE,
-    QUOTED_CHANNEL_DISCUSSION_RE,
-    QUOTED_CHANNEL_INVITE_RE,
 )
 from .telegram import TelegramError, call_method
 
@@ -99,6 +100,11 @@ def contextual_hints(state: dict[str, object]) -> tuple[str, ...]:
         )
         else []
     )
+    current_texts = [message[field] for field in ("text", "caption") if isinstance(message.get(field), str)]
+    if any(EASY_INCOME_RE.search(text) for text in current_texts) and not any(
+        EASY_INCOME_EXCLUSION_RE.search(text) for text in current_texts
+    ):
+        hints.append(EASY_INCOME_HINT)
     contact = state.get("contact")
     card_name = contact.get("card_name") if isinstance(contact, dict) else None
     if isinstance(card_name, str) and any(word in card_name for word in ("假币", "假钞")):
@@ -116,14 +122,6 @@ def contextual_hints(state: dict[str, object]) -> tuple[str, ...]:
         hints.append(ORDINARY_CONTEXT_HINTS[1])
     if has_reference and QUOTED_AD_ANALYSIS_RE.search(text):
         hints.append(ORDINARY_CONTEXT_HINTS[2])
-    if has_reference and QUOTED_CHANNEL_DISCUSSION_RE.search(text):
-        reference = message.get("reply_to_message")
-        reference_text = reference.get("text") if isinstance(reference, dict) else None
-        if isinstance(reference_text, str) and QUOTED_CHANNEL_INVITE_RE.search(reference_text):
-            hints.append(
-                "引用来源隔离: 当前正文明确讨论、质疑、提醒或举报被引用的频道/群邀请, 不是主动推广; "
-                "只有当前正文背书、推荐、联系、加入或下单时, 才把引用广告归因给当前发送者。"
-            )
     return tuple(hints)
 
 

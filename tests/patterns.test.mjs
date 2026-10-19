@@ -304,8 +304,8 @@ for (const status of ['administrator', 'creator', 'anonymous']) {
   });
 }
 
-for (const text of ['💰'.repeat(3), '🔴 '.repeat(3), '💰💰文字💰💰']) {
-  test(`user: Given a short or interrupted emoji run in a bot reply, When received, Then neither message is automatically removed`, async () => {
+for (const text of ['💰'.repeat(3), '🔴 '.repeat(3), '💰💰文字💰']) {
+  test(`user: Given fewer than four matching symbols in a bot reply, When received, Then neither message is automatically removed`, async () => {
     const original = { ...message(80, 11), text: '💰'.repeat(192) };
     const target = { ...message(), from: { ...message().from, is_bot: true }, text, reply_to_message: original };
     telegram.send(original);
@@ -353,7 +353,7 @@ test('user: Given ordinary discussion and short emoji runs, When Jev accepts the
     '讨论公司福利', '讨论强奸案件', '请举报偷拍和禁忌资源', '网黄是什么？',
     `示例：${'💰'.repeat(3)}`, '@example_bot campaign_update',
     '💰'.repeat(3), '🔴 '.repeat(3),
-    '💰'.repeat(2) + '🔴'.repeat(2), '💰💰💰文字💰', '🔴🔴💰🔴🔴', '普通消息',
+    '💰'.repeat(2) + '🔴'.repeat(2), '💰💰文字💰', '🔴🔴💰🔴', '普通消息',
     '收款码在哪里设置？', '收款码今天收了一万块的货款', '收款码今天收入1000多', '收款码今天赚了100块',
     '新人报到', '新人萝莉塔爱好者报到', '萝莉塔风格的裙子', '萝莉塔服装资源分享', '新人求推荐萝莉塔店铺', '嫩粉色萝莉塔裙', '明天约课',
     '快递可以上门取件',

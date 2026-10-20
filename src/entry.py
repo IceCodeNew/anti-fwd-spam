@@ -10,8 +10,9 @@ from urllib.parse import urlsplit
 
 from workers import Request, Response, WorkerEntrypoint, fetch
 
+from anti_fwd_spam.constants import MODEL_PROVIDERS
 from anti_fwd_spam.evidence import ReportStore
-from anti_fwd_spam.model import ModelConfig, model_providers
+from anti_fwd_spam.model import ModelConfig
 from anti_fwd_spam.moderation import AppResponse, Moderator
 from anti_fwd_spam.policy import Config, ConfigError
 from anti_fwd_spam.tasks import ModelTasks
@@ -77,11 +78,9 @@ class Default(WorkerEntrypoint):
         )
 
     def _get_models(self) -> tuple[ModelConfig, ...]:
-        backend = _environment_string(self.env, "MODEL_BACKEND")
-        providers = model_providers(backend)
         return tuple(
-            ModelConfig(url, model, key, backend or "jev")
-            for name, (url, model) in providers.items()
+            ModelConfig(url, model, key)
+            for name, (url, model) in MODEL_PROVIDERS.items()
             if (key := _environment_string(self.env, name))
         )
 

@@ -58,37 +58,9 @@ printf '%s' "$TELEGRAM_WEBHOOK_SECRET" | mise exec -- uv run pywrangler secret p
 
 ## Optional model provider
 
-Semantic classification is optional. Review provider privacy and pricing terms before saving a provider key as a Worker secret. Set `MODEL_BACKEND` explicitly to opt into Luna; saving a Luna-capable provider key alone does not select it.
+Semantic classification is optional and uses GPT-6 Luna Decisions. Review provider privacy and pricing terms before saving a provider key as a Worker secret. A supported key enables classification; there is no model-backend selector.
 
-| `MODEL_BACKEND` | Selection |
-| --- | --- |
-| Unset, empty, or `jev` | Jev, with its original prompts, provider order, and request protocols, including Vercel's legacy evaluation-model protocol. |
-| `luna` | GPT-6 Luna Decisions, using a separate provider chain and Luna-specific prompts. |
-| Any other value | Configuration error; not an automatic fallback to either backend. |
-
-[`model_providers(backend)` in `src/anti_fwd_spam/model.py`](../src/anti_fwd_spam/model.py) selects the backend's ordered mapping. `MODEL_PROVIDERS` and `LUNA_PROVIDERS` in [`src/anti_fwd_spam/constants.py`](../src/anti_fwd_spam/constants.py) own the keys, endpoints, and model IDs. Missing or empty keys are skipped; no configured key for the selected backend means no model classification.
-
-### Jev providers
-
-Jev uses `MODEL_PROVIDERS` in this order:
-
-| Priority | Platform | Worker secret |
-| --- | --- | --- |
-| 1 | TypeSafe | `TYPESAFE_AI_API_KEY` |
-| 2 | Experiential | `EXPERIENTIAL_API_KEY` |
-| 3 | OpenCode | `OPENCODE_API_KEY` |
-| 4 | CommandCode | `CMD_API_KEY` |
-| 5 | Vercel AI Gateway | `AI_GATEWAY_API_KEY` |
-
-For example, leave `MODEL_BACKEND` unset and configure an existing Jev route:
-
-```bash
-mise exec -- uv run pywrangler secret put EXPERIENTIAL_API_KEY
-```
-
-### Luna opt-in and providers
-
-Luna uses `LUNA_PROVIDERS` in this order, independently of the Jev chain:
+`MODEL_PROVIDERS` in [`src/anti_fwd_spam/constants.py`](../src/anti_fwd_spam/constants.py) owns the ordered keys, endpoints, and model IDs. Missing or empty keys are skipped; without a configured supported key, model classification is unavailable.
 
 | Priority | Platform | Worker secret |
 | --- | --- | --- |
@@ -97,18 +69,25 @@ Luna uses `LUNA_PROVIDERS` in this order, independently of the Jev chain:
 | 3 | OpenRouter | `OPENROUTER_API_KEY` |
 | 4 | Vercel AI Gateway | `AI_GATEWAY_API_KEY` |
 
-To opt into Luna through Experiential:
+For example, enable Luna through Experiential:
 
 ```bash
-printf '%s' luna | mise exec -- uv run pywrangler secret put MODEL_BACKEND
 mise exec -- uv run pywrangler secret put EXPERIENTIAL_API_KEY
 ```
 
-Add only the other provider secrets intended for failover. `OPENAI_API_KEY` is required only for the official OpenAI route; the gateway routes use their own credentials. Experiential and Vercel keys are shared setting names across backends, but their endpoint, model, prompt, and wire format follow `MODEL_BACKEND`. Luna does not use Jev-only credentials or fall back to Jev.
+Add only the other provider secrets intended for failover. `OPENAI_API_KEY` is required only for the official OpenAI route; the gateway routes use their own credentials. Experiential, official OpenAI, and Vercel use native Decisions requests; OpenRouter uses its System One-style Noul interface. One static message prompt and one static joining-profile prompt apply across providers, without conditional hints.
+
+### Compatibility and migration
+
+**Breaking change:** Jev is retired. Existing deployments with `EXPERIENTIAL_API_KEY` or `AI_GATEWAY_API_KEY` now use Luna, including its different endpoint and request format, without another opt-in. Review provider access, terms, and billing before deploying.
+
+`TYPESAFE_AI_API_KEY`, `OPENCODE_API_KEY`, and `CMD_API_KEY` are ignored. A deployment with only those keys has no model classification; configure at least one supported key from the table above to enable Luna. Local rules, reports, and blacklists still operate without a model.
+
+`MODEL_BACKEND` is ignored regardless of its value; it cannot restore Jev or disable Luna when a supported key is configured. Remove it from `wrangler.jsonc`'s `vars` if present. An existing Worker secret of that name is inert and may optionally be deleted; no secret deletion is required for migration, and deployment does not delete it automatically.
 
 ### Failover and costs
 
-Within the selected backend, additional configured providers are connection/HTTP error fallbacks, not extra votes or score-shopping. A completed answer ends classification, including a below-threshold, invalid, or refused answer. Both backends retain the fixed shared budget of four total attempts, not four per provider; provider rotation does not reset it. Existing durable retry delays remain owned by `RETRY_DELAYS` in [`src/anti_fwd_spam/tasks.py`](../src/anti_fwd_spam/tasks.py). See the [behavior contract](behavior.md#model-classification) for error and decision boundaries.
+Additional configured providers are connection/HTTP error fallbacks, not extra votes or score-shopping. A completed answer ends classification, including a below-threshold, invalid, or refused answer. Classification has a fixed shared budget of four total attempts, not four per provider; provider rotation does not reset it. Existing durable retry delays remain owned by `RETRY_DELAYS` in [`src/anti_fwd_spam/tasks.py`](../src/anti_fwd_spam/tasks.py). See the [behavior contract](behavior.md#model-classification) for error and decision boundaries.
 
 Experiential offers a free allowance, not unlimited free usage. Exhausted allowance can produce an error and move work to a configured paid provider; Experiential usage itself may also be billable under the account's terms. This is an ordered provider waterfall, not a strict-free mode or a cost cap. Configure provider-side billing limits and omit paid credentials when paid failover is not intended. Keep secret values out of files, logs, and command arguments.
 

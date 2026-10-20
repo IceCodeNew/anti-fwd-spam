@@ -1518,5 +1518,50 @@
       "kind": "synthetic boundary control",
       "notes": "Sanitized boundary control: distinguish an explicit warning about linked advertising from actual own-account solicitation despite research wording."
     }
+  },
+  {
+    "name": "message-benign-with-own-sexual-bio",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "这段 Python 异步代码为什么会超时？"
+    },
+    "bio": "成人资源付费解锁，私聊下单 @<contact>",
+    "source": {
+      "kind": "synthetic boundary control",
+      "notes": "An ordinary message and an own sales pitch share an advertising biography; profile context alone must not classify the current message as promotion. All identities and contacts are synthetic."
+    }
+  },
+  {
+    "name": "message-warning-with-own-sexual-bio",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "这条广告我已经举报了，请勿联系。"
+    },
+    "bio": "成人资源付费解锁，私聊下单 @<contact>",
+    "source": {
+      "kind": "synthetic boundary control",
+      "notes": "An ordinary message and an own sales pitch share an advertising biography; profile context alone must not classify the current message as promotion. All identities and contacts are synthetic."
+    }
+  },
+  {
+    "name": "message-own-sales-with-own-bio",
+    "spam": true,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "成人资源付费解锁，私聊下单 @<contact>"
+    },
+    "bio": "资源联系入口 @<contact>",
+    "source": {
+      "kind": "synthetic boundary control",
+      "notes": "An ordinary message and an own sales pitch share an advertising biography; profile context alone must not classify the current message as promotion. All identities and contacts are synthetic."
+    }
   }
 ]

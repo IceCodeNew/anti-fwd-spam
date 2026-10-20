@@ -11,38 +11,17 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
 from .constants import (
-    GATEWAY_URL,
-    LUNA_PROVIDERS,
     MAX_MODEL_RESPONSE_BYTES,
     MAX_PROFILE_BIO_BYTES,
     MAX_PROFILE_HANDLES,
     MAX_PROFILE_TEXT,
     MAX_TELEGRAM_ID,
     MODEL_CONTENT_FIELDS,
-    MODEL_PROVIDERS,
     MODEL_TIMEOUT_SECONDS,
     PUBLIC_PROFILE_HOSTS,
 )
-from .policy import ConfigError, display_name, reply_target
-from .rules import (
-    COUNTERFEIT_CARD_HINT,
-    EARNINGS_PITCH_HINT,
-    EARNINGS_PITCH_RE,
-    INSTRUCTIONS,
-    JOIN_PROFILE_INSTRUCTIONS,
-    LUNA_INSTRUCTIONS,
-    LUNA_JOIN_PROFILE_INSTRUCTIONS,
-    ORDINARY_CONTEXT_HINTS,
-    ORDINARY_SERVICE_PAYMENT_RE,
-    ORDINARY_SERVICE_SHORT_RE,
-    PROFILE_HANDLE_RE,
-    PROJECT_RECRUITMENT_BIO_RE,
-    PROJECT_RECRUITMENT_HINT,
-    PROJECT_RECRUITMENT_TEXT_RE,
-    QUOTED_AD_ANALYSIS_RE,
-    QUOTED_CHANNEL_DISCUSSION_RE,
-    QUOTED_CHANNEL_INVITE_RE,
-)
+from .policy import display_name, reply_target
+from .rules import INSTRUCTIONS, JOIN_PROFILE_INSTRUCTIONS, PROFILE_HANDLE_RE
 from .telegram import TelegramError, call_method
 
 if TYPE_CHECKING:
@@ -59,17 +38,6 @@ class ModelConfig:
     url: str
     model: str
     api_key: str = dataclasses.field(repr=False)
-    backend: str = "jev"
-
-
-def model_providers(backend: str | None) -> dict[str, tuple[str, str]]:
-    """Select one independent provider chain; an absent switch keeps Jev unchanged."""
-    if backend in (None, "", "jev"):
-        return MODEL_PROVIDERS
-    if backend == "luna":
-        return LUNA_PROVIDERS
-    message = "MODEL_BACKEND must be jev or luna"
-    raise ConfigError(message)
 
 
 def extract_profile_handles(bio: object) -> tuple[str, ...]:
@@ -99,47 +67,6 @@ def extract_profile_handles(bio: object) -> tuple[str, ...]:
 
 def _profile_text(value: object) -> str | None:
     return value[:MAX_PROFILE_TEXT] if isinstance(value, str) and value else None
-
-
-def contextual_hints(state: dict[str, object]) -> tuple[str, ...]:
-    """Add narrow clarifications only when the current input matches their evidence boundary."""
-    message = state.get("message")
-    if not isinstance(message, dict):
-        return ()
-    hints = (
-        [EARNINGS_PITCH_HINT]
-        if any(
-            isinstance(value := message.get(field), str) and EARNINGS_PITCH_RE.search(value)
-            for field in ("text", "caption")
-        )
-        else []
-    )
-    contact = state.get("contact")
-    card_name = contact.get("card_name") if isinstance(contact, dict) else None
-    if isinstance(card_name, str) and any(word in card_name for word in ("假币", "假钞")):
-        hints.append(COUNTERFEIT_CARD_HINT)
-    text = message.get("text")
-    if not isinstance(text, str):
-        return tuple(hints)
-    bio = state.get("bio")
-    if isinstance(bio, str) and PROJECT_RECRUITMENT_TEXT_RE.search(text) and PROJECT_RECRUITMENT_BIO_RE.search(bio):
-        hints.append(PROJECT_RECRUITMENT_HINT)
-    has_reference = isinstance(state.get("context"), dict)
-    if not has_reference and ORDINARY_SERVICE_PAYMENT_RE.search(text):
-        hints.append(ORDINARY_CONTEXT_HINTS[0])
-    if not has_reference and ORDINARY_SERVICE_SHORT_RE.fullmatch(text.strip()):
-        hints.append(ORDINARY_CONTEXT_HINTS[1])
-    if has_reference and QUOTED_AD_ANALYSIS_RE.search(text):
-        hints.append(ORDINARY_CONTEXT_HINTS[2])
-    if has_reference and QUOTED_CHANNEL_DISCUSSION_RE.search(text):
-        reference = message.get("reply_to_message")
-        reference_text = reference.get("text") if isinstance(reference, dict) else None
-        if isinstance(reference_text, str) and QUOTED_CHANNEL_INVITE_RE.search(reference_text):
-            hints.append(
-                "引用来源隔离: 当前正文明确讨论、质疑、提醒或举报被引用的频道/群邀请, 不是主动推广; "
-                "只有当前正文背书、推荐、联系、加入或下单时, 才把引用广告归因给当前发送者。"
-            )
-    return tuple(hints)
 
 
 async def public_profile(fetcher: Fetch, token: str, handle: str) -> dict[str, str] | None:
@@ -332,17 +259,9 @@ async def spam_probability(
     fetcher: Fetch, config: ModelConfig, state: dict[str, object], *, joining: bool = False
 ) -> float | None:
     """Score an ordinary message or joining profile, retaining the provider retry policy."""
-    gateway = config.url == GATEWAY_URL
-    decisions = config.backend == "luna" and urlsplit(config.url).hostname != "openrouter.ai"
+    decisions = urlsplit(config.url).hostname != "openrouter.ai"
     headers = {"authorization": f"Bearer {config.api_key}", "content-type": "application/json"}
-    if config.backend == "luna":
-        instructions = LUNA_JOIN_PROFILE_INSTRUCTIONS if joining else LUNA_INSTRUCTIONS
-    else:
-        instructions = JOIN_PROFILE_INSTRUCTIONS if joining else INSTRUCTIONS
-    if not joining:
-        hints = contextual_hints(state)
-        if hints:
-            instructions += "\n" + "\n".join(hints)
+    instructions = JOIN_PROFILE_INSTRUCTIONS if joining else INSTRUCTIONS
     payload: dict[str, object] = {"model": config.model}
     if decisions:
         payload.update(
@@ -350,19 +269,7 @@ async def spam_probability(
             questions=[{"name": "spam", "type": "predicate", "instructions": instructions}],
         )
     else:
-        payload.update(
-            state=state, questions={"spam": {"type": "boolean" if gateway else "noul", "instructions": instructions}}
-        )
-    if gateway:
-        payload.pop("model")
-        headers.update(
-            {
-                "ai-gateway-protocol-version": "0.0.1",
-                "ai-gateway-auth-method": "api-key",
-                "ai-evaluation-model-specification-version": "4",
-                "ai-model-id": config.model,
-            }
-        )
+        payload.update(state=state, questions={"spam": {"type": "noul", "instructions": instructions}})
 
     async def send_and_read() -> tuple[int, bytes]:
         response = await fetcher(
@@ -385,7 +292,7 @@ async def spam_probability(
         raise ModelRetryError
     if status != HTTPStatus.OK:
         raise ModelRetryError(retryable=False)
-    return _decode_probability(body, decisions=decisions, gateway=gateway)
+    return _decode_probability(body, decisions=decisions)
 
 
 async def _read_bounded_response(response: TelegramResponse) -> bytes:
@@ -415,7 +322,7 @@ async def _read_bounded_response(response: TelegramResponse) -> bytes:
             reader.releaseLock()
 
 
-def _decode_probability(body: bytes, *, decisions: bool, gateway: bool) -> float | None:
+def _decode_probability(body: bytes, *, decisions: bool) -> float | None:
     try:
         payload = json.loads(body)
     except (UnicodeDecodeError, ValueError, RecursionError):
@@ -429,14 +336,14 @@ def _decode_probability(body: bytes, *, decisions: bool, gateway: bool) -> float
         answer = answers.get("spam")
     else:
         return None
-    answer_type = "predicate" if decisions else ("boolean" if gateway else "noul")
+    answer_type = "predicate" if decisions else "noul"
     if (
         not isinstance(answer, dict)
         or answer.get("type") != answer_type
         or (decisions and answer.get("name") != "spam")
     ):
         return None
-    probability = answer.get("probability" if decisions or gateway else "noul")
+    probability = answer.get("probability" if decisions else "noul")
     if type(probability) in (int, float) and 0 <= probability <= 1:
         return float(probability)
     return None

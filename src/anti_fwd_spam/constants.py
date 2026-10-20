@@ -1,4 +1,4 @@
-"""Static data shared by the moderation and Jev runtime modules.
+"""Static data shared by the moderation and model runtime modules.
 
 This module has no application imports; changing a value here must not create
 an import cycle between policy parsing and model classification.

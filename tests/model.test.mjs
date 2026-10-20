@@ -60,7 +60,7 @@ test('user: Given a probability immediately below the stricter threshold, When c
 });
 
 for (const status of ['creator', 'administrator', 'kicked']) {
-  test(`user: Given a ${status} sender, When Jev flags their message, Then administrator messages and existing bans stay protected`, async () => {
+  test(`user: Given a ${status} sender, When the model flags their message, Then administrator messages and existing bans stay protected`, async () => {
     telegram.members.set(22, { status });
     model.probability = 1;
     telegram.send(message());
@@ -106,7 +106,7 @@ test('user: Given a media caption and unavailable biography, When classified, Th
   assert.equal(JSON.stringify(model.state).includes('private-file'), false);
 });
 
-test('user: Given a same-chat reply that endorses a spam message, When Jev flags the new sender, Then the reply is muted with one quoted context', async () => {
+test('user: Given a same-chat reply that endorses a spam message, When the model flags the new sender, Then the reply is muted with one quoted context', async () => {
   const spam = { ...message(80, 11), text: '看头像q <contact>', reply_to_message: message(79, 11) };
   const current = { ...message(), text: '真的羡慕，联系这个号', reply_to_message: spam };
   model.probability = 0.96;
@@ -121,7 +121,7 @@ test('user: Given a same-chat reply that endorses a spam message, When Jev flags
   assert.equal(model.state.context.reply.reply_to_message, undefined);
 });
 
-test('user: Given an established member quoting an ad and matching profile, When Jev rejects promotion, Then the quote and sender remain', async () => {
+test('user: Given an established member quoting an ad and matching profile, When the model rejects promotion, Then the quote and sender remain', async () => {
   await database.prepare('INSERT INTO member_activity VALUES (123,-10012,22,10)').run();
   const current = { ...message(), text: '看头像q <contact> 这是广告，别点',
     reply_to_message: { ...message(80, 11), text: '看头像q <contact>' } };
@@ -149,7 +149,7 @@ test('user: Given an external quote with an identifiable sender, When classified
   assert.equal(JSON.stringify(model.state).includes('"id":44'), false);
 });
 
-test('user: Given public targets in sender and referenced profiles, When Jev classifies the message, Then sanitized source profiles reach Jev without identifiers', async () => {
+test('user: Given public targets in sender and referenced profiles, When the model classifies the message, Then sanitized source profiles reach the model without identifiers', async () => {
   model.profile = { bio: '我的频道 @Example_Channel https://t.me/Example_Channel' };
   telegram.accounts.set('@example_channel', {
     id: -10055, type: 'channel', username: 'Example_Channel', title: 'Example Channel',
@@ -175,7 +175,7 @@ test('user: Given public targets in sender and referenced profiles, When Jev cla
   assert.equal(JSON.stringify(model.state).includes('permissions'), false);
 });
 
-test('user: Given an unresolved or private bio target, When Jev classifies the message, Then it stays unknown and Jev still runs once', async () => {
+test('user: Given an unresolved or private bio target, When the model classifies the message, Then it stays unknown and the model still runs once', async () => {
   model.profile = { bio: '个人频道 @Unknown_Channel https://t.me/+private' };
   telegram.faults.set('getChat', () => Response.json({ ok: false, error_code: 400 }, { status: 400 }));
   let requests = 0;
@@ -188,7 +188,7 @@ test('user: Given an unresolved or private bio target, When Jev classifies the m
   assert.equal(model.state.profile_targets, undefined);
 });
 
-test('user: Given a contact with a resolvable account, When Jev classifies it, Then the card name and account profile are supplied without the phone number', async () => {
+test('user: Given a contact with a resolvable account, When the model classifies it, Then the card name and account profile are supplied without the phone number', async () => {
   const current = { ...message(), contact: { first_name: '普通名字', user_id: 55, phone_number: '8613800000000' } };
   delete current.text;
   model.profiles.set(55, { first_name: '商务', last_name: '客服', bio: '联系我了解理财机会' });
@@ -202,7 +202,7 @@ test('user: Given a contact with a resolvable account, When Jev classifies it, T
   assert.equal(JSON.stringify(model.state).includes('8613800000000'), false);
 });
 
-test('user: Given an external quote, When Jev flags an endorsing sender, Then only the sender is muted and the bounded quote is context', async () => {
+test('user: Given an external quote, When the model flags an endorsing sender, Then only the sender is muted and the bounded quote is context', async () => {
   const current = { ...message(), text: '真的羡慕，联系这个号', external_reply: { origin: { type: 'hidden_user' } },
     quote: { text: '看头像q <contact>'.repeat(200) } };
   model.probability = 0.96;
@@ -228,7 +228,7 @@ test('user: Given a listed member\'s report or an edit, When the model would fla
   assert.equal(telegram.has(81), true);
 });
 
-test('user: Given a quoted message edited into promotion, When Jev flags the edited context, Then the sender is muted', async () => {
+test('user: Given a quoted message edited into promotion, When the model flags the edited context, Then the sender is muted', async () => {
   const original = { ...message(), text: '请看这个',
     external_reply: { origin: { type: 'hidden_user', sender_user_name: '广告账号' } },
     quote: { text: '普通内容' } };
@@ -319,7 +319,7 @@ test('user: Given structured text, When spam is detected, Then its text is evalu
   }
 });
 
-test('user: visible inline buttons reach Jev with reference isolation and no callback data', async () => {
+test('user: visible inline buttons reach the model with reference isolation and no callback data', async () => {
   const target = message();
   target.text = 'Please check this sample';
   target.reply_markup = { inline_keyboard: [[{ text: 'Advertising offer', url: 'https://example.invalid/offer', callback_data: 'private-callback' }]] };

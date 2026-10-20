@@ -1,4 +1,4 @@
-"""Classify message content with Jev without sending conversation history."""
+"""Classify message content with decision models without sending conversation history."""
 
 from __future__ import annotations
 
@@ -273,7 +273,7 @@ def join_model_input(member: dict[str, object]) -> dict[str, object]:
 
 
 def profile_ids(message: dict[str, object]) -> dict[str, int]:
-    """Return only resolvable Telegram user IDs; never send these IDs to Jev."""
+    """Return only resolvable Telegram user IDs; never send these IDs to model providers."""
     identifiers: dict[str, int] = {}
     replied = reply_target(message)
     external = message.get("external_reply")

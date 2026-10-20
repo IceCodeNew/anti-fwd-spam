@@ -131,9 +131,11 @@ test('user: Given a completed non-spam or invalid Decisions answer, When another
     const calls = [];
     model.response = url => {
       calls.push(url);
-      return Response.json({ answers: url.includes('api.experientiallabs.ai') ? answers
-        : url.includes('ai-gateway.vercel.sh') ? [{ name: 'spam', type: 'predicate', probability: 1 }]
-          : { spam: { type: 'noul', noul: 1 } } });
+      if (url.includes('api.experientiallabs.ai')) return Response.json({ answers });
+      if (url.includes('ai-gateway.vercel.sh')) {
+        return Response.json({ answers: [{ name: 'spam', type: 'predicate', probability: 1 }] });
+      }
+      return Response.json({ answers: { spam: { type: 'noul', noul: 1 } } });
     };
     const target = message(id++);
     telegram.send(target);

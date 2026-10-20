@@ -121,7 +121,7 @@ export async function tick(now) {
 
 export const task = () => database.prepare('SELECT * FROM model_tasks WHERE message_id = 81').first();
 
-// The Worker checks biographies and runs Jev after its response; Miniflare cannot await that work.
+// The Worker checks biographies and runs classification after its response; Miniflare cannot await that work.
 export async function dispatch(update, options = {}) {
   const response = await runtime.dispatchFetch('https://worker.test/webhook', {
     method: 'POST', headers, body: JSON.stringify(update), ...options,

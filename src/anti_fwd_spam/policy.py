@@ -16,7 +16,7 @@ from .constants import (
     SUPPORTED_FORWARD_ORIGINS,
     TOKEN_PART_COUNT,
 )
-from .rules import AUTHORED_SPAM_PATTERNS, BUTTON_OFFER_BODY_RE, BUTTON_OFFER_RE, REPEATED_SYMBOLS_RE, SPAM_PATTERNS
+from .rules import AUTHORED_SPAM_PATTERNS, BUTTON_OFFER_BODY_RE, REPEATED_SYMBOLS_RE, SPAM_PATTERNS
 
 
 def matches_spam_pattern(message: dict[str, object]) -> bool:
@@ -36,13 +36,13 @@ def matches_spam_pattern(message: dict[str, object]) -> bool:
             if isinstance(label := button.get("text"), str)
         ]
         if (
-            not (MODEL_CONTENT_FIELDS - {"text", "caption", "reply_markup"}).intersection(message)
+            MODEL_CONTENT_FIELDS.intersection(message) <= {"text", "caption"}
             and all(
                 isinstance(text := message.get(field, ""), str) and BUTTON_OFFER_BODY_RE.fullmatch(text)
                 for field in ("text", "caption")
             )
             and len(labels) == 1
-            and BUTTON_OFFER_RE.fullmatch(labels[0])
+            and labels[0] == "1️⃣🔥卖薇信号/手机咔/接码等-啥都有"
         ):
             return True
         texts.extend(labels)

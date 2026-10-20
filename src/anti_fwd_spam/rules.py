@@ -77,7 +77,6 @@ AUTHORED_SPAM_PATTERNS = (
 )
 
 BUTTON_OFFER_BODY_RE = re.compile(r"\A[0-9\s]*\Z")
-BUTTON_OFFER_RE = re.compile(r"\A1️⃣🔥卖薇信号/手机咔/接码等-啥都有\Z")
 
 REPEATED_SYMBOLS_RE = re.compile(r"💰(?:[^💰]*💰){3}|🔴(?:[^🔴]*🔴){3}")
 

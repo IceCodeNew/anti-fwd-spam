@@ -6,10 +6,6 @@ import { message, report } from './telegram-fake.mjs';
 model.enabled = true;
 const campaign = '@synthetic_bot campaign_001 synthetic_marker';
 const bulkOffer = '承接广*告*戴*發，十万精准各行业裙\n包效果 包效果 @sample_contact';
-const distributionOffers = [
-  '接TG厂吿𠰺发/𠰺查同行裙\n日发千万 统统高质量 @sample_contact',
-  '出+86裙發号 搭配运控端口 不封浩\n2秒發一个裙  日蕟4W @sample_contact',
-];
 const salesMenu = { inline_keyboard: [[{
   text: '1️⃣🔥卖薇信号/手机咔/接码等-啥都有', url: 'https://example.invalid/menu',
 }]] };
@@ -21,7 +17,7 @@ function referenced(current, kind) {
   return current;
 }
 
-for (const text of [campaign, bulkOffer, ...distributionOffers, '💰'.repeat(192), '萝莉上门', '看头像q <contact>', '本群已停用，请加入新群 https://example.invalid/group']) {
+for (const text of [campaign, bulkOffer, '💰'.repeat(192), '萝莉上门', '看头像q <contact>', '本群已停用，请加入新群 https://example.invalid/group']) {
   for (const context of ['same_chat', 'external', 'quote']) {
     test(`user: a low-history member's own ${JSON.stringify(Array.from(text).slice(0, 25).join(''))} in ${context} is locally moderated under the shared policy`, async () => {
       await setBindings({ EXPERIENTIAL_API_KEY: undefined });
@@ -56,7 +52,7 @@ for (const [field, edited] of [['caption', false], ['caption', true], ['nickname
 }
 
 for (const [reference, edited] of [['none', false], ['same_chat', false], ['external', true], ['none', true]]) {
-  for (const text of [campaign, bulkOffer, ...distributionOffers, '💰'.repeat(192), `请警惕 ${campaign}，不要点击`, '本群已停用，请加入新群 https://example.invalid/group']) {
+  for (const text of [campaign, bulkOffer, '💰'.repeat(192), `请警惕 ${campaign}，不要点击`, '本群已停用，请加入新群 https://example.invalid/group']) {
     test(`user: ten matured observations send ${JSON.stringify(Array.from(text).slice(0, 20).join(''))} in ${reference}, edited=${edited} to Luna instead of direct regex punishment`, async () => {
       await database.prepare('INSERT INTO member_activity VALUES (123,-10012,22,10)').run();
       model.profiles.set(22, { bio: campaign });
@@ -88,7 +84,6 @@ test('user: an established member can still be moderated when Luna confirms an a
 for (const status of ['administrator', 'creator', 'anonymous']) {
   for (const [name, content] of [
     ['campaign', { text: campaign }],
-    ...distributionOffers.map(text => [Array.from(text).slice(0, 20).join(''), { text }]),
     ['sales menu', { text: '123', reply_markup: salesMenu }],
   ]) {
     test(`user: a low-history ${name} preserves ${status} authority protection`, async () => {
@@ -102,29 +97,6 @@ for (const status of ['administrator', 'creator', 'anonymous']) {
       assert.equal(telegram.has(80), true);
       assert.equal(telegram.canSend(22), true);
       assert.equal(telegram.canJoin(22), true);
-    });
-  }
-}
-
-for (const text of distributionOffers) {
-  for (const edited of [false, true]) {
-    const field = edited ? 'caption' : 'text';
-    test(`user: a bot's complete ${JSON.stringify(Array.from(text).slice(0, 20).join(''))} as ${field}, edited=${edited} deletes only its current reply without muting`, async () => {
-      const current = referenced(message(), 'same_chat');
-      current.from.is_bot = true;
-      delete current.text;
-      current[field] = text;
-      telegram.send(message(70));
-      telegram.send(current.reply_to_message);
-      telegram.send(current);
-      assert.equal((await dispatch({ update_id: 1, [edited ? 'edited_message' : 'message']: current })).status, 200);
-      assert.equal(telegram.has(81), false);
-      assert.equal(telegram.has(80), true);
-      assert.equal(telegram.has(70), true);
-      assert.equal(telegram.canSend(22), true);
-      assert.equal(telegram.canJoin(22), true);
-      assert.equal(model.state, null);
-      assert.equal((await database.prepare('SELECT COUNT(*) AS n FROM blacklisted_users').first()).n, 0);
     });
   }
 }

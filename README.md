@@ -51,7 +51,7 @@ Local text/profile regexes apply before model classification until a member has 
 
 ## Optional model classification
 
-Optional classification uses GPT-6 Luna Decisions when a supported provider key is configured; no backend selector is required. See [provider setup](docs/setup.md#optional-model-provider) for keys, routing, and cost boundaries, and [compatibility and migration](docs/setup.md#compatibility-and-migration) before upgrading a Jev deployment. Classification runs after local rules, blacklist checks, sticker checks, and report handling. It receives bounded text context and selected profile data; the bot does not download or inspect images, video, or audio.
+Optional classification uses GPT-6 Luna Decisions when a supported provider key is configured. See [provider setup](docs/setup.md#optional-model-provider) for keys, routing, and cost boundaries, and [compatibility and migration](docs/setup.md#compatibility-and-migration) before upgrading a Jev deployment. Classification runs after local rules, blacklist checks, sticker checks, and report handling. It receives bounded text context and selected profile data; the bot does not download or inspect images, video, or audio.
 
 The model uses the current sender's intent as the primary evidence, including visible contact-card pitches and button text/URLs. Callback data is excluded. A narrow full-message template additionally covers an obfuscated bulk-advertising offer in current text/captions under the existing member-maturity policy. Referenced content and profile data remain source-separated. A score at or above the configured inclusive threshold triggers the same current-message moderation action; see [live model checks](docs/jev-checks.md) for the validation procedure.
 

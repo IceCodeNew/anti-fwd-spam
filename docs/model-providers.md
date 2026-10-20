@@ -6,7 +6,7 @@ For the bot's supported secrets, routing order, and cost boundaries, use [provid
 
 ## Built-in routes and evidence
 
-The built-in routes use Luna; supported provider keys enable classification without a backend selector. Only configured keys participate, in the order defined by [provider setup](setup.md#optional-model-provider). LLM Gateway, RouterPlus, and the independently operated wrapper sites below are research-only alternatives, not built-in providers.
+The built-in routes use Luna; supported provider keys enable classification. Only configured keys participate, in the order defined by [provider setup](setup.md#optional-model-provider). LLM Gateway, RouterPlus, and the independently operated wrapper sites below are research-only alternatives, not built-in providers.
 
 The four selected platforms document Luna still-image input. That is a transport capability, not an implemented bot media feature or a live image result. Experiential's **text** route has been exercised with real responses; the other three Luna routes have not been live-verified here, and no actual image calls have been made. Deterministic tests of request formatting and answer parsing do not establish that a remote account can call a model. Use [live model checks](jev-checks.md) for approved text fixtures; retain experiment results and model comparisons in the pull request rather than this reference.
 

@@ -58,7 +58,7 @@ printf '%s' "$TELEGRAM_WEBHOOK_SECRET" | mise exec -- uv run pywrangler secret p
 
 ## Optional model provider
 
-Semantic classification is optional and uses GPT-6 Luna Decisions. Review provider privacy and pricing terms before saving a provider key as a Worker secret. A supported key enables classification; there is no model-backend selector.
+Semantic classification is optional and uses GPT-6 Luna Decisions. Review provider privacy and pricing terms before saving a provider key as a Worker secret. A supported key enables classification.
 
 `MODEL_PROVIDERS` in [`src/anti_fwd_spam/constants.py`](../src/anti_fwd_spam/constants.py) owns the ordered keys, endpoints, and model IDs. Missing or empty keys are skipped; without a configured supported key, model classification is unavailable.
 
@@ -79,11 +79,9 @@ Add only the other provider secrets intended for failover. `OPENAI_API_KEY` is r
 
 ### Compatibility and migration
 
-**Breaking change:** Jev is retired. Existing deployments with `EXPERIENTIAL_API_KEY` or `AI_GATEWAY_API_KEY` now use Luna, including its different endpoint and request format, without another opt-in. Review provider access, terms, and billing before deploying.
+**Breaking change:** Jev is retired. Existing deployments with `EXPERIENTIAL_API_KEY` or `AI_GATEWAY_API_KEY` now use Luna, including its different endpoint and request format. Review provider access, terms, and billing before deploying.
 
 `TYPESAFE_AI_API_KEY`, `OPENCODE_API_KEY`, and `CMD_API_KEY` are ignored. A deployment with only those keys has no model classification; configure at least one supported key from the table above to enable Luna. Local rules, reports, and blacklists still operate without a model.
-
-`MODEL_BACKEND` is ignored regardless of its value; it cannot restore Jev or disable Luna when a supported key is configured. Remove it from `wrangler.jsonc`'s `vars` if present. An existing Worker secret of that name is inert and may optionally be deleted; no secret deletion is required for migration, and deployment does not delete it automatically.
 
 ### Failover and costs
 

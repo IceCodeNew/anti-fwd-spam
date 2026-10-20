@@ -28,7 +28,7 @@ The live model suite is intentionally separate because it sends fixture data to 
 - `src/anti_fwd_spam/constants.py` owns static model, input-field, provider, profile-limit, and threshold values, including the ordered Luna `MODEL_PROVIDERS` mapping.
 - `src/anti_fwd_spam/rules.py` owns static regexes and the shared `INSTRUCTIONS` message prompt and `JOIN_PROFILE_INSTRUCTIONS` joining-profile prompt. All providers use these prompts without conditional hints.
 - `src/anti_fwd_spam/policy.py` owns Telegram update validation, provenance, configuration parsing, and compatibility exports for local matchers.
-- `src/anti_fwd_spam/model.py` owns the three-field `ModelConfig` (`url`, `model`, `key`), native Decisions and OpenRouter Noul requests/parsing, model input shaping, profile enrichment, and compatibility exports for established model symbols. Provider keys enable Luna classification; there is no backend selector.
+- `src/anti_fwd_spam/model.py` owns the three-field `ModelConfig` (`url`, `model`, `key`), native Decisions and OpenRouter Noul requests/parsing, model input shaping, profile enrichment, and compatibility exports for established model symbols. Provider keys enable Luna classification.
 - `src/anti_fwd_spam/moderation.py` owns routing and action selection.
 - `src/anti_fwd_spam/tasks.py` owns durable classification/deletion retries.
 - `src/anti_fwd_spam/actions.py` owns Telegram moderation outcomes.

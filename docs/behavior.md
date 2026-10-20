@@ -149,7 +149,7 @@ A permitted local match ends model classification for that message. All text/pro
 
 ## Model classification
 
-Model classification is optional and uses GPT-6 Luna Decisions. A supported provider key enables it; there is no backend selector. When enabled, the bot sends the current sender's bounded message context, selected profile data, contact display data, and bounded reference context to the configured provider. It does not download or inspect media. [Provider setup](setup.md#optional-model-provider) defines supported keys and provider order. Missing keys are skipped; without a configured supported key, classification is unavailable. Provider changes do not change moderation targets, local-rule precedence, or the inclusive threshold.
+Model classification is optional and uses GPT-6 Luna Decisions. A supported provider key enables it. When enabled, the bot sends the current sender's bounded message context, selected profile data, contact display data, and bounded reference context to the configured provider. It does not download or inspect media. [Provider setup](setup.md#optional-model-provider) defines supported keys and provider order. Missing keys are skipped; without a configured supported key, classification is unavailable. Provider changes do not change moderation targets, local-rule precedence, or the inclusive threshold.
 
 All providers use one static message prompt and one static joining-profile prompt, without conditional hints. The message scope distinguishes an ordinary recruitment contact from a contact completing a spam-recruitment funnel. The joining-profile scope distinguishes a member's own offer from research, analysis, warnings, or reports about someone else's offer.
 

@@ -21,7 +21,7 @@ uv run ruff format --check .
 uv run --no-default-groups ty check
 ```
 
-The live model suite is intentionally separate because it sends fixture data to a provider and can incur charges. Follow [live model checks](docs/jev-checks.md) when you have an approved provider setup.
+The live model suite is intentionally separate because it sends fixture data to a provider and can incur charges. Follow [live model checks](docs/decision-checks.md) when you have an approved provider setup.
 
 ## Source boundaries
 
@@ -48,4 +48,4 @@ Do not turn a provider score, a Worker fake score, or a dated investigation resu
 
 ## Documentation
 
-The README is the consumer entry point. Deployment commands belong in [docs/setup.md](docs/setup.md), operating procedures in [docs/operations.md](docs/operations.md), stable behavior in [docs/behavior.md](docs/behavior.md), live model test procedure in [docs/jev-checks.md](docs/jev-checks.md), and sourced public-platform/media research in [docs/model-providers.md](docs/model-providers.md). The `jev` fixture, test module, and live-test environment names are compatibility identifiers, not model-selection settings. Keep the English and Chinese README structures aligned, but write idiomatic Chinese rather than translating sentence by sentence.
+The README is the consumer entry point. Deployment commands belong in [docs/setup.md](docs/setup.md), operating procedures in [docs/operations.md](docs/operations.md), stable behavior in [docs/behavior.md](docs/behavior.md), supported provider configuration in [docs/setup.md](docs/setup.md#optional-model-provider), and live decision test procedure in [docs/decision-checks.md](docs/decision-checks.md). Keep the English and Chinese README structures aligned, but write idiomatic Chinese rather than translating sentence by sentence.

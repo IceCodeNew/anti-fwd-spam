@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from anti_fwd_spam.telegram import TelegramResponse
 
 
-class JevAcceptanceTests(unittest.IsolatedAsyncioTestCase):
+class DecisionAcceptanceTests(unittest.IsolatedAsyncioTestCase):
     async def check_case(self, case: dict[str, object]) -> None:
         provider = next((key for key in MODEL_PROVIDERS if os.environ.get(key)), None)
         self.assertIsNotNone(provider, "A configured Luna provider key is required")
@@ -73,8 +73,8 @@ class JevAcceptanceTests(unittest.IsolatedAsyncioTestCase):
         return response
 
 
-def acceptance_case(case: dict[str, object]) -> Callable[[JevAcceptanceTests], Awaitable[None]]:
-    async def test(self: JevAcceptanceTests) -> None:
+def acceptance_case(case: dict[str, object]) -> Callable[[DecisionAcceptanceTests], Awaitable[None]]:
+    async def test(self: DecisionAcceptanceTests) -> None:
         await self.check_case(case)
 
     test.__doc__ = "user: Given a regression sample, When Luna evaluates it, Then its score matches the contract."
@@ -82,11 +82,11 @@ def acceptance_case(case: dict[str, object]) -> Callable[[JevAcceptanceTests], A
         assert isinstance(reason, str)
         return unittest.skip(reason)(test)
     return unittest.skipUnless(
-        os.environ.get("JEV_LIVE_TEST") == "1", "Set JEV_LIVE_TEST=1 to query the real Luna provider"
+        os.environ.get("DECISION_LIVE_TEST") == "1", "Set DECISION_LIVE_TEST=1 to query the real Luna provider"
     )(test)
 
 
-for _case in json.loads(Path(__file__).with_name("jev-cases.json").read_text()):
+for _case in json.loads(Path(__file__).with_name("decision-cases.json").read_text()):
     _name = "test_user_" + _case["name"].replace("-", "_")
-    assert not hasattr(JevAcceptanceTests, _name), f"Duplicate Jev case: {_case['name']}"
-    setattr(JevAcceptanceTests, _name, acceptance_case(_case))
+    assert not hasattr(DecisionAcceptanceTests, _name), f"Duplicate decision case: {_case['name']}"
+    setattr(DecisionAcceptanceTests, _name, acceptance_case(_case))

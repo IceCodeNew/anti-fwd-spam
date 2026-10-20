@@ -89,7 +89,7 @@ Additional configured providers are connection/HTTP error fallbacks, not extra v
 
 Experiential offers a free allowance, not unlimited free usage. Exhausted allowance can produce an error and move work to a configured paid provider; Experiential usage itself may also be billable under the account's terms. This is an ordered provider waterfall, not a strict-free mode or a cost cap. Configure provider-side billing limits and omit paid credentials when paid failover is not intended. Keep secret values out of files, logs, and command arguments.
 
-The [public provider inventory](model-providers.md) distinguishes the four built-in Luna platforms from research-only alternatives and lists documented image/video limits. Provider image capability does not enable media ingestion in this bot.
+The bot submits text only; provider image capability does not enable media ingestion.
 
 ## Deploy and register the webhook
 

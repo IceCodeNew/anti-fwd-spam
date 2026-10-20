@@ -53,21 +53,20 @@ Local text/profile regexes apply before model classification until a member has 
 
 Optional classification uses GPT-6 Luna Decisions when a supported provider key is configured. See [provider setup](docs/setup.md#optional-model-provider) for keys, routing, and cost boundaries, and [compatibility and migration](docs/setup.md#compatibility-and-migration) before upgrading a Jev deployment. Classification runs after local rules, blacklist checks, sticker checks, and report handling. It receives bounded text context and selected profile data; the bot does not download or inspect images, video, or audio.
 
-The model uses the current sender's intent as the primary evidence, including visible contact-card pitches and button text/URLs. Callback data is excluded. A narrow full-message template additionally covers an obfuscated bulk-advertising offer in current text/captions under the existing member-maturity policy. Referenced content and profile data remain source-separated. A score at or above the configured inclusive threshold triggers the same current-message moderation action; see [live model checks](docs/jev-checks.md) for the validation procedure.
+The model uses the current sender's intent as the primary evidence, including visible contact-card pitches and button text/URLs. Callback data is excluded. A narrow full-message template additionally covers an obfuscated bulk-advertising offer in current text/captions under the existing member-maturity policy. Referenced content and profile data remain source-separated. A score at or above the configured inclusive threshold triggers the same current-message moderation action; see [live model checks](docs/decision-checks.md) for the validation procedure.
 
 Message classification also treats direct attempts to override moderation instructions or force a score as spam. Discussing defenses or reporting a quoted prompt-injection example does not itself count as an attack.
 
 Only valid model scores can trigger moderation; invalid answers and refusals do not. See the [behavior contract](docs/behavior.md#model-classification).
 
-Read [live model checks](docs/jev-checks.md) before running provider tests. The `jev` test names are retained for compatibility, not to select the model. Provider configuration belongs in deployment secrets, not repository files.
+Read [live model checks](docs/decision-checks.md) before running provider tests. Provider configuration belongs in deployment secrets, not repository files.
 
 ## Documentation map
 
 - [Deployment setup](docs/setup.md) — create the bot, database, secrets, webhook, and deployment.
 - [Operations](docs/operations.md) — reports, source/sticker lists, false positives, troubleshooting, privacy, and retention.
 - [Behavior contract](docs/behavior.md) — final routing, authorization, moderation, retry, and storage behavior.
-- [Live model checks](docs/jev-checks.md) — safe, repeatable live-classification procedure and fixture rules.
-- [Model providers and media](docs/model-providers.md) — sourced public-platform inventory and image/video capability boundaries.
+- [Live model checks](docs/decision-checks.md) — safe, repeatable live-classification procedure and fixture rules.
 - [Contributing and maintenance](CONTRIBUTING.md) — development commands, module boundaries, and change requirements.
 
 ## Contributing

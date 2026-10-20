@@ -71,8 +71,13 @@ DISABLED_GROUP_NOTICE_RE = re.compile(
 # Whole-message signatures stay out of shared contact and profile checks.
 AUTHORED_SPAM_PATTERNS = (
     DISABLED_GROUP_NOTICE_RE,
+    re.compile(r"\A\s*接TG厂吿𠰺发/𠰺查同行裙\s+日发千万 统统高质量\s+@[A-Za-z0-9_]{5,32}\s*\Z"),
+    re.compile(r"\A\s*出\+86裙發号 搭配运控端口 不封浩\s+2秒發一个裙\s+日蕟4W\s+@[A-Za-z0-9_]{5,32}\s*\Z"),
     re.compile(r"\A承接广\*告\*戴\*發\uff0c十万精准各行业裙\s+包效果 包效果 @[A-Za-z0-9_]{5,32}\s*\Z"),
 )
+
+BUTTON_OFFER_BODY_RE = re.compile(r"\A[0-9\s]*\Z")
+BUTTON_OFFER_RE = re.compile(r"\A1️⃣🔥卖薇信号/手机咔/接码等-啥都有\Z")
 
 REPEATED_SYMBOLS_RE = re.compile(r"💰(?:[^💰]*💰){3}|🔴(?:[^🔴]*🔴){3}")
 

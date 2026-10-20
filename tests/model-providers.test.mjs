@@ -106,8 +106,9 @@ for (const succeeds of [true, false]) {
     const calls = [];
     model.response = url => {
       calls.push(url);
-      return succeeds && url === providers[3][1] ? verdict(url, 0.96)
-        : new Response('unavailable', { status: succeeds ? 401 : 503 });
+      if (succeeds && url === providers[3][1]) return verdict(url, 0.96);
+      if (succeeds && url === providers[0][1]) return new Response('free_limit_reached', { status: 429 });
+      return new Response('unavailable', { status: succeeds ? 401 : 503 });
     };
     telegram.send(message());
     telegram.send(message(80));

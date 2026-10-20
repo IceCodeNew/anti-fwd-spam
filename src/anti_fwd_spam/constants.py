@@ -13,7 +13,7 @@ MAX_MODEL_RESPONSE_BYTES = 65_536
 SPAM_THRESHOLD = 0.90
 
 MODEL_PROVIDERS = {
-    "EXPERIENTIAL_API_KEY": ("https://api.experientiallabs.ai/v1/decisions", "gpt-6-luna-decisions"),
+    "EXPERIENTIAL_API_KEY": ("https://api.experientiallabs.ai/v1/decisions", "gpt-6-luna-decisions:free"),
     "OPENAI_API_KEY": ("https://api.openai.com/v1/decisions", "gpt-6-luna"),
     "OPENROUTER_API_KEY": ("https://openrouter.ai/api/alpha/decisions", "openai/gpt-6-luna-decisions"),
     "AI_GATEWAY_API_KEY": ("https://ai-gateway.vercel.sh/v1/decisions", "openai/gpt-6-luna-decisions"),

@@ -60,7 +60,7 @@ curl --silent --show-error --fail-with-body \
 | Model classification does not run | Check for a supported Luna provider key in [setup](setup.md#optional-model-provider). Deployments with only retired Jev-provider keys need [migration](setup.md#compatibility-and-migration). |
 | A different model runs than expected | Supported keys select Luna. Check the deployed code and [compatibility and migration](setup.md#compatibility-and-migration) when upgrading an older deployment. |
 | Model returns an error or refusal | Inspect redacted Worker logs and provider access/quota. Connection/HTTP failover stays within the fixed shared attempt budget. A completed invalid or refused answer ends classification without punishment or another provider call. Use [live model checks](decision-checks.md) with approved fixtures to test semantic behavior. |
-| Model usage incurs unexpected charges | Check provider billing and limits. Experiential's free allowance is not unlimited; its exhaustion can advance to configured paid providers. The provider waterfall is not a strict-free mode. See [setup](setup.md#failover-and-costs). |
+| Model usage incurs unexpected charges | Check provider billing and limits. The Experiential `:free` route stops when its allowance is exhausted. Failover can advance to configured paid providers. See [setup](setup.md#failover-and-costs). |
 | Storage errors | Check the `REPORTS` binding, migrations, and D1 limits. |
 
 ## Privacy and retention

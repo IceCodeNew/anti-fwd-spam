@@ -35,7 +35,7 @@ before(async () => {
     outboundService: async request => {
       outboundRequests.push(request.url);
       const providers = {
-        'https://api.experientiallabs.ai/v1/decisions': ['gpt-6-luna-decisions', 'test-model-key'],
+        'https://api.experientiallabs.ai/v1/decisions': ['gpt-6-luna-decisions:free', 'test-model-key'],
         'https://api.openai.com/v1/decisions': ['gpt-6-luna', 'test-openai-key'],
         'https://openrouter.ai/api/alpha/decisions': ['openai/gpt-6-luna-decisions', 'test-openrouter-key'],
         'https://ai-gateway.vercel.sh/v1/decisions': ['openai/gpt-6-luna-decisions', 'test-gateway-key'],

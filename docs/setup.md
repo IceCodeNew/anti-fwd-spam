@@ -87,7 +87,7 @@ Add only the other provider secrets intended for failover. `OPENAI_API_KEY` is r
 
 Additional configured providers are connection/HTTP error fallbacks, not extra votes or score-shopping. A completed answer ends classification, including a below-threshold, invalid, or refused answer. Classification has a fixed shared budget of four total attempts, not four per provider; provider rotation does not reset it. Existing durable retry delays remain owned by `RETRY_DELAYS` in [`src/anti_fwd_spam/tasks.py`](../src/anti_fwd_spam/tasks.py). See the [behavior contract](behavior.md#model-classification) for error and decision boundaries.
 
-Experiential offers a free allowance, not unlimited free usage. Exhausted allowance can produce an error and move work to a configured paid provider; Experiential usage itself may also be billable under the account's terms. This is an ordered provider waterfall, not a strict-free mode or a cost cap. Configure provider-side billing limits and omit paid credentials when paid failover is not intended. Keep secret values out of files, logs, and command arguments.
+The first route uses Experiential's `gpt-6-luna-decisions:free` model ID. This route stops with HTTP 429 when its free allowance is exhausted; it does not continue on Experiential credits. The existing retry policy can then select another configured provider, which can charge for the request. The full provider chain is not a cost cap. Omit paid provider credentials when paid failover is not intended. See [Experiential's free-route policy](https://platform.experientiallabs.ai/llms.txt). Keep secret values out of files, logs, and command arguments.
 
 The bot submits text only; provider image capability does not enable media ingestion.
 

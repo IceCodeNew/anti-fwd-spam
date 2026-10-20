@@ -194,7 +194,7 @@ class NativeDecisionTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             MODEL_PROVIDERS["EXPERIENTIAL_API_KEY"],
-            ("https://api.experientiallabs.ai/v1/decisions", "gpt-6-luna-decisions"),
+            ("https://api.experientiallabs.ai/v1/decisions", "gpt-6-luna-decisions:free"),
         )
 
     async def test_user_classifies_with_native_decisions_on_luna_platforms(self) -> None:
@@ -205,7 +205,7 @@ class NativeDecisionTests(unittest.IsolatedAsyncioTestCase):
         )
         state = {**model_input({"from": {"first_name": "Member"}, "text": "普通讨论"}), "bio": None}
         for key, expected_model in (
-            ("EXPERIENTIAL_API_KEY", "gpt-6-luna-decisions"),
+            ("EXPERIENTIAL_API_KEY", "gpt-6-luna-decisions:free"),
             ("OPENAI_API_KEY", "gpt-6-luna"),
             ("AI_GATEWAY_API_KEY", "openai/gpt-6-luna-decisions"),
         ):

@@ -14,10 +14,19 @@ from anti_fwd_spam.model import (
     extract_profile_handles,
     join_model_input,
     model_input,
+    model_providers,
     sender_bio,
     spam_probability,
 )
-from anti_fwd_spam.rules import COUNTERFEIT_CARD_HINT, INSTRUCTIONS, JOIN_PROFILE_INSTRUCTIONS, PROJECT_RECRUITMENT_HINT
+from anti_fwd_spam.policy import ConfigError
+from anti_fwd_spam.rules import (
+    COUNTERFEIT_CARD_HINT,
+    INSTRUCTIONS,
+    JOIN_PROFILE_INSTRUCTIONS,
+    LUNA_INSTRUCTIONS,
+    LUNA_JOIN_PROFILE_INSTRUCTIONS,
+    PROJECT_RECRUITMENT_HINT,
+)
 from tests.test_telegram import ClockLoop
 
 if TYPE_CHECKING:
@@ -204,18 +213,44 @@ class ModelDeadlineTests(unittest.TestCase):
 
 
 class NativeDecisionTests(unittest.IsolatedAsyncioTestCase):
-    async def test_user_classifies_with_native_decisions_on_both_luna_platforms(self) -> None:
-        """Luna receives the same bounded evidence and scoped prompts on both configured platforms."""
-        self.assertEqual(list(MODEL_PROVIDERS)[:2], ["EXPERIENTIAL_API_KEY", "AI_GATEWAY_API_KEY"])
+    async def test_user_defaults_to_unchanged_jev_provider_chain(self) -> None:
+        """An absent backend preserves the original Jev platforms and does not enable Luna."""
+        self.assertEqual(
+            list(model_providers(None)),
+            [
+                "TYPESAFE_AI_API_KEY",
+                "EXPERIENTIAL_API_KEY",
+                "OPENCODE_API_KEY",
+                "CMD_API_KEY",
+                "AI_GATEWAY_API_KEY",
+            ],
+        )
+        self.assertEqual(model_providers(None), MODEL_PROVIDERS)
+        self.assertEqual(model_providers(""), MODEL_PROVIDERS)
+        self.assertEqual(model_providers("jev"), MODEL_PROVIDERS)
+        self.assertEqual(
+            MODEL_PROVIDERS["EXPERIENTIAL_API_KEY"], ("https://api.experientiallabs.ai/v1/systemone", "jev-latest")
+        )
+        self.assertEqual(ModelConfig("url", "model", "key").backend, "jev")
+        with self.assertRaises(ConfigError):
+            model_providers("unknown")
+
+    async def test_user_classifies_with_native_decisions_on_luna_platforms(self) -> None:
+        """Luna receives the same bounded evidence and scoped prompts on native platforms."""
+        self.assertEqual(
+            list(model_providers("luna")),
+            ["EXPERIENTIAL_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY", "AI_GATEWAY_API_KEY"],
+        )
         state = {**model_input({"from": {"first_name": "Member"}, "text": "普通讨论"}), "bio": None}
         for key, expected_model in (
             ("EXPERIENTIAL_API_KEY", "gpt-6-luna-decisions"),
+            ("OPENAI_API_KEY", "gpt-6-luna"),
             ("AI_GATEWAY_API_KEY", "openai/gpt-6-luna-decisions"),
         ):
-            endpoint, model = MODEL_PROVIDERS[key]
+            endpoint, model = model_providers("luna")[key]
             self.assertTrue(endpoint.endswith("/v1/decisions"))
             self.assertEqual(model, expected_model)
-            config = ModelConfig(endpoint, model, "test-key")
+            config = ModelConfig(endpoint, model, "test-key", "luna")
             for joining in (False, True):
                 with self.subTest(provider=key, joining=joining):
 
@@ -237,7 +272,9 @@ class NativeDecisionTests(unittest.IsolatedAsyncioTestCase):
                                     {
                                         "name": "spam",
                                         "type": "predicate",
-                                        "instructions": JOIN_PROFILE_INSTRUCTIONS if joining else INSTRUCTIONS,
+                                        "instructions": LUNA_JOIN_PROFILE_INSTRUCTIONS
+                                        if joining
+                                        else LUNA_INSTRUCTIONS,
                                     }
                                 ],
                             },
@@ -250,9 +287,55 @@ class NativeDecisionTests(unittest.IsolatedAsyncioTestCase):
 
                     self.assertEqual(await spam_probability(fetcher, config, state, joining=joining), 0.95)
 
+    async def test_user_openrouter_uses_luna_prompts_with_systemone_wire_format(self) -> None:
+        """OpenRouter's Decisions endpoint uses a keyed Noul contract, not native predicates."""
+        url, model = model_providers("luna")["OPENROUTER_API_KEY"]
+        self.assertEqual((url, model), ("https://openrouter.ai/api/alpha/decisions", "openai/gpt-6-luna-decisions"))
+        state = {**model_input({"from": {"first_name": "Member"}, "text": "普通讨论"}), "bio": None}
+
+        async def fetcher(url, *, method, headers, body) -> StreamingResponse:
+            self.assertEqual(
+                json.loads(body),
+                {
+                    "model": model,
+                    "state": state,
+                    "questions": {"spam": {"type": "noul", "instructions": LUNA_INSTRUCTIONS}},
+                },
+            )
+
+            async def read_body() -> bytes:
+                return b'{"answers":{"spam":{"type":"noul","noul":0.9}}}'
+
+            return StreamingResponse(read_body, asyncio.Event())
+
+        self.assertEqual(await spam_probability(fetcher, ModelConfig(url, model, "test-key", "luna"), state), 0.9)
+
+    async def test_user_legacy_vercel_retains_its_original_jev_protocol(self) -> None:
+        """Jev keeps its evaluation headers and Boolean answer when Luna is not selected."""
+        endpoint, model = MODEL_PROVIDERS["AI_GATEWAY_API_KEY"]
+        state: dict[str, object] = {"message": {"text": "ordinary"}}
+
+        async def fetcher(url, *, method, headers, body) -> StreamingResponse:
+            self.assertEqual(url, "https://ai-gateway.vercel.sh/v4/ai/evaluation-model")
+            self.assertEqual(headers["ai-model-id"], "typesafe-ai/jev")
+            self.assertEqual(headers["ai-gateway-protocol-version"], "0.0.1")
+            self.assertEqual(headers["ai-gateway-auth-method"], "api-key")
+            self.assertEqual(headers["ai-evaluation-model-specification-version"], "4")
+            self.assertEqual(
+                json.loads(body),
+                {"state": state, "questions": {"spam": {"type": "boolean", "instructions": INSTRUCTIONS}}},
+            )
+
+            async def read_body() -> bytes:
+                return b'{"answers":{"spam":{"type":"boolean","probability":0.9}}}'
+
+            return StreamingResponse(read_body, asyncio.Event())
+
+        self.assertEqual(await spam_probability(fetcher, ModelConfig(endpoint, model, "test-key"), state), 0.9)
+
     async def test_user_does_not_treat_refusals_or_mismatched_decisions_as_spam(self) -> None:
         """Only one correctly named predicate with a valid probability is a model verdict."""
-        config = ModelConfig("https://api.experientiallabs.ai/v1/decisions", "gpt-6-luna-decisions", "test-key")
+        config = ModelConfig("https://api.experientiallabs.ai/v1/decisions", "gpt-6-luna-decisions", "test-key", "luna")
         valid = {"name": "spam", "type": "predicate", "probability": 0.99}
         envelopes = [
             {},

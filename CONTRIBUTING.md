@@ -25,10 +25,10 @@ The live model suite is intentionally separate because it sends fixture data to 
 
 ## Source boundaries
 
-- `src/anti_fwd_spam/constants.py` owns static model, input-field, provider, profile-limit, and threshold values.
-- `src/anti_fwd_spam/rules.py` owns static regexes and model prompt text/fragments.
+- `src/anti_fwd_spam/constants.py` owns static model, input-field, provider, profile-limit, and threshold values, including separate `MODEL_PROVIDERS` (Jev) and `LUNA_PROVIDERS` mappings.
+- `src/anti_fwd_spam/rules.py` owns static regexes and backend-specific model prompt text/fragments. Luna clarifications must not rewrite the original Jev prompts or contextual hints.
 - `src/anti_fwd_spam/policy.py` owns Telegram update validation, provenance, configuration parsing, and compatibility exports for local matchers.
-- `src/anti_fwd_spam/model.py` owns native Decisions and legacy Jev requests/parsing, model input shaping, profile enrichment, and compatibility exports for established model symbols.
+- `src/anti_fwd_spam/model.py` owns `model_providers(backend)`, `ModelConfig` (whose `backend` defaults to `jev`), backend-specific requests/parsing, model input shaping, profile enrichment, and compatibility exports for established model symbols. Preserve Jev's legacy Vercel protocol as well as its System One routes; a Luna-capable credential is not backend selection.
 - `src/anti_fwd_spam/moderation.py` owns routing and action selection.
 - `src/anti_fwd_spam/tasks.py` owns durable classification/deletion retries.
 - `src/anti_fwd_spam/actions.py` owns Telegram moderation outcomes.

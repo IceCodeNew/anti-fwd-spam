@@ -11,22 +11,27 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
 from .constants import (
+    GATEWAY_URL,
+    LUNA_PROVIDERS,
     MAX_MODEL_RESPONSE_BYTES,
     MAX_PROFILE_BIO_BYTES,
     MAX_PROFILE_HANDLES,
     MAX_PROFILE_TEXT,
     MAX_TELEGRAM_ID,
     MODEL_CONTENT_FIELDS,
+    MODEL_PROVIDERS,
     MODEL_TIMEOUT_SECONDS,
     PUBLIC_PROFILE_HOSTS,
 )
-from .policy import display_name, reply_target
+from .policy import ConfigError, display_name, reply_target
 from .rules import (
     COUNTERFEIT_CARD_HINT,
     EARNINGS_PITCH_HINT,
     EARNINGS_PITCH_RE,
     INSTRUCTIONS,
     JOIN_PROFILE_INSTRUCTIONS,
+    LUNA_INSTRUCTIONS,
+    LUNA_JOIN_PROFILE_INSTRUCTIONS,
     ORDINARY_CONTEXT_HINTS,
     ORDINARY_SERVICE_PAYMENT_RE,
     ORDINARY_SERVICE_SHORT_RE,
@@ -54,6 +59,17 @@ class ModelConfig:
     url: str
     model: str
     api_key: str = dataclasses.field(repr=False)
+    backend: str = "jev"
+
+
+def model_providers(backend: str | None) -> dict[str, tuple[str, str]]:
+    """Select one independent provider chain; an absent switch keeps Jev unchanged."""
+    if backend in (None, "", "jev"):
+        return MODEL_PROVIDERS
+    if backend == "luna":
+        return LUNA_PROVIDERS
+    message = "MODEL_BACKEND must be jev or luna"
+    raise ConfigError(message)
 
 
 def extract_profile_handles(bio: object) -> tuple[str, ...]:
@@ -316,9 +332,13 @@ async def spam_probability(
     fetcher: Fetch, config: ModelConfig, state: dict[str, object], *, joining: bool = False
 ) -> float | None:
     """Score an ordinary message or joining profile, retaining the provider retry policy."""
-    decisions = urlsplit(config.url).path.endswith("/decisions")
+    gateway = config.url == GATEWAY_URL
+    decisions = config.backend == "luna" and urlsplit(config.url).hostname != "openrouter.ai"
     headers = {"authorization": f"Bearer {config.api_key}", "content-type": "application/json"}
-    instructions = JOIN_PROFILE_INSTRUCTIONS if joining else INSTRUCTIONS
+    if config.backend == "luna":
+        instructions = LUNA_JOIN_PROFILE_INSTRUCTIONS if joining else LUNA_INSTRUCTIONS
+    else:
+        instructions = JOIN_PROFILE_INSTRUCTIONS if joining else INSTRUCTIONS
     if not joining:
         hints = contextual_hints(state)
         if hints:
@@ -330,7 +350,19 @@ async def spam_probability(
             questions=[{"name": "spam", "type": "predicate", "instructions": instructions}],
         )
     else:
-        payload.update(state=state, questions={"spam": {"type": "noul", "instructions": instructions}})
+        payload.update(
+            state=state, questions={"spam": {"type": "boolean" if gateway else "noul", "instructions": instructions}}
+        )
+    if gateway:
+        payload.pop("model")
+        headers.update(
+            {
+                "ai-gateway-protocol-version": "0.0.1",
+                "ai-gateway-auth-method": "api-key",
+                "ai-evaluation-model-specification-version": "4",
+                "ai-model-id": config.model,
+            }
+        )
 
     async def send_and_read() -> tuple[int, bytes]:
         response = await fetcher(
@@ -353,7 +385,7 @@ async def spam_probability(
         raise ModelRetryError
     if status != HTTPStatus.OK:
         raise ModelRetryError(retryable=False)
-    return _decode_probability(body, decisions=decisions)
+    return _decode_probability(body, decisions=decisions, gateway=gateway)
 
 
 async def _read_bounded_response(response: TelegramResponse) -> bytes:
@@ -383,7 +415,7 @@ async def _read_bounded_response(response: TelegramResponse) -> bytes:
             reader.releaseLock()
 
 
-def _decode_probability(body: bytes, *, decisions: bool) -> float | None:
+def _decode_probability(body: bytes, *, decisions: bool, gateway: bool) -> float | None:
     try:
         payload = json.loads(body)
     except (UnicodeDecodeError, ValueError, RecursionError):
@@ -397,13 +429,14 @@ def _decode_probability(body: bytes, *, decisions: bool) -> float | None:
         answer = answers.get("spam")
     else:
         return None
+    answer_type = "predicate" if decisions else ("boolean" if gateway else "noul")
     if (
         not isinstance(answer, dict)
-        or answer.get("type") != ("predicate" if decisions else "noul")
+        or answer.get("type") != answer_type
         or (decisions and answer.get("name") != "spam")
     ):
         return None
-    probability = answer.get("probability" if decisions else "noul")
+    probability = answer.get("probability" if decisions or gateway else "noul")
     if type(probability) in (int, float) and 0 <= probability <= 1:
         return float(probability)
     return None

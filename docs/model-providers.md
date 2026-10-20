@@ -2,24 +2,24 @@
 
 This is a public-documentation inventory checked on **2026-10-20**, not a guarantee of account access, availability, or an exhaustive list of private resellers. It covers publicly documented GPT-6 Luna Decisions routes found in this review. Provider limits and wire formats can change; follow the linked primary sources before building another integration.
 
-For the bot's supported secrets and routing order, use [provider setup](setup.md#optional-model-provider). `MODEL_PROVIDERS` in [`src/anti_fwd_spam/constants.py`](../src/anti_fwd_spam/constants.py) is the implementation authority. A platform in this inventory is not automatically a supported bot configuration.
+For the bot's supported secrets, explicit backend selection, routing order, and cost boundaries, use [provider setup](setup.md#optional-model-provider). `MODEL_PROVIDERS` (Jev) and `LUNA_PROVIDERS` in [`src/anti_fwd_spam/constants.py`](../src/anti_fwd_spam/constants.py) own the routes; [`model_providers(backend)` in `src/anti_fwd_spam/model.py`](../src/anti_fwd_spam/model.py) selects the mapping. A platform in this inventory is not automatically a supported bot configuration.
 
 ## Built-in routes and evidence
 
-The bot uses the existing Experiential and Vercel credentials for Luna Decisions, followed by the existing TypeSafe, OpenCode, and CommandCode routes for legacy Jev. Only configured credentials participate. No direct OpenAI, OpenRouter, or other reseller credential is added by this inventory.
+The four built-in Luna platforms are Experiential, official OpenAI, OpenRouter, and Vercel AI Gateway, in that order, and require explicit `MODEL_BACKEND=luna`. Only configured keys participate. Jev is the default backend and retains its separate original chain and protocols; Luna errors never fall back to it. LLM Gateway, RouterPlus, and the independently operated wrapper sites below are research-only alternatives, not built-in providers.
 
-Experiential's **text** route has been exercised with real responses. The other Luna routes and all image/video capabilities below are documentation findings, not live integration or semantic-accuracy results. Deterministic tests of request formatting and answer parsing do not establish that a remote account can call a model. Use [live model checks](jev-checks.md) for approved text fixtures; retain experiment results and model comparisons in the pull request rather than this reference.
+The four selected platforms document Luna still-image input. That is a transport capability, not an implemented bot media feature or a live image result. Experiential's **text** route has been exercised with real responses; the other three Luna routes have not been live-verified here, and no actual image calls have been made. Deterministic tests of request formatting and answer parsing do not establish that a remote account can call a model. Use [live model checks](jev-checks.md) for approved text fixtures; retain experiment results and model comparisons in the pull request rather than this reference.
 
 ## Public Luna transports
 
-All paths below are HTTP `POST` endpoints, not chat-completion routes. The same model family does not imply the same JSON contract.
+All paths below are HTTP `POST` endpoints, not chat-completion routes. The first four are the selected built-in Luna platforms; the remaining entries are research-only. The same model family does not imply the same JSON contract.
 
 | Platform | Documented endpoint and model | Request and answer shape |
 | --- | --- | --- |
-| [OpenAI](https://developers.openai.com/api/docs/guides/decisions) | `https://api.openai.com/v1/decisions`; `gpt-6-luna` | Native Decisions: `input`, a `questions` array, and an `answers` array. A yes/no condition is a `predicate`, returning `probability`. |
 | [Experiential](https://platform.experientiallabs.ai/models/gpt-6-luna-decisions) | `https://api.experientiallabs.ai/v1/decisions`; `gpt-6-luna-decisions` | Native Decisions shape. The platform documents at most 32 questions per request; gateway admission limits are distinct from OpenAI's own limits. |
-| [Vercel AI Gateway](https://vercel.com/docs/ai-gateway/sdks-and-apis/openai-decisions) | `https://ai-gateway.vercel.sh/v1/decisions`; `openai/gpt-6-luna-decisions` | OpenAI-compatible Decisions shape, including `predicate` and an `answers` array. |
+| [OpenAI](https://developers.openai.com/api/docs/guides/decisions) | `https://api.openai.com/v1/decisions`; `gpt-6-luna` | Native Decisions: `input`, a `questions` array, and an `answers` array. A yes/no condition is a `predicate`, returning `probability`. |
 | [OpenRouter](https://openrouter.ai/openai/gpt-6-luna-decisions) | `https://openrouter.ai/api/alpha/decisions`; `openai/gpt-6-luna-decisions` | System One/Jev-style `state` and named `questions` object. A yes/no question is `noul`, not native `predicate`. Typed answers are keyed by question ID. |
+| [Vercel AI Gateway](https://vercel.com/docs/ai-gateway/sdks-and-apis/openai-decisions) | `https://ai-gateway.vercel.sh/v1/decisions`; `openai/gpt-6-luna-decisions` | OpenAI-compatible Decisions shape, including `predicate` and an `answers` array. |
 | [LLM Gateway](https://llmgateway.io/blog/openai-decisions-api) | `https://api.llmgateway.io/v1/decisions`; `gpt-6-luna-decisions` | OpenAI-compatible Decisions shape. The documented examples use `input`, `predicate`/`choice`/`score`, and an `answers` array. |
 | [RouterPlus](https://app.routerplus.com/docs/api-decisions) | `https://api.routerplus.com/v1/decisions`; `openai/gpt-6-luna-decisions` | System One `state`/`questions` and Jev-shaped answers. Provider ID `openai-decisions` maps to OpenAI's native `gpt-6-luna`; the gateway translates both directions. |
 | [decisions-api.dev](https://decisions-api.dev/model/gpt-6-luna-decisions) | `https://decisions-api.dev/v1/systemone`; `openai/gpt-6-luna-decisions` | Independent OpenRouter-backed wrapper. System One `state`/`questions`; successful answers at `data.result.answers`, not top-level `answers`. |

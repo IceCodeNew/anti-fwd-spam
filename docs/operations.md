@@ -57,8 +57,10 @@ curl --silent --show-error --fail-with-body \
 | Deletion, mute, or ban fails | Check bot administrator permissions and target protection. |
 | `ban confirmation failed` or `mute retry skipped` | Check membership manually before retrying a report. |
 | History cleanup is incomplete | Telegram and the index only cover messages the bot received within the retention window. |
-| Model classification does not run | Check configured provider secrets and their selection order in [setup](setup.md#optional-model-provider). |
-| Model returns an error or refusal | Inspect redacted Worker logs and provider access/quota; an invalid or refused answer is not a spam decision. Use [live model checks](jev-checks.md) with approved fixtures to test semantic behavior. |
+| Model classification does not run | Check `MODEL_BACKEND` and secrets for that backend in [setup](setup.md#optional-model-provider). Jev is the default; Luna requires explicit opt-in. Missing selected-backend keys disable classification, and other backend values are configuration errors. |
+| A different model runs than expected | Check the deployed `MODEL_BACKEND`; shared Experiential/Vercel key names do not select Luna by themselves. Inspect the selected backend's provider order in [setup](setup.md#optional-model-provider). |
+| Model returns an error or refusal | Inspect redacted Worker logs and provider access/quota. Connection/HTTP failover stays within the selected backend's fixed attempt budget; Luna never switches to Jev. A completed invalid or refused answer ends classification without punishment or another provider call. Use [live model checks](jev-checks.md) with approved fixtures to test semantic behavior. |
+| Model usage incurs unexpected charges | Check provider billing and limits. Experiential's free allowance is not unlimited; its exhaustion can advance to configured paid providers. The provider waterfall is not a strict-free mode. See [setup](setup.md#failover-and-costs). |
 | Storage errors | Check the `REPORTS` binding, migrations, and D1 limits. |
 
 ## Privacy and retention

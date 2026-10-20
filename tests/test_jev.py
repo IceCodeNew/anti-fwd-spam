@@ -9,8 +9,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
-from anti_fwd_spam.constants import MODEL_PROVIDERS, SPAM_THRESHOLD
-from anti_fwd_spam.model import ModelConfig, join_model_input, model_input, spam_probability
+from anti_fwd_spam.constants import SPAM_THRESHOLD
+from anti_fwd_spam.model import ModelConfig, join_model_input, model_input, model_providers, spam_probability
 from tests.test_model import StreamingResponse
 
 if TYPE_CHECKING:
@@ -21,12 +21,14 @@ if TYPE_CHECKING:
 
 class JevAcceptanceTests(unittest.IsolatedAsyncioTestCase):
     async def check_case(self, case: dict[str, object]) -> None:
-        provider = next((key for key in MODEL_PROVIDERS if os.environ.get(key)), None)
-        self.assertIsNotNone(provider, "A configured Jev provider key is required for live acceptance")
+        backend = os.environ.get("MODEL_BACKEND")
+        providers = model_providers(backend)
+        provider = next((key for key in providers if os.environ.get(key)), None)
+        self.assertIsNotNone(provider, "A configured provider key for the selected backend is required")
         if provider is None:
             return
-        url, model = MODEL_PROVIDERS[provider]
-        config = ModelConfig(url, model, os.environ[provider])
+        url, model = providers[provider]
+        config = ModelConfig(url, model, os.environ[provider], backend or "jev")
         message = case["message"]
         assert isinstance(message, dict)
         joining = case.get("mode") == "join_profile"
@@ -44,9 +46,9 @@ class JevAcceptanceTests(unittest.IsolatedAsyncioTestCase):
             probability = await spam_probability(self.fetcher, config, state, joining=True)
         else:
             probability = await spam_probability(self.fetcher, config, state)
-        self.assertIsNotNone(probability, "Jev must return a valid score")
+        self.assertIsNotNone(probability, "The selected model must return a valid score")
         if probability is not None:
-            self.assertEqual(probability >= SPAM_THRESHOLD, case["spam"], f"Jev score: {probability}")
+            self.assertEqual(probability >= SPAM_THRESHOLD, case["spam"], f"Model score: {probability}")
 
     @staticmethod
     async def fetcher(url: str, *, method: str, headers: dict[str, str], body: str) -> TelegramResponse:

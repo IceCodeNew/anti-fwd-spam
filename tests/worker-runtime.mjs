@@ -7,12 +7,13 @@ import { unstable_getMiniflareWorkerOptions } from 'wrangler';
 import { Telegram, token, username } from './telegram-fake.mjs';
 
 export const telegram = new Telegram();
+export const outboundRequests = [];
 export const model = { enabled: false, probability: 0, profile: null, profiles: new Map(), state: null, response: null };
 export let runtime, database;
 let runtimeOptions;
 let customBindings = false;
 const defaultBindings = () => ({ ...runtimeOptions.bindings,
-  ...(model.enabled ? { EXPERIENTIAL_API_KEY: 'test-model-key' } : {}) });
+  ...(model.enabled ? { MODEL_BACKEND: 'luna', EXPERIENTIAL_API_KEY: 'test-model-key' } : {}) });
 const secret = 'test-secret';
 export const headers = { 'content-type': 'application/json', 'x-telegram-bot-api-secret-token': secret };
 
@@ -21,7 +22,8 @@ before(async () => {
   const paths = (await readdir(root, { recursive: true })).filter(path => path.endsWith('.py') && path !== 'entry.py');
   const { workerOptions } = unstable_getMiniflareWorkerOptions('wrangler.jsonc');
   // Local secrets must not enable providers outside a scenario's fake configuration.
-  for (const key of ['TYPESAFE_AI_API_KEY', 'EXPERIENTIAL_API_KEY', 'OPENCODE_API_KEY', 'CMD_API_KEY', 'AI_GATEWAY_API_KEY']) {
+  for (const key of ['MODEL_BACKEND', 'TYPESAFE_AI_API_KEY', 'EXPERIENTIAL_API_KEY', 'OPENCODE_API_KEY',
+    'CMD_API_KEY', 'AI_GATEWAY_API_KEY', 'OPENAI_API_KEY', 'OPENROUTER_API_KEY']) {
     delete workerOptions.bindings[key];
   }
   runtimeOptions = {
@@ -31,20 +33,32 @@ before(async () => {
     bindings: { ...workerOptions.bindings, BOT_TOKEN: token, TELEGRAM_WEBHOOK_SECRET: secret, BOT_USERNAME: username,
       REPORTER_IDS: '11,-10012' },
     outboundService: async request => {
+      outboundRequests.push(request.url);
       const providers = {
         'https://api.experientiallabs.ai/v1/decisions': ['gpt-6-luna-decisions', 'test-model-key'],
+        'https://api.openai.com/v1/decisions': ['gpt-6-luna', 'test-openai-key'],
+        'https://openrouter.ai/api/alpha/decisions': ['openai/gpt-6-luna-decisions', 'test-openrouter-key'],
         'https://ai-gateway.vercel.sh/v1/decisions': ['openai/gpt-6-luna-decisions', 'test-gateway-key'],
+        'https://api.experientiallabs.ai/v1/systemone': ['jev-latest', 'test-model-key'],
         'https://api.typesafe.ai/v1/systemone': ['jev-latest', 'test-typesafe-key'],
         'https://opencode.ai/zen/v1/systemone': ['jev-1.13', 'test-opencode-key'],
         'https://api.commandcode.ai/provider/v1/systemone': ['typesafe/jev', 'test-commandcode-key'],
+        'https://ai-gateway.vercel.sh/v4/ai/evaluation-model': ['typesafe-ai/jev', 'test-gateway-key'],
       };
       if (Object.hasOwn(providers, request.url)) {
         const [modelId, apiKey] = providers[request.url];
         assert.equal(request.method, 'POST');
         assert.equal(request.headers.get('authorization'), `Bearer ${apiKey}`);
         const body = await request.json();
-        assert.equal(body.model, modelId);
-        const decisions = request.url.endsWith('/decisions');
+        const gateway = request.url.endsWith('/v4/ai/evaluation-model');
+        if (gateway) {
+          assert.equal(request.headers.get('ai-model-id'), modelId);
+          assert.equal(request.headers.get('ai-gateway-protocol-version'), '0.0.1');
+          assert.equal(request.headers.get('ai-gateway-auth-method'), 'api-key');
+          assert.equal(request.headers.get('ai-evaluation-model-specification-version'), '4');
+          assert.equal(body.model, undefined);
+        } else assert.equal(body.model, modelId);
+        const decisions = request.url.endsWith('/v1/decisions');
         if (decisions) {
           assert.equal(body.questions.length, 1);
           assert.equal(body.questions[0].name, 'spam');
@@ -52,15 +66,18 @@ before(async () => {
           assert.equal(typeof body.questions[0].instructions, 'string');
           assert.equal(typeof body.input, 'string');
           model.state = JSON.parse(body.input);
+          assert.equal(body.state, undefined);
         } else {
-          assert.equal(body.questions.spam.type, 'noul');
+          assert.equal(body.questions.spam.type, gateway ? 'boolean' : 'noul');
           assert.equal(typeof body.questions.spam.instructions, 'string');
           model.state = body.state;
+          assert.equal(body.input, undefined);
         }
-        if (typeof model.response === 'function') return model.response(request.url);
+        if (typeof model.response === 'function') return model.response(request.url, body);
         return model.response ?? Response.json({ answers: decisions
           ? [{ name: 'spam', type: 'predicate', probability: model.probability }]
-          : { spam: { type: 'noul', noul: model.probability } },
+          : { spam: gateway ? { type: 'boolean', probability: model.probability }
+            : { type: 'noul', noul: model.probability } },
         });
       }
       if (request.url.endsWith(`/bot${token}/getChat`)) {
@@ -92,6 +109,7 @@ beforeEach(async () => {
     customBindings = false;
   }
   telegram.reset();
+  outboundRequests.length = 0;
   Object.assign(model, { probability: 0, profile: null, profiles: new Map(), state: null, response: null });
   await database.prepare('DELETE FROM reports').run();
   await database.prepare('DELETE FROM recent_messages').run();

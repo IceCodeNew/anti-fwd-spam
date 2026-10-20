@@ -1,4 +1,4 @@
-"""Static data shared by the moderation and Jev runtime modules.
+"""Static data shared by the moderation and model runtime modules.
 
 This module has no application imports; changing a value here must not create
 an import cycle between policy parsing and model classification.
@@ -12,14 +12,11 @@ MAX_MODEL_RESPONSE_BYTES = 65_536
 
 SPAM_THRESHOLD = 0.90
 
-GATEWAY_URL = "https://ai-gateway.vercel.sh/v4/ai/evaluation-model"
-
 MODEL_PROVIDERS = {
-    "TYPESAFE_AI_API_KEY": ("https://api.typesafe.ai/v1/systemone", "jev-latest"),
-    "EXPERIENTIAL_API_KEY": ("https://api.experientiallabs.ai/v1/systemone", "jev-latest"),
-    "OPENCODE_API_KEY": ("https://opencode.ai/zen/v1/systemone", "jev-1.13"),
-    "CMD_API_KEY": ("https://api.commandcode.ai/provider/v1/systemone", "typesafe/jev"),
-    "AI_GATEWAY_API_KEY": (GATEWAY_URL, "typesafe-ai/jev"),
+    "EXPERIENTIAL_API_KEY": ("https://api.experientiallabs.ai/v1/decisions", "gpt-6-luna-decisions:free"),
+    "OPENAI_API_KEY": ("https://api.openai.com/v1/decisions", "gpt-6-luna"),
+    "OPENROUTER_API_KEY": ("https://openrouter.ai/api/alpha/decisions", "openai/gpt-6-luna-decisions"),
+    "AI_GATEWAY_API_KEY": ("https://ai-gateway.vercel.sh/v1/decisions", "openai/gpt-6-luna-decisions"),
 }
 
 MEDIA_FIELDS = frozenset(

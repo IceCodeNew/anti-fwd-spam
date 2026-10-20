@@ -1470,5 +1470,98 @@
     "spam": false,
     "message": {"from": {"first_name": "Member"}, "text": "日\ufe0f撸\ufe0f1W是骗局，大家别信，请举报"},
     "source": {"kind": "synthetic boundary control", "notes": "An explicit warning retains its exemption even when it repeats an obfuscated earnings pitch."}
+  },
+  {
+    "name": "holdout-profile-warning-linked-ad",
+    "mode": "join_profile",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      }
+    },
+    "bio": "曝光诈骗样本 @<scam_archive>，请勿买卖或付款。",
+    "profile_targets": {
+      "sender": [
+        {
+          "type": "channel",
+          "title": "广告样本",
+          "description": "成人资源付费解锁，USDT全天接单"
+        }
+      ]
+    },
+    "source": {
+      "kind": "synthetic boundary control",
+      "notes": "Sanitized boundary control: distinguish an explicit warning about linked advertising from actual own-account solicitation despite research wording."
+    }
+  },
+  {
+    "name": "holdout-profile-research-word-but-sales",
+    "mode": "join_profile",
+    "spam": true,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      }
+    },
+    "bio": "研究各种收益项目，本人提供USDT场外兑换，全天接单，联系 @<otc_agent>。",
+    "profile_targets": {
+      "sender": [
+        {
+          "type": "channel",
+          "title": "服务入口",
+          "description": "低价收售USDT，联系下单"
+        }
+      ]
+    },
+    "source": {
+      "kind": "synthetic boundary control",
+      "notes": "Sanitized boundary control: distinguish an explicit warning about linked advertising from actual own-account solicitation despite research wording."
+    }
+  },
+  {
+    "name": "message-benign-with-own-sexual-bio",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "这段 Python 异步代码为什么会超时？"
+    },
+    "bio": "成人资源付费解锁，私聊下单 @<contact>",
+    "source": {
+      "kind": "synthetic boundary control",
+      "notes": "An ordinary message and an own sales pitch share an advertising biography; profile context alone must not classify the current message as promotion. All identities and contacts are synthetic."
+    }
+  },
+  {
+    "name": "message-warning-with-own-sexual-bio",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "这条广告我已经举报了，请勿联系。"
+    },
+    "bio": "成人资源付费解锁，私聊下单 @<contact>",
+    "source": {
+      "kind": "synthetic boundary control",
+      "notes": "An ordinary message and an own sales pitch share an advertising biography; profile context alone must not classify the current message as promotion. All identities and contacts are synthetic."
+    }
+  },
+  {
+    "name": "message-own-sales-with-own-bio",
+    "spam": true,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "成人资源付费解锁，私聊下单 @<contact>"
+    },
+    "bio": "资源联系入口 @<contact>",
+    "source": {
+      "kind": "synthetic boundary control",
+      "notes": "An ordinary message and an own sales pitch share an advertising biography; profile context alone must not classify the current message as promotion. All identities and contacts are synthetic."
+    }
   }
 ]

@@ -24,8 +24,8 @@ For a new group message, processing follows this order:
 3. Route a join notice to independent checks of its new members, rather than its inviter.
 4. For other messages, match explicit source identities and account blacklists.
 5. Index an eligible message for possible later history cleanup, then apply reply reports and remaining command handling.
-6. Apply all current-message text, nickname, contact-name and maintenance regexes before Jev for human senders below the mature-message threshold, with or without a reference. Established senders use Jev for regex matches. Sticker checks retain their existing reference boundary, and bot senders retain local-only filtering.
-7. Queue Jev classification for the remaining eligible input.
+6. Apply all current-message text, nickname, contact-name and maintenance regexes before model classification for human senders below the mature-message threshold, with or without a reference. Established senders use the model for regex matches. Sticker checks retain their existing reference boundary, and bot senders retain local-only filtering.
+7. Queue model classification for the remaining eligible input.
 8. Leave the message unchanged when no rule or model decision reaches the configured threshold.
 
 ```mermaid
@@ -54,7 +54,7 @@ flowchart TD
     W -->|No match| X[Existing sticker boundary and own-profile checks]
     M -->|Yes| Y[Existing sticker boundary, no direct regex punishment]
     X -->|Local match| P
-    X -->|No match| N[Jev with bounded current and reference context]
+    X -->|No match| N[Model with bounded current and reference context]
     Y -->|Sticker match| P
     Y -->|No match| N
     O -->|Match| P[Action 1 on current sender]
@@ -64,11 +64,11 @@ flowchart TD
     N -->|Below threshold or unavailable| Q[Leave message unchanged]
 ```
 
-A human sender's mature-message count selects one policy for all text/profile regexes. Below the threshold, a match in current text, caption, nickname, contact name or available own/contact biography can trigger Action 1 before Jev, including on replies and quotes. This intentionally stricter low-history policy may also match warnings or exact examples; operators can recover the account with `/allow`. At or above the threshold, regex matches are evidence for Jev rather than direct punishment. Source-separated reference context remains available to the model.
+A human sender's mature-message count selects one policy for all text/profile regexes. Below the threshold, a match in current text, caption, nickname, contact name or available own/contact biography can trigger Action 1 before model classification, including on replies and quotes. This intentionally stricter low-history policy may also match warnings or exact examples; operators can recover the account with `/allow`. At or above the threshold, regex matches are evidence for the model rather than direct punishment. Source-separated reference context remains available to the model.
 
 Referenced text, reference-author profiles and guest caller metadata never count as current-sender regex evidence. Existing command and reply-report routing takes precedence. A campaign-like text match neither registers its named bot as a source nor punishes that bot or the referenced author. Human reference messages still bypass sticker-list checks; this membership policy does not broaden sticker enforcement.
 
-Actual bot senders, including guest bots, still undergo the existing local checks on their own message even when replying; they do not enter Jev. Referenced content and guest caller metadata never substitute for the current sender's content or identity. A forum topic attachment that is not an explicit reply does not count as a reference.
+Actual bot senders, including guest bots, still undergo the existing local checks on their own message even when replying; they do not enter model classification. Referenced content and guest caller metadata never substitute for the current sender's content or identity. A forum topic attachment that is not an explicit reply does not count as a reference.
 
 ## Moderation decision map
 
@@ -80,7 +80,7 @@ flowchart LR
     B -->|Registered source| C[Current sender A: Action 1]
     B -->|Registered source| D[Source bot B: Action 2]
     B -->|Trusted reply report| E[Reported account A: Action 2]
-    B -->|Local rule, sticker, or Jev on a message| F[Current sender A: Action 1]
+    B -->|Local rule, sticker, or model decision on a message| F[Current sender A: Action 1]
     B -->|Joined account match| M[Joined member: Action 2 and notice removal]
     G[Unlisted report] --> H[Evidence only]
     C --> I{Protected administrator or owner?}
@@ -96,7 +96,7 @@ flowchart LR
 
 ### Action 1: remove the current message and mute its sender
 
-Local rules, sticker matches, and Jev spam matches use Action 1. The bot removes only the triggering message and permanently restricts a human sender when Telegram supports that operation. It does not clean history or add a blacklist entry. Bots are not muted. Basic groups support deletion but not permanent mute.
+Local rules, sticker matches, and model spam matches use Action 1. The bot removes only the triggering message and permanently restricts a human sender when Telegram supports that operation. It does not clean history or add a blacklist entry. Bots are not muted. Basic groups support deletion but not permanent mute.
 
 Group owners, administrators, and messages sent as a group's anonymous identity are protected from automatic Action 1. A valid trusted report may still delete an explicitly reported administrator message.
 
@@ -110,7 +110,7 @@ Action 2 never treats the source bot as the sender's history unless the command 
 
 A new `new_chat_members` service notice in a supergroup checks each joined account independently. The inviter or service-message actor is neither classified nor indexed as a joiner. Duplicate member identities are processed once; the moderation bot itself is skipped. Edited join notices and other service events do not create join checks.
 
-Existing account blacklists and registered bot sources apply to joined accounts even before they speak. Otherwise, the bot checks a human joiner's own bounded nickname and available biography against existing profile-safe local rules and, when configured, a separate Jev profile-advertising scope. A nickname or biography that clearly solicits services, goods, sexual offers, cryptocurrency trades, or recruitment can be sufficient without an authored message. Isolated keywords, emoji, student identities, ordinary self-description, warnings, fictional dialogue, or advertisements in linked targets alone are insufficient. Unknown profile fields are not evidence of spam. Unlisted bots do not enter profile classification.
+Existing account blacklists and registered bot sources apply to joined accounts even before they speak. Otherwise, the bot checks a human joiner's own bounded nickname and available biography against existing profile-safe local rules and, when configured, a separate model profile-advertising scope. A nickname or biography that clearly solicits services, goods, sexual offers, cryptocurrency trades, or recruitment can be sufficient without an authored message. Isolated keywords, emoji, student identities, ordinary self-description, warnings, fictional dialogue, or advertisements in linked targets alone are insufficient. Research, analysis, warnings, and reports about an offer do not establish that the member is making that offer. Unknown profile fields are not evidence of spam. Unlisted bots do not enter profile classification.
 
 A match permanently bans only that joined account, preventing rejoining, and records the confirmed ban in the existing bot-scoped account blacklist. It also removes the shared join notice and cleans eligible indexed history of that account, not the inviter. Normal co-joiners stay in the group; administrators and owners remain protected. A confirmed ban is not repeated when notice deletion needs retry. Each member has an independent durable task and moderation subject, so one failed lookup, decision, or action does not overwrite another's progress.
 
@@ -124,7 +124,7 @@ Expiry aggregates credit and deletes exactly the same bounded set of observation
 
 ## Local filtering
 
-Text/profile regex checks run before Jev for low-history human senders and actual bot senders, regardless of references. General local patterns inspect authored text, captions, shared contact display names, and sender nicknames; deferred profile checks inspect the available sender and contact-account biographies after Telegram lookups. A separate maintenance pattern checks only current text and captions for a same-sentence claim that a group or channel is disabled, moved, or replaced followed by a request to join a new destination. Administrators are protected before Action 1, so ordinary administrator notices remain intact.
+Text/profile regex checks run before model classification for low-history human senders and actual bot senders, regardless of references. General local patterns inspect authored text, captions, shared contact display names, and sender nicknames; deferred profile checks inspect the available sender and contact-account biographies after Telegram lookups. A separate maintenance pattern checks only current text and captions for a same-sentence claim that a group or channel is disabled, moved, or replaced followed by a request to join a new destination. Administrators are protected before Action 1, so ordinary administrator notices remain intact.
 
 Local patterns are grouped by content:
 
@@ -141,19 +141,25 @@ Local patterns are grouped by content:
 
 Co-occurrence (`plus`) is within one inspected field, in any order and across line breaks. Adjacent phrase components retain their stated order. Group migration notices remain a separate current-text/caption-only category as described above. Repeated-symbol matching uses the same authority and member-maturity protections as other local matches; actual bots receive deletion only, and guest callers are not moderation targets. Other text/profile regexes do not inspect button labels or combine fields.
 
-These local rules do not exempt warnings, questions or quoted wording embedded in the current sender's own text. A low-history human can therefore receive Action 1 for such discussion; `/allow` restores access but cannot restore a deleted message. Established humans receive semantic Jev classification instead. Text contained only in a Telegram reply or quote remains outside local matching.
+These local rules do not exempt warnings, questions or quoted wording embedded in the current sender's own text. A low-history human can therefore receive Action 1 for such discussion; `/allow` restores access but cannot restore a deleted message. Established humans receive semantic model classification instead. Text contained only in a Telegram reply or quote remains outside local matching.
 
 A separate full-field template matches an obfuscated bulk-advertising offer with its contact handle in current text or captions only. It does not inspect profiles, shared contacts or referenced text. Warning prefixes, explanatory suffixes and partial quotations do not match this template, but the general rules above can still match the same field. An unframed verbatim copy remains indistinguishable from the offer itself; the existing member-maturity and authority protections still apply.
 
-A permitted local match ends model classification for that message. All text/profile regexes share the mature-member gate; established humans instead receive Jev classification. The same local regex and sticker checks apply to new and edited bot messages regardless of a reference. Floods found only in referenced content do not count as a local match. Bots receive deletion only for a content match, while administrator/anonymous-group protection still applies. A registered source match uses Action 2 on the bot separately from content filtering.
+A permitted local match ends model classification for that message. All text/profile regexes share the mature-member gate; established humans instead receive model classification. The same local regex and sticker checks apply to new and edited bot messages regardless of a reference. Floods found only in referenced content do not count as a local match. Bots receive deletion only for a content match, while administrator/anonymous-group protection still applies. A registered source match uses Action 2 on the bot separately from content filtering.
 
-## Jev classification
+## Model classification
 
-Jev is optional. When enabled, the bot sends the current sender's bounded message context, selected profile data, contact display data, and bounded reference context to the configured provider. It does not download or inspect media. Provider failures are retried according to the durable task policy; invalid or unavailable model answers do not count as spam.
+Model classification is optional and uses GPT-6 Luna Decisions. A supported provider key enables it. When enabled, the bot sends the current sender's bounded message context, selected profile data, contact display data, and bounded reference context to the configured provider. It does not download or inspect media. [Provider setup](setup.md#optional-model-provider) defines supported keys and provider order. Missing keys are skipped; without a configured supported key, classification is unavailable. Provider changes do not change moderation targets, local-rule precedence, or the inclusive threshold.
+
+All providers use one static message prompt and one static joining-profile prompt, without conditional hints. The message scope distinguishes an ordinary recruitment contact from a contact completing a spam-recruitment funnel. The joining-profile scope distinguishes a member's own offer from research, analysis, warnings, or reports about someone else's offer.
+
+Experiential, official OpenAI, and Vercel use native Decisions requests with a named spam predicate; the response must contain exactly one answer, with type `predicate` and name `spam`. OpenRouter uses System One-style Noul requests and named answers, not the native Decisions shape. Noul answers must return the named `spam` answer with type `noul`. Only a finite numeric probability in the inclusive range from zero to one can support punishment. Malformed envelopes, missing or mismatched answers, extra native answers, refusals, wrong answer types, booleans, strings, and out-of-range or non-finite values do not count as spam. Any completed answer, including an invalid or refused answer, ends classification; the bot does not consult another provider to seek a higher score.
+
+Transport errors and retryable HTTP failures use the durable task policy. A provider-specific permanent rejection may advance to an untried configured provider. Classification retains a shared maximum of four total attempts, not four attempts per provider; the unchanged delays are owned by `RETRY_DELAYS` in `src/anti_fwd_spam/tasks.py`. Provider rotation does not extend this budget. Exhausted or unavailable classification leaves the message or joined account unchanged.
 
 The current sender's intent is the primary evidence. Reference content and profile data remain source-separated. A referenced advertisement alone does not punish the current sender; endorsement, contact, join, order, or similar promotion can. Supplying only a recruitment contact in the current message can complete the contact funnel of a clearly advertising reference without an explicit recommendation verb. Isolated handles and contacts for ordinary job information are insufficient. Warnings, reports, analysis, verification, sample requests, ordinary discussion, personal experience, and personal support are not promotion, including when they identify an advertised contact.
 
-Visible contact-card display names can themselves be a sales pitch; separately fetched contact-account profiles remain auxiliary. Warnings, reports and analysis retain their exemption. A counterfeit-sales clarification is added only for the currently shared card when its visible name mentions counterfeit cash; this hint is model evidence, never a local ban rule. Referenced cards and separately fetched biographies do not activate it. Visible rich text, checklist text and inline-button text/URLs are evaluated within their own current-message or reference source. Callback data and media identifiers are excluded. Recruitment slang is interpreted together with solicitation, earnings promises and contact directions; ordinary income, payment, performance benchmarking and legitimate jobs remain insufficient.
+Visible contact-card display names can themselves be a sales pitch; separately fetched contact-account profiles remain auxiliary. Warnings, reports and analysis retain their exemption. A currently shared card's visible name presenting counterfeit cash as spendable, machine-verifiable or usable for purchases constitutes a sales pitch without an extra price or contact verb. This is model evidence, never a local ban rule. Referenced cards and separately fetched biographies do not substitute for the current card's visible name. Visible rich text, checklist text and inline-button text/URLs are evaluated within their own current-message or reference source. Callback data and media identifiers are excluded. Recruitment slang is interpreted together with solicitation, earnings promises and contact directions; ordinary income, payment, performance benchmarking and legitimate jobs remain insufficient.
 
 Recruiting commercial agents or individual/team participants for a service, such as a media player's CPS affiliate program or a card-redemption scheme, constitutes promotion. Technical questions about commissions and reports quoting the recruitment remain non-promotional.
 
@@ -163,7 +169,7 @@ Payment-intermediary and laundering recruitment, funded gift-brushing tasks, car
 
 Repeated character splitting with punctuation, emoji or invisible characters strengthens an advertising interpretation when combined with supplier or profit-pitch language; it does not independently establish spam. A short per-item resale-profit promise inviting readers to buy and resell constitutes solicitation even without a product name, contact or explicit recruitment verb. Plain and obfuscated versions follow the same intent boundary. Completed personal transactions, price questions, warnings and quoted reports remain non-promotional.
 
-Short promises of high daily earnings can constitute income solicitation without a contact or recruitment verb. A Jev clarification applies when the current text or caption contains `日撸`/`日薅` or `转手`/`轉手`/`倒手`, allowing non-word separators. The clarification does not trigger a local ban and is not activated by profiles or referenced messages. Personal records, game experience, questions and warnings remain non-promotional.
+Short promises of high daily earnings can constitute income solicitation without a contact or recruitment verb. Personal records, game experience, questions and warnings remain non-promotional.
 
 In message classification, direct attempts by the current sender to override the moderation instructions or force a particular score also count as removable spam, even without advertising. Security discussion, reports and quoted attack examples are not themselves attempts to control the current classification. The separate joining-profile scope continues to judge advertising intent rather than treating instruction-like profile text alone as advertising.
 
@@ -171,7 +177,7 @@ The inclusive score threshold is the `SPAM_THRESHOLD` value maintained in `src/a
 
 ## Edits and retries
 
-An edit fences older model work for that message. An edited message still passes source and report routing. An edited low-history human message without a reference can use immediate local rules but does not start fresh profile classification; an eligible referenced edit or established member's edit starts fresh Jev classification. Bot messages use local rules even when referenced and never enter Jev. Edits do not rerun automatic account-blacklist checks.
+An edit fences older model work for that message. An edited message still passes source and report routing. An edited low-history human message without a reference can use immediate local rules but does not start fresh profile classification; an eligible referenced edit or established member's edit starts fresh model classification. Bot messages use local rules even when referenced and never enter model classification. Edits do not rerun automatic account-blacklist checks.
 
 Webhook delivery retries and scheduled task retries are separate. Durable task leases prevent concurrent work from repeating a completed moderation action. A confirmed deletion or ban is not repeated after a later redelivery; uncertain operations remain retryable or require manual inspection.
 

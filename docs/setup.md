@@ -56,7 +56,40 @@ TELEGRAM_WEBHOOK_SECRET="$(mise exec -- python -c 'import secrets; print(secrets
 printf '%s' "$TELEGRAM_WEBHOOK_SECRET" | mise exec -- uv run pywrangler secret put TELEGRAM_WEBHOOK_SECRET
 ```
 
-Jev is optional. Add a provider secret only after reviewing the provider's privacy and pricing terms. The supported secret names and endpoint selection are owned by `MODEL_PROVIDERS` in `src/anti_fwd_spam/constants.py`; do not copy secret values into files.
+## Optional model provider
+
+Semantic classification is optional and uses GPT-6 Luna Decisions. Review provider privacy and pricing terms before saving a provider key as a Worker secret. A supported key enables classification.
+
+`MODEL_PROVIDERS` in [`src/anti_fwd_spam/constants.py`](../src/anti_fwd_spam/constants.py) owns the ordered keys, endpoints, and model IDs. Missing or empty keys are skipped; without a configured supported key, model classification is unavailable.
+
+| Priority | Platform | Worker secret |
+| --- | --- | --- |
+| 1 | Experiential | `EXPERIENTIAL_API_KEY` |
+| 2 | OpenAI (official) | `OPENAI_API_KEY` |
+| 3 | OpenRouter | `OPENROUTER_API_KEY` |
+| 4 | Vercel AI Gateway | `AI_GATEWAY_API_KEY` |
+
+For example, enable Luna through Experiential:
+
+```bash
+mise exec -- uv run pywrangler secret put EXPERIENTIAL_API_KEY
+```
+
+Add only the other provider secrets intended for failover. `OPENAI_API_KEY` is required only for the official OpenAI route; the gateway routes use their own credentials. Experiential, official OpenAI, and Vercel use native Decisions requests; OpenRouter uses its System One-style Noul interface. One static message prompt and one static joining-profile prompt apply across providers, without conditional hints.
+
+### Compatibility and migration
+
+**Breaking change:** Jev is retired. Existing deployments with `EXPERIENTIAL_API_KEY` or `AI_GATEWAY_API_KEY` now use Luna, including its different endpoint and request format. Review provider access, terms, and billing before deploying.
+
+`TYPESAFE_AI_API_KEY`, `OPENCODE_API_KEY`, and `CMD_API_KEY` are ignored. A deployment with only those keys has no model classification; configure at least one supported key from the table above to enable Luna. Local rules, reports, and blacklists still operate without a model.
+
+### Failover and costs
+
+Additional configured providers are connection/HTTP error fallbacks, not extra votes or score-shopping. A completed answer ends classification, including a below-threshold, invalid, or refused answer. Classification has a fixed shared budget of four total attempts, not four per provider; provider rotation does not reset it. Existing durable retry delays remain owned by `RETRY_DELAYS` in [`src/anti_fwd_spam/tasks.py`](../src/anti_fwd_spam/tasks.py). See the [behavior contract](behavior.md#model-classification) for error and decision boundaries.
+
+The first route uses Experiential's `gpt-6-luna-decisions:free` model ID. This route stops with HTTP 429 when its free allowance is exhausted; it does not continue on Experiential credits. The existing retry policy can then select another configured provider, which can charge for the request. The full provider chain is not a cost cap. Omit paid provider credentials when paid failover is not intended. See [Experiential's free-route policy](https://platform.experientiallabs.ai/llms.txt). Keep secret values out of files, logs, and command arguments.
+
+The bot submits text only; provider image capability does not enable media ingestion.
 
 ## Deploy and register the webhook
 

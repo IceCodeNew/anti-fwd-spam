@@ -429,7 +429,7 @@ class Moderator:
             return AppResponse(503, "moderation storage unavailable; retry pending")
 
     async def check_content(self, update: TelegramUpdate) -> AppResponse:
-        """Apply local rules, then queue profile checks and Jev for new messages and referenced edits.
+        """Apply local rules, then queue profile checks and classification for new messages and referenced edits.
 
         A denied report on local-rule spam is deleted without a mute, so a member who quotes that spam keeps speaking.
         """

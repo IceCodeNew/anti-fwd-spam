@@ -21,14 +21,14 @@ uv run ruff format --check .
 uv run --no-default-groups ty check
 ```
 
-The live Jev suite is intentionally separate because it sends fixture data to a provider and can incur charges. Follow [Jev checks](docs/jev-checks.md) when you have an approved provider setup.
+The live model suite is intentionally separate because it sends fixture data to a provider and can incur charges. Follow [live model checks](docs/decision-checks.md) when you have an approved provider setup.
 
 ## Source boundaries
 
-- `src/anti_fwd_spam/constants.py` owns static model, input-field, provider, profile-limit, and threshold values.
-- `src/anti_fwd_spam/rules.py` owns static regexes and Jev prompt text/fragments.
+- `src/anti_fwd_spam/constants.py` owns static model, input-field, provider, profile-limit, and threshold values, including the ordered Luna `MODEL_PROVIDERS` mapping.
+- `src/anti_fwd_spam/rules.py` owns static regexes and the shared `INSTRUCTIONS` message prompt and `JOIN_PROFILE_INSTRUCTIONS` joining-profile prompt. All providers use these prompts without conditional hints.
 - `src/anti_fwd_spam/policy.py` owns Telegram update validation, provenance, configuration parsing, and compatibility exports for local matchers.
-- `src/anti_fwd_spam/model.py` owns Jev requests/parsing, model input shaping, profile enrichment, and compatibility exports for established model symbols.
+- `src/anti_fwd_spam/model.py` owns the three-field `ModelConfig` (`url`, `model`, `key`), native Decisions and OpenRouter Noul requests/parsing, model input shaping, profile enrichment, and compatibility exports for established model symbols. Provider keys enable Luna classification.
 - `src/anti_fwd_spam/moderation.py` owns routing and action selection.
 - `src/anti_fwd_spam/tasks.py` owns durable classification/deletion retries.
 - `src/anti_fwd_spam/actions.py` owns Telegram moderation outcomes.
@@ -48,4 +48,4 @@ Do not turn a provider score, a Worker fake score, or a dated investigation resu
 
 ## Documentation
 
-The README is the consumer entry point. Deployment commands belong in [docs/setup.md](docs/setup.md), operating procedures in [docs/operations.md](docs/operations.md), stable behavior in [docs/behavior.md](docs/behavior.md), and live Jev test procedure in [docs/jev-checks.md](docs/jev-checks.md). Keep the English and Chinese README structures aligned, but write idiomatic Chinese rather than translating sentence by sentence.
+The README is the consumer entry point. Deployment commands belong in [docs/setup.md](docs/setup.md), operating procedures in [docs/operations.md](docs/operations.md), stable behavior in [docs/behavior.md](docs/behavior.md), supported provider configuration in [docs/setup.md](docs/setup.md#optional-model-provider), and live decision test procedure in [docs/decision-checks.md](docs/decision-checks.md). Keep the English and Chinese README structures aligned, but write idiomatic Chinese rather than translating sentence by sentence.

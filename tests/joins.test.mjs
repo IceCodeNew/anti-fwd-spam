@@ -50,7 +50,7 @@ for (const profile of ['nickname', 'bio', 'blacklist']) {
 test('user: Given mixed new members in one notice, When their profiles differ, Then independent decisions ban only advertising members', async () => {
   telegram.members.set(33, { status: 'member' });
   telegram.members.set(44, { status: 'member' });
-  model.response = () => Response.json({ answers: { spam: { type: 'noul', noul: model.state.nickname === 'Normal student' ? 0.1 : 0.96 } } });
+  model.response = () => Response.json({ answers: [{ name: 'spam', type: 'predicate', probability: model.state.nickname === 'Normal student' ? 0.1 : 0.96 }] });
   const update = join([member(22, 'Ad one'), member(33, 'Normal student'), member(44, 'Ad two')]);
   telegram.send(update.message);
   assert.equal((await dispatch(update)).status, 200);

@@ -43,7 +43,7 @@ class AuthoredPatternTests(unittest.TestCase):
         for symbol in ("💰", "🔴"):
             with self.subTest(symbol=symbol):
                 self.assertTrue(matches_spam_text(f"{symbol}甲{symbol}\n{symbol}\u200b{symbol}"))
-                message = {
+                message: dict[str, object] = {
                     "text": symbol,
                     "from": {"first_name": symbol},
                     "reply_markup": {"inline_keyboard": [[{"text": f"{symbol}甲{symbol}"}]]},

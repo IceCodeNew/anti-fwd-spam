@@ -214,7 +214,7 @@ test('user: Given an edit during inference, When the stale spam answer arrives, 
   model.response = async () => {
     started.resolve();
     await release.promise;
-    return Response.json({ answers: { spam: { type: 'noul', noul: 1 } } });
+    return Response.json({ answers: [{ name: 'spam', type: 'predicate', probability: 1 }] });
   };
   telegram.send(message());
   const delivery = dispatch({ update_id: 7, message: message() });
@@ -331,7 +331,7 @@ test('user: Given a reclaimed task, When an earlier worker returns a stale spam 
   model.response = new Response('unavailable', { status: 503 });
   telegram.send(message());
   assert.equal((await dispatch({ update_id: 30, message: message() })).status, 200);
-  model.response = async () => Response.json({ answers: { spam: { type: 'noul', noul: await responses.shift()() } } });
+  model.response = async () => Response.json({ answers: [{ name: 'spam', type: 'predicate', probability: await responses.shift()() }] });
   const original = tick((await task()).due_at);
   await firstStarted.promise;
   const reclaimed = tick((await task()).due_at);

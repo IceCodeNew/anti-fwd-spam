@@ -57,11 +57,15 @@ curl --silent --show-error --fail-with-body \
 | Deletion, mute, or ban fails | Check bot administrator permissions and target protection. |
 | `ban confirmation failed` or `mute retry skipped` | Check membership manually before retrying a report. |
 | History cleanup is incomplete | Telegram and the index only cover messages the bot received within the retention window. |
+| Model classification does not run | Check for a supported Luna provider key in [setup](setup.md#optional-model-provider). Deployments with only retired Jev-provider keys need [migration](setup.md#compatibility-and-migration). |
+| A different model runs than expected | Supported keys select Luna. Check the deployed code and [compatibility and migration](setup.md#compatibility-and-migration) when upgrading an older deployment. |
+| Model returns an error or refusal | Inspect redacted Worker logs and provider access/quota. Connection/HTTP failover stays within the fixed shared attempt budget. A completed invalid or refused answer ends classification without punishment or another provider call. Use [live model checks](decision-checks.md) with approved fixtures to test semantic behavior. |
+| Model usage incurs unexpected charges | Check provider billing and limits. The Experiential `:free` route stops when its allowance is exhausted. Failover can advance to configured paid providers. See [setup](setup.md#failover-and-costs). |
 | Storage errors | Check the `REPORTS` binding, migrations, and D1 limits. |
 
 ## Privacy and retention
 
-The bot sends bounded message context and selected profile data to Jev only when Jev is enabled. It does not download or inspect media. Review provider terms before enabling it.
+The bot sends bounded text context and selected profile data to a configured decision-model provider only when classification is enabled. It does not download or inspect images, video, or audio. Provider image support does not change this boundary. Review provider terms before enabling classification.
 
 D1 keeps reports, temporary processing records, and moderation progress for a limited retention period. The recent-message index stores identifiers and timestamps rather than message text; pending model tasks may temporarily retain submitted content until classification finishes. Source, account, and sticker blacklists remain until removed. Member-activity counters persist after their observations expire, capped at the maturity threshold; changing the message index window changes how quickly that threshold can be earned. Exact retention constants are maintained in `src/anti_fwd_spam/evidence.py` and cleanup is performed by the scheduled Worker trigger.
 

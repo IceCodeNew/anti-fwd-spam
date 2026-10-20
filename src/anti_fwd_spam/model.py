@@ -1,4 +1,4 @@
-"""Classify message content with Jev without sending conversation history."""
+"""Classify message content with decision models without sending conversation history."""
 
 from __future__ import annotations
 
@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
 from .constants import (
-    GATEWAY_URL,
     MAX_MODEL_RESPONSE_BYTES,
     MAX_PROFILE_BIO_BYTES,
     MAX_PROFILE_HANDLES,
@@ -22,23 +21,7 @@ from .constants import (
     PUBLIC_PROFILE_HOSTS,
 )
 from .policy import display_name, reply_target
-from .rules import (
-    COUNTERFEIT_CARD_HINT,
-    EARNINGS_PITCH_HINT,
-    EARNINGS_PITCH_RE,
-    INSTRUCTIONS,
-    JOIN_PROFILE_INSTRUCTIONS,
-    ORDINARY_CONTEXT_HINTS,
-    ORDINARY_SERVICE_PAYMENT_RE,
-    ORDINARY_SERVICE_SHORT_RE,
-    PROFILE_HANDLE_RE,
-    PROJECT_RECRUITMENT_BIO_RE,
-    PROJECT_RECRUITMENT_HINT,
-    PROJECT_RECRUITMENT_TEXT_RE,
-    QUOTED_AD_ANALYSIS_RE,
-    QUOTED_CHANNEL_DISCUSSION_RE,
-    QUOTED_CHANNEL_INVITE_RE,
-)
+from .rules import INSTRUCTIONS, JOIN_PROFILE_INSTRUCTIONS, PROFILE_HANDLE_RE
 from .telegram import TelegramError, call_method
 
 if TYPE_CHECKING:
@@ -84,47 +67,6 @@ def extract_profile_handles(bio: object) -> tuple[str, ...]:
 
 def _profile_text(value: object) -> str | None:
     return value[:MAX_PROFILE_TEXT] if isinstance(value, str) and value else None
-
-
-def contextual_hints(state: dict[str, object]) -> tuple[str, ...]:
-    """Add narrow clarifications only when the current input matches their evidence boundary."""
-    message = state.get("message")
-    if not isinstance(message, dict):
-        return ()
-    hints = (
-        [EARNINGS_PITCH_HINT]
-        if any(
-            isinstance(value := message.get(field), str) and EARNINGS_PITCH_RE.search(value)
-            for field in ("text", "caption")
-        )
-        else []
-    )
-    contact = state.get("contact")
-    card_name = contact.get("card_name") if isinstance(contact, dict) else None
-    if isinstance(card_name, str) and any(word in card_name for word in ("假币", "假钞")):
-        hints.append(COUNTERFEIT_CARD_HINT)
-    text = message.get("text")
-    if not isinstance(text, str):
-        return tuple(hints)
-    bio = state.get("bio")
-    if isinstance(bio, str) and PROJECT_RECRUITMENT_TEXT_RE.search(text) and PROJECT_RECRUITMENT_BIO_RE.search(bio):
-        hints.append(PROJECT_RECRUITMENT_HINT)
-    has_reference = isinstance(state.get("context"), dict)
-    if not has_reference and ORDINARY_SERVICE_PAYMENT_RE.search(text):
-        hints.append(ORDINARY_CONTEXT_HINTS[0])
-    if not has_reference and ORDINARY_SERVICE_SHORT_RE.fullmatch(text.strip()):
-        hints.append(ORDINARY_CONTEXT_HINTS[1])
-    if has_reference and QUOTED_AD_ANALYSIS_RE.search(text):
-        hints.append(ORDINARY_CONTEXT_HINTS[2])
-    if has_reference and QUOTED_CHANNEL_DISCUSSION_RE.search(text):
-        reference = message.get("reply_to_message")
-        reference_text = reference.get("text") if isinstance(reference, dict) else None
-        if isinstance(reference_text, str) and QUOTED_CHANNEL_INVITE_RE.search(reference_text):
-            hints.append(
-                "引用来源隔离: 当前正文明确讨论、质疑、提醒或举报被引用的频道/群邀请, 不是主动推广; "
-                "只有当前正文背书、推荐、联系、加入或下单时, 才把引用广告归因给当前发送者。"
-            )
-    return tuple(hints)
 
 
 async def public_profile(fetcher: Fetch, token: str, handle: str) -> dict[str, str] | None:
@@ -274,7 +216,7 @@ def join_model_input(member: dict[str, object]) -> dict[str, object]:
 
 
 def profile_ids(message: dict[str, object]) -> dict[str, int]:
-    """Return only resolvable Telegram user IDs; never send these IDs to Jev."""
+    """Return only resolvable Telegram user IDs; never send these IDs to model providers."""
     identifiers: dict[str, int] = {}
     replied = reply_target(message)
     external = message.get("external_reply")
@@ -317,28 +259,17 @@ async def spam_probability(
     fetcher: Fetch, config: ModelConfig, state: dict[str, object], *, joining: bool = False
 ) -> float | None:
     """Score an ordinary message or joining profile, retaining the provider retry policy."""
-    gateway = config.url == GATEWAY_URL
+    decisions = urlsplit(config.url).hostname != "openrouter.ai"
     headers = {"authorization": f"Bearer {config.api_key}", "content-type": "application/json"}
     instructions = JOIN_PROFILE_INSTRUCTIONS if joining else INSTRUCTIONS
-    if not joining:
-        hints = contextual_hints(state)
-        if hints:
-            instructions += "\n" + "\n".join(hints)
-    payload: dict[str, object] = {
-        "state": state,
-        "questions": {"spam": {"type": "boolean" if gateway else "noul", "instructions": instructions}},
-    }
-    if gateway:
-        headers.update(
-            {
-                "ai-gateway-protocol-version": "0.0.1",
-                "ai-gateway-auth-method": "api-key",
-                "ai-evaluation-model-specification-version": "4",
-                "ai-model-id": config.model,
-            },
+    payload: dict[str, object] = {"model": config.model}
+    if decisions:
+        payload.update(
+            input=json.dumps(state, ensure_ascii=False),
+            questions=[{"name": "spam", "type": "predicate", "instructions": instructions}],
         )
     else:
-        payload["model"] = config.model
+        payload.update(state=state, questions={"spam": {"type": "noul", "instructions": instructions}})
 
     async def send_and_read() -> tuple[int, bytes]:
         response = await fetcher(
@@ -361,7 +292,7 @@ async def spam_probability(
         raise ModelRetryError
     if status != HTTPStatus.OK:
         raise ModelRetryError(retryable=False)
-    return _decode_probability(body, gateway=gateway)
+    return _decode_probability(body, decisions=decisions)
 
 
 async def _read_bounded_response(response: TelegramResponse) -> bytes:
@@ -391,17 +322,28 @@ async def _read_bounded_response(response: TelegramResponse) -> bytes:
             reader.releaseLock()
 
 
-def _decode_probability(body: bytes, *, gateway: bool) -> float | None:
+def _decode_probability(body: bytes, *, decisions: bool) -> float | None:
     try:
         payload = json.loads(body)
     except (UnicodeDecodeError, ValueError, RecursionError):
         return None
-    if not isinstance(payload, dict) or not isinstance(payload.get("answers"), dict):
+    if not isinstance(payload, dict):
         return None
-    answer = payload["answers"].get("spam")
-    if not isinstance(answer, dict) or answer.get("type") != ("boolean" if gateway else "noul"):
+    answers = payload.get("answers")
+    if decisions and isinstance(answers, list) and len(answers) == 1:
+        answer = answers[0]
+    elif not decisions and isinstance(answers, dict):
+        answer = answers.get("spam")
+    else:
         return None
-    probability = answer.get("probability" if gateway else "noul")
+    answer_type = "predicate" if decisions else "noul"
+    if (
+        not isinstance(answer, dict)
+        or answer.get("type") != answer_type
+        or (decisions and answer.get("name") != "spam")
+    ):
+        return None
+    probability = answer.get("probability" if decisions else "noul")
     if type(probability) in (int, float) and 0 <= probability <= 1:
         return float(probability)
     return None

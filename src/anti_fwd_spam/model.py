@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
 from .constants import (
-    GATEWAY_URL,
     MAX_MODEL_RESPONSE_BYTES,
     MAX_PROFILE_BIO_BYTES,
     MAX_PROFILE_HANDLES,
@@ -317,28 +316,21 @@ async def spam_probability(
     fetcher: Fetch, config: ModelConfig, state: dict[str, object], *, joining: bool = False
 ) -> float | None:
     """Score an ordinary message or joining profile, retaining the provider retry policy."""
-    gateway = config.url == GATEWAY_URL
+    decisions = urlsplit(config.url).path.endswith("/decisions")
     headers = {"authorization": f"Bearer {config.api_key}", "content-type": "application/json"}
     instructions = JOIN_PROFILE_INSTRUCTIONS if joining else INSTRUCTIONS
     if not joining:
         hints = contextual_hints(state)
         if hints:
             instructions += "\n" + "\n".join(hints)
-    payload: dict[str, object] = {
-        "state": state,
-        "questions": {"spam": {"type": "boolean" if gateway else "noul", "instructions": instructions}},
-    }
-    if gateway:
-        headers.update(
-            {
-                "ai-gateway-protocol-version": "0.0.1",
-                "ai-gateway-auth-method": "api-key",
-                "ai-evaluation-model-specification-version": "4",
-                "ai-model-id": config.model,
-            },
+    payload: dict[str, object] = {"model": config.model}
+    if decisions:
+        payload.update(
+            input=json.dumps(state, ensure_ascii=False),
+            questions=[{"name": "spam", "type": "predicate", "instructions": instructions}],
         )
     else:
-        payload["model"] = config.model
+        payload.update(state=state, questions={"spam": {"type": "noul", "instructions": instructions}})
 
     async def send_and_read() -> tuple[int, bytes]:
         response = await fetcher(
@@ -361,7 +353,7 @@ async def spam_probability(
         raise ModelRetryError
     if status != HTTPStatus.OK:
         raise ModelRetryError(retryable=False)
-    return _decode_probability(body, gateway=gateway)
+    return _decode_probability(body, decisions=decisions)
 
 
 async def _read_bounded_response(response: TelegramResponse) -> bytes:
@@ -391,17 +383,27 @@ async def _read_bounded_response(response: TelegramResponse) -> bytes:
             reader.releaseLock()
 
 
-def _decode_probability(body: bytes, *, gateway: bool) -> float | None:
+def _decode_probability(body: bytes, *, decisions: bool) -> float | None:
     try:
         payload = json.loads(body)
     except (UnicodeDecodeError, ValueError, RecursionError):
         return None
-    if not isinstance(payload, dict) or not isinstance(payload.get("answers"), dict):
+    if not isinstance(payload, dict):
         return None
-    answer = payload["answers"].get("spam")
-    if not isinstance(answer, dict) or answer.get("type") != ("boolean" if gateway else "noul"):
+    answers = payload.get("answers")
+    if decisions and isinstance(answers, list) and len(answers) == 1:
+        answer = answers[0]
+    elif not decisions and isinstance(answers, dict):
+        answer = answers.get("spam")
+    else:
         return None
-    probability = answer.get("probability" if gateway else "noul")
+    if (
+        not isinstance(answer, dict)
+        or answer.get("type") != ("predicate" if decisions else "noul")
+        or (decisions and answer.get("name") != "spam")
+    ):
+        return None
+    probability = answer.get("probability" if decisions else "noul")
     if type(probability) in (int, float) and 0 <= probability <= 1:
         return float(probability)
     return None

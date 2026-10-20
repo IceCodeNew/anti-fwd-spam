@@ -6,7 +6,7 @@ import unittest
 from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
-from anti_fwd_spam.constants import MAX_PROFILE_TEXT
+from anti_fwd_spam.constants import MAX_PROFILE_TEXT, MODEL_PROVIDERS
 from anti_fwd_spam.model import (
     ModelConfig,
     ModelRetryError,
@@ -201,6 +201,83 @@ class ModelDeadlineTests(unittest.TestCase):
             with self.assertRaises(ModelRetryError):
                 await spam_probability(fetcher, CONFIG, state)
         self.assertTrue(cancelled.is_set())
+
+
+class NativeDecisionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_user_classifies_with_native_decisions_on_both_luna_platforms(self) -> None:
+        """Luna receives the same bounded evidence and scoped prompts on both configured platforms."""
+        self.assertEqual(list(MODEL_PROVIDERS)[:2], ["EXPERIENTIAL_API_KEY", "AI_GATEWAY_API_KEY"])
+        state = {**model_input({"from": {"first_name": "Member"}, "text": "普通讨论"}), "bio": None}
+        for key, expected_model in (
+            ("EXPERIENTIAL_API_KEY", "gpt-6-luna-decisions"),
+            ("AI_GATEWAY_API_KEY", "openai/gpt-6-luna-decisions"),
+        ):
+            endpoint, model = MODEL_PROVIDERS[key]
+            self.assertTrue(endpoint.endswith("/v1/decisions"))
+            self.assertEqual(model, expected_model)
+            config = ModelConfig(endpoint, model, "test-key")
+            for joining in (False, True):
+                with self.subTest(provider=key, joining=joining):
+
+                    async def fetcher(
+                        url, *, method, headers, body, expected=(endpoint, expected_model, joining)
+                    ) -> StreamingResponse:
+                        endpoint, expected_model, joining = expected
+                        self.assertEqual(url, endpoint)
+                        self.assertEqual(method, "POST")
+                        self.assertEqual(
+                            headers, {"authorization": "Bearer test-key", "content-type": "application/json"}
+                        )
+                        self.assertEqual(
+                            json.loads(body),
+                            {
+                                "model": expected_model,
+                                "input": json.dumps(state, ensure_ascii=False),
+                                "questions": [
+                                    {
+                                        "name": "spam",
+                                        "type": "predicate",
+                                        "instructions": JOIN_PROFILE_INSTRUCTIONS if joining else INSTRUCTIONS,
+                                    }
+                                ],
+                            },
+                        )
+
+                        async def read_body() -> bytes:
+                            return b'{"answers":[{"name":"spam","type":"predicate","probability":0.95}]}'
+
+                        return StreamingResponse(read_body, asyncio.Event())
+
+                    self.assertEqual(await spam_probability(fetcher, config, state, joining=joining), 0.95)
+
+    async def test_user_does_not_treat_refusals_or_mismatched_decisions_as_spam(self) -> None:
+        """Only one correctly named predicate with a valid probability is a model verdict."""
+        config = ModelConfig("https://api.experientiallabs.ai/v1/decisions", "gpt-6-luna-decisions", "test-key")
+        valid = {"name": "spam", "type": "predicate", "probability": 0.99}
+        envelopes = [
+            {},
+            {"answers": []},
+            {"answers": [valid, valid]},
+            {"answers": {"spam": {"type": "noul", "noul": 1}}},
+            {"answers": [{"name": "spam", "type": "refusal"}]},
+            {"answers": [{**valid, "name": "other"}]},
+            {"answers": [{"type": "predicate", "probability": 1}]},
+            {"answers": [{**valid, "type": "choice"}]},
+            {"answers": [None]},
+        ]
+        envelopes.extend(
+            {"answers": [{**valid, "probability": value}]} for value in (True, "0.99", -0.1, 1.1, None, float("nan"))
+        )
+        for envelope in envelopes:
+            with self.subTest(envelope=envelope):
+
+                async def fetcher(url, *, method, headers, body, envelope=envelope) -> StreamingResponse:
+                    async def read_body() -> bytes:
+                        return json.dumps(envelope).encode()
+
+                    return StreamingResponse(read_body, asyncio.Event())
+
+                self.assertIsNone(await spam_probability(fetcher, config, {}))
 
 
 class ModelStreamTests(unittest.IsolatedAsyncioTestCase):

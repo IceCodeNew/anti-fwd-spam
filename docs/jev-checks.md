@@ -1,6 +1,6 @@
-# Live Jev checks
+# Live model checks
 
-This document defines the repeatable procedure for testing semantic Jev classification. It is a test runbook, not a record of any single investigation or provider result.
+This document defines the repeatable procedure for testing semantic model classification, including GPT-6 Luna Decisions and legacy Jev. The names `tests/test_jev.py`, `tests/jev-cases.json`, and `JEV_LIVE_TEST` are retained for compatibility; they do not select Jev as the model. It is a test runbook, not a record of any single investigation or provider result.
 
 ## Fixture rules
 
@@ -13,7 +13,7 @@ This document defines the repeatable procedure for testing semantic Jev classifi
 
 ## Running the check
 
-The acceptance harness in `tests/test_jev.py` uses the production formatter, prompt assembly, response parser, timeout, and threshold. It selects the first configured provider from `MODEL_PROVIDERS` and sends each active case once.
+The acceptance harness in `tests/test_jev.py` uses the production formatter, prompt assembly, response parser, timeout, and threshold. It selects the first configured provider from `MODEL_PROVIDERS` and sends each active case once. See [provider setup](setup.md#optional-model-provider) for selection order. This single-call semantic check is not a live test of durable provider failover or retry scheduling.
 
 ```bash
 JEV_LIVE_TEST=1 PYTHONPATH=src uv run python -m unittest tests.test_jev -v
@@ -23,9 +23,10 @@ The provider credential must be available through the deployment/runtime environ
 
 ## Interpreting results
 
-- A skipped local-rule case is not evidence about Jev accuracy.
+- A skipped local-rule case is not evidence about model accuracy.
 - A Worker fake score proves routing and moderation lifecycle behavior, not semantic model quality.
-- Treat provider errors, timeouts, invalid envelopes, and model scores as separate result categories.
+- Treat provider errors, timeouts, invalid envelopes, refusals, and valid model scores as separate result categories.
 - Report the fixture revision, provider/model selected by `MODEL_PROVIDERS`, active/skipped case counts derived from the fixture, score range, and false-positive/false-negative cases.
-- For prompt changes, compare baseline and candidate prompts against the same active fixtures and provider. Repeat boundary cases when scores are near the threshold; do not declare a prompt safe from one run.
+- Verify native Decisions predicate and legacy Jev Noul parsing with deterministic tests; malformed, refused, mismatched, extra native, or non-finite answers must never produce punishment. Worker fakes cannot prove a public gateway accepts the wire format.
+- For prompt changes, compare baseline and candidate prompts against the same active fixtures and provider/model. Repeat boundary cases when scores are near the threshold; do not declare a prompt safe from one run.
 - Keep historical score matrices and investigation-specific rationale in the pull request or an external experiment record, not in this durable runbook.

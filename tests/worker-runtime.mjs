@@ -32,10 +32,10 @@ before(async () => {
       REPORTER_IDS: '11,-10012' },
     outboundService: async request => {
       const providers = {
-        'https://api.experientiallabs.ai/v1/systemone': ['jev-latest', 'test-model-key'],
+        'https://api.experientiallabs.ai/v1/decisions': ['gpt-6-luna-decisions', 'test-model-key'],
+        'https://ai-gateway.vercel.sh/v1/decisions': ['openai/gpt-6-luna-decisions', 'test-gateway-key'],
         'https://api.typesafe.ai/v1/systemone': ['jev-latest', 'test-typesafe-key'],
         'https://opencode.ai/zen/v1/systemone': ['jev-1.13', 'test-opencode-key'],
-        'https://ai-gateway.vercel.sh/v4/ai/evaluation-model': ['typesafe-ai/jev', 'test-gateway-key'],
         'https://api.commandcode.ai/provider/v1/systemone': ['typesafe/jev', 'test-commandcode-key'],
       };
       if (Object.hasOwn(providers, request.url)) {
@@ -43,21 +43,25 @@ before(async () => {
         assert.equal(request.method, 'POST');
         assert.equal(request.headers.get('authorization'), `Bearer ${apiKey}`);
         const body = await request.json();
-        const gateway = request.url.includes('ai-gateway.vercel.sh');
-        if (gateway) {
-          assert.equal(request.headers.get('ai-model-id'), modelId);
-          assert.equal(request.headers.get('ai-gateway-protocol-version'), '0.0.1');
-          assert.equal(request.headers.get('ai-gateway-auth-method'), 'api-key');
-          assert.equal(request.headers.get('ai-evaluation-model-specification-version'), '4');
-          assert.equal(body.model, undefined);
-        } else assert.equal(body.model, modelId);
-        assert.equal(body.questions.spam.type, gateway ? 'boolean' : 'noul');
-        assert.equal(typeof body.questions.spam.instructions, 'string');
-        model.state = body.state;
+        assert.equal(body.model, modelId);
+        const decisions = request.url.endsWith('/decisions');
+        if (decisions) {
+          assert.equal(body.questions.length, 1);
+          assert.equal(body.questions[0].name, 'spam');
+          assert.equal(body.questions[0].type, 'predicate');
+          assert.equal(typeof body.questions[0].instructions, 'string');
+          assert.equal(typeof body.input, 'string');
+          model.state = JSON.parse(body.input);
+        } else {
+          assert.equal(body.questions.spam.type, 'noul');
+          assert.equal(typeof body.questions.spam.instructions, 'string');
+          model.state = body.state;
+        }
         if (typeof model.response === 'function') return model.response(request.url);
-        return model.response ?? Response.json({ model: 'jev-latest', answers: {
-          spam: gateway ? { type: 'boolean', probability: model.probability } : { type: 'noul', noul: model.probability },
-        } });
+        return model.response ?? Response.json({ answers: decisions
+          ? [{ name: 'spam', type: 'predicate', probability: model.probability }]
+          : { spam: { type: 'noul', noul: model.probability } },
+        });
       }
       if (request.url.endsWith(`/bot${token}/getChat`)) {
         assert.equal(request.method, 'POST');

@@ -56,7 +56,27 @@ TELEGRAM_WEBHOOK_SECRET="$(mise exec -- python -c 'import secrets; print(secrets
 printf '%s' "$TELEGRAM_WEBHOOK_SECRET" | mise exec -- uv run pywrangler secret put TELEGRAM_WEBHOOK_SECRET
 ```
 
-Jev is optional. Add a provider secret only after reviewing the provider's privacy and pricing terms. The supported secret names and endpoint selection are owned by `MODEL_PROVIDERS` in `src/anti_fwd_spam/constants.py`; do not copy secret values into files.
+## Optional model provider
+
+Semantic classification is optional. Review provider privacy and pricing terms before saving a provider key as a Worker secret. No separate OpenAI credential is required for the built-in Luna routes.
+
+The ordered `MODEL_PROVIDERS` mapping in [`src/anti_fwd_spam/constants.py`](../src/anti_fwd_spam/constants.py) owns the supported secret names, endpoints, and model IDs. Configured entries are selected in that order:
+
+1. `EXPERIENTIAL_API_KEY`: GPT-6 Luna Decisions through Experiential.
+2. `AI_GATEWAY_API_KEY`: GPT-6 Luna Decisions through Vercel AI Gateway.
+3. `TYPESAFE_AI_API_KEY`: legacy Jev through TypeSafe.
+4. `OPENCODE_API_KEY`: legacy Jev through OpenCode.
+5. `CMD_API_KEY`: legacy Jev through CommandCode.
+
+For example, configure the first route with:
+
+```bash
+mise exec -- uv run pywrangler secret put EXPERIENTIAL_API_KEY
+```
+
+Only configured entries participate. A legacy-only deployment continues to use Jev. Additional configured entries are error fallbacks within the existing shared retry budget, not additional votes: a completed answer, including a below-threshold, invalid, or refused answer, does not prompt a search for a higher score. The [behavior contract](behavior.md#model-classification) defines decision and retry boundaries. Keep secret values out of files, logs, and command arguments.
+
+The [public provider inventory](model-providers.md) distinguishes built-in routes from documentation-only alternatives and lists their image/video limits. An external platform's model listing does not add a supported Worker secret or enable media ingestion.
 
 ## Deploy and register the webhook
 

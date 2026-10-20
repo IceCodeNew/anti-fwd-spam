@@ -57,11 +57,13 @@ curl --silent --show-error --fail-with-body \
 | Deletion, mute, or ban fails | Check bot administrator permissions and target protection. |
 | `ban confirmation failed` or `mute retry skipped` | Check membership manually before retrying a report. |
 | History cleanup is incomplete | Telegram and the index only cover messages the bot received within the retention window. |
+| Model classification does not run | Check configured provider secrets and their selection order in [setup](setup.md#optional-model-provider). |
+| Model returns an error or refusal | Inspect redacted Worker logs and provider access/quota; an invalid or refused answer is not a spam decision. Use [live model checks](jev-checks.md) with approved fixtures to test semantic behavior. |
 | Storage errors | Check the `REPORTS` binding, migrations, and D1 limits. |
 
 ## Privacy and retention
 
-The bot sends bounded message context and selected profile data to Jev only when Jev is enabled. It does not download or inspect media. Review provider terms before enabling it.
+The bot sends bounded text context and selected profile data to a configured decision-model provider only when classification is enabled. It does not download or inspect images, video, or audio. Provider image support does not change this boundary; see [model providers and media](model-providers.md). Review provider terms before enabling classification.
 
 D1 keeps reports, temporary processing records, and moderation progress for a limited retention period. The recent-message index stores identifiers and timestamps rather than message text; pending model tasks may temporarily retain submitted content until classification finishes. Source, account, and sticker blacklists remain until removed. Member-activity counters persist after their observations expire, capped at the maturity threshold; changing the message index window changes how quickly that threshold can be earned. Exact retention constants are maintained in `src/anti_fwd_spam/evidence.py` and cleanup is performed by the scheduled Worker trigger.
 

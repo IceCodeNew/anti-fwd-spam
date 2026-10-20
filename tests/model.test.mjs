@@ -179,7 +179,7 @@ test('user: Given an unresolved or private bio target, When Jev classifies the m
   model.profile = { bio: '个人频道 @Unknown_Channel https://t.me/+private' };
   telegram.faults.set('getChat', () => Response.json({ ok: false, error_code: 400 }, { status: 400 }));
   let requests = 0;
-  model.response = () => { requests += 1; return Response.json({ model: 'jev-latest', answers: { spam: { type: 'noul', noul: 0 } } }); };
+  model.response = () => { requests += 1; return Response.json({ answers: [{ name: 'spam', type: 'predicate', probability: 0 }] }); };
   const current = message();
   telegram.send(current);
   assert.equal((await dispatch({ update_id: 14, message: current })).status, 200);
@@ -248,8 +248,8 @@ test('user: Given a quoted message edited into promotion, When Jev flags the edi
 
 test('user: Given a malformed model envelope, When a message is evaluated, Then it remains visible', async () => {
   let id = 81;
-  for (const body of ['not JSON', '[]', '{}', '{"answers":[]}', '{"answers":{"spam":{"type":"text","noul":1}}}',
-    '{"answers":{"spam":{"type":"noul","noul":NaN}}}', '{"answers":{"spam":{"type":"noul","noul":Infinity}}}']) {
+  for (const body of ['not JSON', '[]', '{}', '{"answers":[]}', '{"answers":[{"name":"spam","type":"text","probability":1}]}',
+    '{"answers":[{"name":"spam","type":"predicate","probability":NaN}]}', '{"answers":[{"name":"spam","type":"predicate","probability":Infinity}]}']) {
     model.response = new Response(body);
     const target = message(id++);
     telegram.send(target);
@@ -332,14 +332,14 @@ test('user: visible inline buttons reach Jev with reference isolation and no cal
 });
 
 test('user: Given an oversized answer containing a spam score, When evaluated, Then the message remains', async () => {
-  model.response = new Response('{"answers":{"spam":{"type":"noul","noul":1}}}'.padEnd(65537));
+  model.response = new Response('{"answers":[{"name":"spam","type":"predicate","probability":1}]}'.padEnd(65537));
   telegram.send(message());
   assert.equal((await dispatch({ update_id: 11, message: message() })).status, 200);
   assert.equal(telegram.has(81), true);
 });
 
 test('user: Given a valid chunked answer exactly at the size limit, When it flags spam, Then the message is deleted', async () => {
-  const bytes = new TextEncoder().encode('{"answers":{"spam":{"type":"noul","noul":0.95}}}'.padEnd(65536));
+  const bytes = new TextEncoder().encode('{"answers":[{"name":"spam","type":"predicate","probability":0.95}]}'.padEnd(65536));
   model.response = new Response(new ReadableStream({
     start(controller) {
       controller.enqueue(bytes.slice(0, 32768));

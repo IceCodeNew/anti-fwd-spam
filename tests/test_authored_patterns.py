@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import unittest
+from pathlib import Path
 
 from anti_fwd_spam.policy import matches_spam_pattern, matches_spam_text
 
@@ -12,7 +14,77 @@ DISTRIBUTION_OFFERS = (
 BULK_OFFER = "承接广*告*戴*發\uff0c十万精准各行业裙  \n包效果 包效果 @sample_contact"
 
 
+SALES_MENU = json.loads(Path(__file__).with_name("sales-menu.json").read_text())
+
+
+def sales_menu_cases() -> list[tuple[str, dict[str, object], bool]]:
+    """Public complete-menu examples and nearby contexts that must not match locally."""
+    markup = {"inline_keyboard": [[{"text": label}] for label in SALES_MENU]}
+    # Numeric text is corpus-derived; caption and empty-body cases are input-path controls.
+    cases: list[tuple[str, dict[str, object], bool]] = [
+        ("complete-menu-numeric-text", {"text": "123", "reply_markup": markup}, True),
+        ("complete-menu-numeric-caption", {"caption": "123", "reply_markup": markup}, True),
+        ("complete-menu-empty-body", {"reply_markup": markup}, True),
+    ]
+    cases.extend(
+        (f"warning-{field}", {field: "请举报这个菜单\uff0c别联系", "reply_markup": markup}, False)
+        for field in ("text", "caption")
+    )
+    for field, value in (
+        ("rich_message", {"text": "请举报这个菜单"}),
+        ("rich_message", None),
+        ("poll", {"question": "这是广告吗\uff1f"}),
+        ("checklist", {"title": "举报广告清单"}),
+        ("contact", {"first_name": "举报受理处"}),
+        ("photo", []),
+    ):
+        cases.append((f"other-content-{field}-{value is None}", {field: value, "reply_markup": markup}, False))
+    for name, labels in (
+        ("warning-before", ["请勿联系\uff0c以下是广告样本", *SALES_MENU]),
+        ("warning-after", [*SALES_MENU, "请勿联系\uff0c以上是广告样本"]),
+        ("same-row-warning", [SALES_MENU[0], "警告\uff1a别联系", *SALES_MENU[1:]]),
+        ("warning-inside-label", [*SALES_MENU[:-1], SALES_MENU[-1] + " 请勿联系"]),
+        ("missing-last-label", SALES_MENU[:-1]),
+        ("missing-first-label", SALES_MENU[1:]),
+        ("reversed-labels", list(reversed(SALES_MENU))),
+    ):
+        cases.append(
+            (
+                name,
+                {
+                    "text": "123",
+                    "reply_markup": {
+                        "inline_keyboard": [[{"text": label} for label in labels]],
+                    },
+                },
+                False,
+            )
+        )
+    cases.append(("reference-only", {"text": "123", "reply_to_message": {"reply_markup": markup}}, False))
+    cases.append(
+        (
+            "metadata-only",
+            {
+                "reply_markup": {
+                    "inline_keyboard": [
+                        [{"text": "查看研究资料", "url": "https://example.invalid/", "callback_data": label}]
+                        for label in SALES_MENU
+                    ]
+                }
+            },
+            False,
+        )
+    )
+    return cases
+
+
 class AuthoredPatternTests(unittest.TestCase):
+    def test_user_matches_only_the_complete_unframed_sales_menu(self) -> None:
+        """user: Given a complete menu or its warning controls, When filtered, Then only bare offers match."""
+        for name, message, expected in sales_menu_cases():
+            with self.subTest(name=name):
+                self.assertEqual(matches_spam_pattern(message), expected)
+
     def test_repeated_symbols_accumulate_across_current_visible_fields(self) -> None:
         for labels, expected in (
             (["💰甲💰", "乙💰"], False),

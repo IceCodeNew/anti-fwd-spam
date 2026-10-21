@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { database, dispatch, model, setBindings, telegram } from './worker-runtime.mjs';
 import { message, report } from './telegram-fake.mjs';
@@ -6,9 +7,8 @@ import { message, report } from './telegram-fake.mjs';
 model.enabled = true;
 const campaign = '@synthetic_bot campaign_001 synthetic_marker';
 const bulkOffer = '承接广*告*戴*發，十万精准各行业裙\n包效果 包效果 @sample_contact';
-const salesMenu = { inline_keyboard: [[{
-  text: '1️⃣🔥卖薇信号/手机咔/接码等-啥都有', url: 'https://example.invalid/menu',
-}]] };
+const salesMenu = { inline_keyboard: JSON.parse(readFileSync(new URL('./sales-menu.json', import.meta.url), 'utf8'))
+  .map(text => [{ text, url: 'https://example.invalid/menu' }]) };
 function referenced(current, kind) {
   const earlier = { ...message(80, 11), text: 'ordinary discussion' };
   if (kind === 'same_chat') current.reply_to_message = earlier;

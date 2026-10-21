@@ -1681,5 +1681,417 @@
       "kind": "synthetic boundary control",
       "notes": "Current rich text is visible content; an explicit rich-text warning remains non-promotional."
     }
+  },
+  {
+    "name": "portsfish-payment-buttons-offer",
+    "spam": true,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "123",
+      "reply_markup": {
+        "inline_keyboard": [
+          [
+            {
+              "text": "💸单人日赚3998+💸",
+              "url": "https://example.invalid/"
+            }
+          ],
+          [
+            {
+              "text": "🧧支付宝口令洗米🧧",
+              "url": "https://example.invalid/"
+            }
+          ],
+          [
+            {
+              "text": "✅有执行力 想赚钱 废话少的来✅",
+              "url": "https://example.invalid/"
+            }
+          ],
+          [
+            {
+              "text": "🔥多年老平台无需担心被跑路🔥",
+              "url": "https://example.invalid/"
+            }
+          ],
+          [
+            {
+              "text": "🔥具体教程进群咨询🔥",
+              "url": "https://example.invalid/"
+            }
+          ],
+          [
+            {
+              "text": "✈️点击私聊客服了解✈️",
+              "url": "https://example.invalid/"
+            }
+          ]
+        ]
+      }
+    },
+    "source": {
+      "date": "2026-10-21",
+      "kind": "sanitized corpus representative",
+      "notes": "Payment-laundering recruitment resides in button labels, not numeric body; sibling warning changes sender intent. Not the exact sales-menu signature. Contacts are placeholders; unavailable profiles and references are not reconstructed."
+    }
+  },
+  {
+    "name": "portsfish-payment-buttons-warning",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "123",
+      "reply_markup": {
+        "inline_keyboard": [
+          [
+            {
+              "text": "警告：以下是诈骗招募，请勿联系"
+            }
+          ],
+          [
+            {
+              "text": "💸单人日赚3998+💸",
+              "url": "https://example.invalid/"
+            }
+          ],
+          [
+            {
+              "text": "🧧支付宝口令洗米🧧",
+              "url": "https://example.invalid/"
+            }
+          ],
+          [
+            {
+              "text": "✅有执行力 想赚钱 废话少的来✅",
+              "url": "https://example.invalid/"
+            }
+          ],
+          [
+            {
+              "text": "🔥多年老平台无需担心被跑路🔥",
+              "url": "https://example.invalid/"
+            }
+          ],
+          [
+            {
+              "text": "🔥具体教程进群咨询🔥",
+              "url": "https://example.invalid/"
+            }
+          ],
+          [
+            {
+              "text": "✈️点击私聊客服了解✈️",
+              "url": "https://example.invalid/"
+            }
+          ]
+        ]
+      }
+    },
+    "source": {
+      "date": "2026-10-21",
+      "kind": "synthetic negative control",
+      "notes": "Payment-laundering recruitment resides in button labels, not numeric body; sibling warning changes sender intent. Not the exact sales-menu signature. Contacts are placeholders; unavailable profiles and references are not reconstructed."
+    }
+  },
+  {
+    "name": "portsfish-payment-rich-offer",
+    "spam": true,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "",
+      "rich_message": {
+        "text": "单人每天轻松赚2564+💸\n支付宝洗红包发车搞钱🧧\n想挣钱 想安全 诚心做的来✅\n方法规避无风险✅\n过来看看具体教程 @sample_contact"
+      }
+    },
+    "source": {
+      "date": "2026-10-21",
+      "kind": "sanitized corpus representative",
+      "notes": "Rich-text payment recruitment; reconstructed Bot API text from visible MTProto fragments, not recovered webhook JSON. Contacts are placeholders; unavailable profiles and references are not reconstructed."
+    }
+  },
+  {
+    "name": "portsfish-payment-rich-warning",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "",
+      "rich_message": {
+        "text": "警告：以下是诈骗广告，请勿参与，已举报。\n单人每天轻松赚2564+💸\n支付宝洗红包发车搞钱🧧\n想挣钱 想安全 诚心做的来✅\n方法规避无风险✅\n过来看看具体教程 @sample_contact"
+      }
+    },
+    "source": {
+      "date": "2026-10-21",
+      "kind": "synthetic negative control",
+      "notes": "Rich-text payment recruitment; reconstructed Bot API text from visible MTProto fragments, not recovered webhook JSON. Contacts are placeholders; unavailable profiles and references are not reconstructed."
+    }
+  },
+  {
+    "name": "portsfish-field-photo-tasks-offer",
+    "spam": true,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "做项目全部看过来：\n拍收款码80元/单\n拍店铺门头100/单\n拍私家车100-1000/单\n操作流程群: @sample_contact"
+    },
+    "source": {
+      "date": "2026-10-21",
+      "kind": "sanitized corpus representative",
+      "notes": "Per-task data/photo collection recruitment, without a daily-income promise; contrast is a current-text report. Contacts are placeholders; unavailable profiles and references are not reconstructed."
+    }
+  },
+  {
+    "name": "portsfish-field-photo-tasks-warning",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "有人发“做项目全部看过来：\n拍收款码80元/单\n拍店铺门头100/单\n拍私家车100-1000/单\n操作流程群: @sample_contact”，这是招募广告，请勿加入，已举报。"
+    },
+    "source": {
+      "date": "2026-10-21",
+      "kind": "synthetic negative control",
+      "notes": "Per-task data/photo collection recruitment, without a daily-income promise; contrast is a current-text report. Contacts are placeholders; unavailable profiles and references are not reconstructed."
+    }
+  },
+  {
+    "name": "portsfish-account-supplier-rich-offer",
+    "spam": true,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "rich_message": {
+        "text": "全网最大 飞机号源头 机房供应商\n百万飞机号现货供应 机器人现货秒发\n包含全球各国飞机号 源头低价直出 价低质优\n包含三种格式：直登号 协议号 API接码号\n自助取号机器人: @sample_contact"
+      }
+    },
+    "source": {
+      "date": "2026-10-21",
+      "kind": "sanitized corpus representative",
+      "notes": "Account supplier pitch through current rich text; reconstructed visible fragments. Existing plain bulk-sale fixture is not duplicated. Contacts are placeholders; unavailable profiles and references are not reconstructed."
+    }
+  },
+  {
+    "name": "portsfish-account-supplier-rich-warning",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "rich_message": {
+        "text": "正在研究广告文案，不是供货，请勿联系：\n全网最大 飞机号源头 机房供应商\n百万飞机号现货供应 机器人现货秒发\n包含全球各国飞机号 源头低价直出 价低质优\n包含三种格式：直登号 协议号 API接码号\n自助取号机器人: @sample_contact"
+      }
+    },
+    "source": {
+      "date": "2026-10-21",
+      "kind": "synthetic negative control",
+      "notes": "Account supplier pitch through current rich text; reconstructed visible fragments. Existing plain bulk-sale fixture is not duplicated. Contacts are placeholders; unavailable profiles and references are not reconstructed."
+    }
+  },
+  {
+    "name": "portsfish-sms-supplier-rich-offer",
+    "spam": true,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "rich_message": {
+        "text": "全网最大API接码网站 千万量级货源\n涵盖 美国 加拿大 香港 英国 印尼 澳大利亚等多国API接码\n一号一链接格式 网页自助接码 有效期可选 可续费\n最高长达80天有效期 不限次数接码\n频道: @sample_contact"
+      }
+    },
+    "source": {
+      "date": "2026-10-21",
+      "kind": "sanitized corpus representative",
+      "notes": "SMS API inventory/renewal pitch in rich text; reconstructed visible fragments. Negative keeps supplier claims entirely in the reference. Contacts are placeholders; unavailable profiles and references are not reconstructed."
+    }
+  },
+  {
+    "name": "portsfish-sms-supplier-rich-warning",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "请举报这个接码广告，不要购买。",
+      "reply_to_message": {
+        "rich_message": {
+          "text": "全网最大API接码网站 千万量级货源\n涵盖 美国 加拿大 香港 英国 印尼 澳大利亚等多国API接码\n一号一链接格式 网页自助接码 有效期可选 可续费\n最高长达80天有效期 不限次数接码\n频道: @sample_contact"
+        }
+      }
+    },
+    "source": {
+      "date": "2026-10-21",
+      "kind": "synthetic negative control",
+      "notes": "SMS API inventory/renewal pitch in rich text; reconstructed visible fragments. Negative keeps supplier claims entirely in the reference. Contacts are placeholders; unavailable profiles and references are not reconstructed."
+    }
+  },
+  {
+    "name": "portsfish-counterfeit-current-text-offer",
+    "spam": true,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "假钞！用来PC 包养读书妹 酒吧 ktv 赌博 装逼毫无压力 @sample_contact"
+    },
+    "source": {
+      "date": "2026-10-21",
+      "kind": "sanitized corpus representative",
+      "notes": "Counterfeit-use sales pitch in current text, unlike the existing visible-card fixture; warning repeats the exact claim. Contacts are placeholders; unavailable profiles and references are not reconstructed."
+    }
+  },
+  {
+    "name": "portsfish-counterfeit-current-text-warning",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "举报这条假钞广告，别联系：假钞！用来PC 包养读书妹 酒吧 ktv 赌博 装逼毫无压力 @sample_contact"
+    },
+    "source": {
+      "date": "2026-10-21",
+      "kind": "synthetic negative control",
+      "notes": "Counterfeit-use sales pitch in current text, unlike the existing visible-card fixture; warning repeats the exact claim. Contacts are placeholders; unavailable profiles and references are not reconstructed."
+    }
+  },
+  {
+    "name": "portsfish-fake-engagement-offer",
+    "spam": true,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "示例服务，假粉 水军假聊 炸码 BC 上码上Q 下载注册充值一条龙，一机一IP 不过包退 @sample_contact"
+    },
+    "source": {
+      "date": "2026-10-21",
+      "kind": "sanitized corpus representative",
+      "notes": "Artificial engagement supplier with service guarantees; brand and random suffix removed, no missing context invented. Contacts are placeholders; unavailable profiles and references are not reconstructed."
+    }
+  },
+  {
+    "name": "portsfish-fake-engagement-warning",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "请举报这条假粉水军广告，别联系：示例服务，假粉 水军假聊 炸码 BC 上码上Q 下载注册充值一条龙，一机一IP 不过包退 @sample_contact"
+    },
+    "source": {
+      "date": "2026-10-21",
+      "kind": "synthetic negative control",
+      "notes": "Artificial engagement supplier with service guarantees; brand and random suffix removed, no missing context invented. Contacts are placeholders; unavailable profiles and references are not reconstructed."
+    }
+  },
+  {
+    "name": "portsfish-cash-pickup-service-offer",
+    "spam": true,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "海外上门取现，专业团队遍布全球，支持多国语言。各国本土账户，国际钱包（paypay，cash app，zelle，PayPal）支付收款，现金邮寄，上门取现，卡接回U。取现业务请提前一天向我们预约，回U快，价格美丽。业务联系 @sample_contact"
+    },
+    "source": {
+      "date": "2026-10-21",
+      "kind": "sanitized corpus representative",
+      "notes": "Cross-border cash-pickup supplier pitch; representative excerpt, organization/contacts removed. No claim that every remittance discussion is spam. Contacts are placeholders; unavailable profiles and references are not reconstructed."
+    }
+  },
+  {
+    "name": "portsfish-cash-pickup-service-warning",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "这是第三方的广告样本，请勿预约，我已举报：海外上门取现，专业团队遍布全球，支持多国语言。各国本土账户，国际钱包（paypay，cash app，zelle，PayPal）支付收款，现金邮寄，上门取现，卡接回U。取现业务请提前一天向我们预约，回U快，价格美丽。业务联系 @sample_contact"
+    },
+    "source": {
+      "date": "2026-10-21",
+      "kind": "synthetic negative control",
+      "notes": "Cross-border cash-pickup supplier pitch; representative excerpt, organization/contacts removed. No claim that every remittance discussion is spam. Contacts are placeholders; unavailable profiles and references are not reconstructed."
+    }
+  },
+  {
+    "name": "portsfish-phone-contact-offer",
+    "spam": true,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "contact": {
+        "first_name": "漏·税·水·果·机·全·糸 看我简介"
+      }
+    },
+    "source": {
+      "date": "2026-10-21",
+      "kind": "sanitized corpus representative",
+      "notes": "Visible phone-inventory contact-card pitch; no phone number, account ID or fetched biography. Paired warning shares the same card. Contacts are placeholders; unavailable profiles and references are not reconstructed."
+    }
+  },
+  {
+    "name": "portsfish-phone-contact-warning",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "这是卖手机的广告名片，请勿联系，已举报。",
+      "contact": {
+        "first_name": "漏·税·水·果·机·全·糸 看我简介"
+      }
+    },
+    "source": {
+      "date": "2026-10-21",
+      "kind": "synthetic negative control",
+      "notes": "Visible phone-inventory contact-card pitch; no phone number, account ID or fetched biography. Paired warning shares the same card. Contacts are placeholders; unavailable profiles and references are not reconstructed."
+    }
+  },
+  {
+    "name": "portsfish-gift-brushing-contact-offer",
+    "spam": true,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "contact": {
+        "first_name": "🔥抖.音代刷礼物 日.赚5000起🔥"
+      }
+    },
+    "source": {
+      "date": "2026-10-21",
+      "kind": "sanitized corpus representative",
+      "notes": "Gift-brushing recruitment in a visible card rather than existing text-only gift-task fixtures; card metadata omitted. Contacts are placeholders; unavailable profiles and references are not reconstructed."
+    }
+  },
+  {
+    "name": "portsfish-gift-brushing-contact-warning",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "请举报这张刷礼物做单的广告名片，不要参与。",
+      "contact": {
+        "first_name": "🔥抖.音代刷礼物 日.赚5000起🔥"
+      }
+    },
+    "source": {
+      "date": "2026-10-21",
+      "kind": "synthetic negative control",
+      "notes": "Gift-brushing recruitment in a visible card rather than existing text-only gift-task fixtures; card metadata omitted. Contacts are placeholders; unavailable profiles and references are not reconstructed."
+    }
   }
 ]

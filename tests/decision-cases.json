@@ -2095,5 +2095,796 @@
       "kind": "synthetic boundary control",
       "notes": "Whole-current-reaction, punctuation and reference intent boundaries for mature-member semantic classification; no real identity, media or contact."
     }
+  },
+  {
+    "name": "screenshot-adult-menu-visible-text",
+    "spam": true,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "NGẮM GÁI XINH EXCLUSIVE GÁI XINH\n💥 SEXY MODELS\n⚡ LIVE SHOWS 24/7\n🔥 ELITE MODELS READY\n✅ ENTRY UNLOCKED\n💨 PRIVATE & INSTANT\n💥 TAP TO GET IN\nTap to Access Full Collection ↗",
+      "reply_markup": {
+        "inline_keyboard": [
+          [
+            {
+              "text": "⚡ 🪽 PRESS NOW 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/0"
+            }
+          ],
+          [
+            {
+              "text": "⚡ 🪽 VIEW NOW 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/1"
+            }
+          ],
+          [
+            {
+              "text": "⚡ 🪽 ENTER NOW 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/2"
+            }
+          ],
+          [
+            {
+              "text": "⚡ 🪽 CLAIM ALL 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/3"
+            }
+          ],
+          [
+            {
+              "text": "⚡ 🪽 ACCESS READY 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/4"
+            }
+          ],
+          [
+            {
+              "text": "⚡ 🪽 VIEW IT ALL 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/5"
+            }
+          ]
+        ]
+      }
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "screenshot reconstruction",
+      "notes": "All readable descriptors treated as current text and six lower actions as inline buttons. Original Telegram field layout, identities, links and profiles unknown; URLs reserved, no media sent."
+    }
+  },
+  {
+    "name": "screenshot-adult-menu-caption",
+    "spam": true,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "caption": "NGẮM GÁI XINH EXCLUSIVE GÁI XINH\n💥 SEXY MODELS\n⚡ LIVE SHOWS 24/7\n🔥 ELITE MODELS READY\n✅ ENTRY UNLOCKED\n💨 PRIVATE & INSTANT\n💥 TAP TO GET IN\nTap to Access Full Collection ↗",
+      "photo": [
+        {
+          "file_id": "synthetic-not-sent"
+        }
+      ],
+      "reply_markup": {
+        "inline_keyboard": [
+          [
+            {
+              "text": "⚡ 🪽 PRESS NOW 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/0"
+            }
+          ],
+          [
+            {
+              "text": "⚡ 🪽 VIEW NOW 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/1"
+            }
+          ],
+          [
+            {
+              "text": "⚡ 🪽 ENTER NOW 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/2"
+            }
+          ],
+          [
+            {
+              "text": "⚡ 🪽 CLAIM ALL 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/3"
+            }
+          ],
+          [
+            {
+              "text": "⚡ 🪽 ACCESS READY 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/4"
+            }
+          ],
+          [
+            {
+              "text": "⚡ 🪽 VIEW IT ALL 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/5"
+            }
+          ]
+        ]
+      }
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "screenshot reconstruction",
+      "notes": "Alternative caption reconstruction, no actual image submitted; all readable descriptors included as caption text."
+    }
+  },
+  {
+    "name": "screenshot-adult-menu-rich-text",
+    "spam": true,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "NGẮM GÁI XINH EXCLUSIVE GÁI XINH\nTap to Access Full Collection ↗",
+      "rich_message": {
+        "blocks": [
+          {
+            "text": "💥 SEXY MODELS"
+          },
+          {
+            "text": "⚡ LIVE SHOWS 24/7"
+          },
+          {
+            "text": "🔥 ELITE MODELS READY"
+          },
+          {
+            "text": "✅ ENTRY UNLOCKED"
+          },
+          {
+            "text": "💨 PRIVATE & INSTANT"
+          },
+          {
+            "text": "💥 TAP TO GET IN"
+          }
+        ]
+      },
+      "reply_markup": {
+        "inline_keyboard": [
+          [
+            {
+              "text": "⚡ 🪽 PRESS NOW 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/0"
+            }
+          ],
+          [
+            {
+              "text": "⚡ 🪽 VIEW NOW 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/1"
+            }
+          ],
+          [
+            {
+              "text": "⚡ 🪽 ENTER NOW 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/2"
+            }
+          ],
+          [
+            {
+              "text": "⚡ 🪽 CLAIM ALL 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/3"
+            }
+          ],
+          [
+            {
+              "text": "⚡ 🪽 ACCESS READY 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/4"
+            }
+          ],
+          [
+            {
+              "text": "⚡ 🪽 VIEW IT ALL 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/5"
+            }
+          ]
+        ]
+      }
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "screenshot reconstruction",
+      "notes": "Alternative structured-text reconstruction only, not a claim about the original wire format; readable descriptors retained in rich_message."
+    }
+  },
+  {
+    "name": "screenshot-adult-menu-bottom-actions",
+    "spam": true,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "NGẮM GÁI XINH EXCLUSIVE GÁI XINH\nTap to Access Full Collection ↗",
+      "photo": [
+        {
+          "file_id": "synthetic-not-sent"
+        }
+      ],
+      "reply_markup": {
+        "inline_keyboard": [
+          [
+            {
+              "text": "⚡ 🪽 PRESS NOW 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/0"
+            }
+          ],
+          [
+            {
+              "text": "⚡ 🪽 VIEW NOW 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/1"
+            }
+          ],
+          [
+            {
+              "text": "⚡ 🪽 ENTER NOW 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/2"
+            }
+          ],
+          [
+            {
+              "text": "⚡ 🪽 CLAIM ALL 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/3"
+            }
+          ],
+          [
+            {
+              "text": "⚡ 🪽 ACCESS READY 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/4"
+            }
+          ],
+          [
+            {
+              "text": "⚡ 🪽 VIEW IT ALL 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/5"
+            }
+          ]
+        ]
+      }
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "screenshot reconstruction",
+      "notes": "Conservative alternative: upper six descriptors might be image pixels and unavailable to the bot. Only heading, collection call-to-action and lower button labels are supplied; original field mapping unknown."
+    }
+  },
+  {
+    "name": "adult-menu-current-warning",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "这是色情导流广告，别点击任何按钮，请管理员删除。\nNGẮM GÁI XINH EXCLUSIVE GÁI XINH\n💥 SEXY MODELS\n⚡ LIVE SHOWS 24/7\n🔥 ELITE MODELS READY\n✅ ENTRY UNLOCKED\n💨 PRIVATE & INSTANT\n💥 TAP TO GET IN\nTap to Access Full Collection ↗",
+      "reply_markup": {
+        "inline_keyboard": [
+          [
+            {
+              "text": "⚡ 🪽 PRESS NOW 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/0"
+            }
+          ],
+          [
+            {
+              "text": "⚡ 🪽 VIEW NOW 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/1"
+            }
+          ],
+          [
+            {
+              "text": "⚡ 🪽 ENTER NOW 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/2"
+            }
+          ],
+          [
+            {
+              "text": "⚡ 🪽 CLAIM ALL 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/3"
+            }
+          ],
+          [
+            {
+              "text": "⚡ 🪽 ACCESS READY 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/4"
+            }
+          ],
+          [
+            {
+              "text": "⚡ 🪽 VIEW IT ALL 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/5"
+            }
+          ]
+        ]
+      }
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "synthetic boundary control",
+      "notes": "Current author explicitly reports the copied advertisement."
+    }
+  },
+  {
+    "name": "adult-menu-reference-warning",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "这是色情导流广告，不要点击，请处理。",
+      "reply_to_message": {
+        "text": "NGẮM GÁI XINH EXCLUSIVE GÁI XINH\n💥 SEXY MODELS\n⚡ LIVE SHOWS 24/7\n🔥 ELITE MODELS READY\n✅ ENTRY UNLOCKED\n💨 PRIVATE & INSTANT\n💥 TAP TO GET IN\nTap to Access Full Collection ↗",
+        "reply_markup": {
+          "inline_keyboard": [
+            [
+              {
+                "text": "⚡ 🪽 PRESS NOW 🪽 ⚡ ↗",
+                "url": "https://example.invalid/entry/0"
+              }
+            ],
+            [
+              {
+                "text": "⚡ 🪽 VIEW NOW 🪽 ⚡ ↗",
+                "url": "https://example.invalid/entry/1"
+              }
+            ],
+            [
+              {
+                "text": "⚡ 🪽 ENTER NOW 🪽 ⚡ ↗",
+                "url": "https://example.invalid/entry/2"
+              }
+            ],
+            [
+              {
+                "text": "⚡ 🪽 CLAIM ALL 🪽 ⚡ ↗",
+                "url": "https://example.invalid/entry/3"
+              }
+            ],
+            [
+              {
+                "text": "⚡ 🪽 ACCESS READY 🪽 ⚡ ↗",
+                "url": "https://example.invalid/entry/4"
+              }
+            ],
+            [
+              {
+                "text": "⚡ 🪽 VIEW IT ALL 🪽 ⚡ ↗",
+                "url": "https://example.invalid/entry/5"
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "synthetic boundary control",
+      "notes": "Advertisement and buttons are only in the reported reference."
+    }
+  },
+  {
+    "name": "adult-menu-reference-question",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "这条消息是不是广告？",
+      "reply_to_message": {
+        "text": "NGẮM GÁI XINH EXCLUSIVE GÁI XINH\n💥 SEXY MODELS\n⚡ LIVE SHOWS 24/7\n🔥 ELITE MODELS READY\n✅ ENTRY UNLOCKED\n💨 PRIVATE & INSTANT\n💥 TAP TO GET IN\nTap to Access Full Collection ↗",
+        "reply_markup": {
+          "inline_keyboard": [
+            [
+              {
+                "text": "⚡ 🪽 PRESS NOW 🪽 ⚡ ↗",
+                "url": "https://example.invalid/entry/0"
+              }
+            ],
+            [
+              {
+                "text": "⚡ 🪽 VIEW NOW 🪽 ⚡ ↗",
+                "url": "https://example.invalid/entry/1"
+              }
+            ],
+            [
+              {
+                "text": "⚡ 🪽 ENTER NOW 🪽 ⚡ ↗",
+                "url": "https://example.invalid/entry/2"
+              }
+            ],
+            [
+              {
+                "text": "⚡ 🪽 CLAIM ALL 🪽 ⚡ ↗",
+                "url": "https://example.invalid/entry/3"
+              }
+            ],
+            [
+              {
+                "text": "⚡ 🪽 ACCESS READY 🪽 ⚡ ↗",
+                "url": "https://example.invalid/entry/4"
+              }
+            ],
+            [
+              {
+                "text": "⚡ 🪽 VIEW IT ALL 🪽 ⚡ ↗",
+                "url": "https://example.invalid/entry/5"
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "synthetic boundary control",
+      "notes": "Current question does not endorse or offer the referenced collection."
+    }
+  },
+  {
+    "name": "adult-menu-current-analysis",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "我在分析垃圾消息的按钮文案，下面只是样本，不提供任何资源。\nNGẮM GÁI XINH EXCLUSIVE GÁI XINH\n💥 SEXY MODELS\n⚡ LIVE SHOWS 24/7\n🔥 ELITE MODELS READY\n✅ ENTRY UNLOCKED\n💨 PRIVATE & INSTANT\n💥 TAP TO GET IN\nTap to Access Full Collection ↗",
+      "reply_markup": {
+        "inline_keyboard": [
+          [
+            {
+              "text": "⚡ 🪽 PRESS NOW 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/0"
+            }
+          ],
+          [
+            {
+              "text": "⚡ 🪽 VIEW NOW 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/1"
+            }
+          ],
+          [
+            {
+              "text": "⚡ 🪽 ENTER NOW 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/2"
+            }
+          ],
+          [
+            {
+              "text": "⚡ 🪽 CLAIM ALL 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/3"
+            }
+          ],
+          [
+            {
+              "text": "⚡ 🪽 ACCESS READY 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/4"
+            }
+          ],
+          [
+            {
+              "text": "⚡ 🪽 VIEW IT ALL 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/5"
+            }
+          ]
+        ]
+      }
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "synthetic boundary control",
+      "notes": "Current analysis frames the copied text and keyboard as evidence."
+    }
+  },
+  {
+    "name": "adult-menu-technical-labels",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "UI 测试记录：PRESS NOW、VIEW NOW、ENTER NOW、CLAIM ALL、ACCESS READY、VIEW IT ALL，检查按钮颜色与无障碍对比度。"
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "synthetic boundary control",
+      "notes": "Generic navigation words are not independent advertising evidence."
+    }
+  },
+  {
+    "name": "adult-menu-machine-learning",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "模型监控：models ready，live shows 24/7 表示仪表板持续展示指标，不是成人直播。"
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "synthetic boundary control",
+      "notes": "Technical description rather than a resource offer."
+    }
+  },
+  {
+    "name": "adult-menu-fashion-discussion",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "这次成人服装摄影用了性感模特，模特已经准备好了。如何调整布光和服装色彩？"
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "synthetic boundary control",
+      "notes": "Fashion/photography discussion with model vocabulary but no solicitation."
+    }
+  },
+  {
+    "name": "adult-menu-vietnamese-translation",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "“NGẮM GÁI XINH”在越南语里什么意思？我在翻译一段广告，没有在分享链接。"
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "synthetic boundary control",
+      "notes": "Translation question about the heading, not a current offer."
+    }
+  },
+  {
+    "name": "adult-menu-ordinary-album",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "这是我们周末旅行的公开相册，请帮忙选一张光线更好的照片。"
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "synthetic boundary control",
+      "notes": "Ordinary personal album request with no commercial or adult-resource funnel."
+    }
+  },
+  {
+    "name": "adult-menu-button-only",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "请帮我测试界面的按钮交互，不是资源分享。",
+      "reply_markup": {
+        "inline_keyboard": [
+          [
+            {
+              "text": "⚡ 🪽 PRESS NOW 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/0"
+            }
+          ],
+          [
+            {
+              "text": "⚡ 🪽 VIEW NOW 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/1"
+            }
+          ],
+          [
+            {
+              "text": "⚡ 🪽 ENTER NOW 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/2"
+            }
+          ],
+          [
+            {
+              "text": "⚡ 🪽 CLAIM ALL 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/3"
+            }
+          ],
+          [
+            {
+              "text": "⚡ 🪽 ACCESS READY 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/4"
+            }
+          ],
+          [
+            {
+              "text": "⚡ 🪽 VIEW IT ALL 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/5"
+            }
+          ]
+        ]
+      }
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "synthetic boundary control",
+      "notes": "Generic action labels with an explicit technical purpose are not adult promotion."
+    }
+  },
+  {
+    "name": "adult-menu-warning-profile",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "不要点击这些成人直播广告。",
+      "reply_to_message": {
+        "text": "NGẮM GÁI XINH EXCLUSIVE GÁI XINH\nTap to Access Full Collection ↗",
+        "reply_markup": {
+          "inline_keyboard": [
+            [
+              {
+                "text": "⚡ 🪽 PRESS NOW 🪽 ⚡ ↗",
+                "url": "https://example.invalid/entry/0"
+              }
+            ],
+            [
+              {
+                "text": "⚡ 🪽 VIEW NOW 🪽 ⚡ ↗",
+                "url": "https://example.invalid/entry/1"
+              }
+            ],
+            [
+              {
+                "text": "⚡ 🪽 ENTER NOW 🪽 ⚡ ↗",
+                "url": "https://example.invalid/entry/2"
+              }
+            ],
+            [
+              {
+                "text": "⚡ 🪽 CLAIM ALL 🪽 ⚡ ↗",
+                "url": "https://example.invalid/entry/3"
+              }
+            ],
+            [
+              {
+                "text": "⚡ 🪽 ACCESS READY 🪽 ⚡ ↗",
+                "url": "https://example.invalid/entry/4"
+              }
+            ],
+            [
+              {
+                "text": "⚡ 🪽 VIEW IT ALL 🪽 ⚡ ↗",
+                "url": "https://example.invalid/entry/5"
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "synthetic boundary control",
+      "notes": "Warning without reproducing the upper descriptors."
+    }
+  },
+  {
+    "name": "adult-menu-explicit-collection",
+    "spam": true,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "Exclusive adult models and private live shows, tap to access the full collection.",
+      "reply_markup": {
+        "inline_keyboard": [
+          [
+            {
+              "text": "⚡ 🪽 PRESS NOW 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/0"
+            }
+          ],
+          [
+            {
+              "text": "⚡ 🪽 VIEW NOW 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/1"
+            }
+          ],
+          [
+            {
+              "text": "⚡ 🪽 ENTER NOW 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/2"
+            }
+          ],
+          [
+            {
+              "text": "⚡ 🪽 CLAIM ALL 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/3"
+            }
+          ],
+          [
+            {
+              "text": "⚡ 🪽 ACCESS READY 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/4"
+            }
+          ],
+          [
+            {
+              "text": "⚡ 🪽 VIEW IT ALL 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/5"
+            }
+          ]
+        ]
+      }
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "synthetic boundary control",
+      "notes": "Synthetic positive with explicit adult offer and current access call-to-action."
+    }
+  },
+  {
+    "name": "adult-menu-analysis-without-buttons",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "我在分析垃圾消息的按钮文案，下面只是样本，不提供任何资源。\nNGẮM GÁI XINH EXCLUSIVE GÁI XINH\n💥 SEXY MODELS\n⚡ LIVE SHOWS 24/7\n🔥 ELITE MODELS READY\n✅ ENTRY UNLOCKED\n💨 PRIVATE & INSTANT\n💥 TAP TO GET IN\nTap to Access Full Collection ↗"
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "synthetic boundary control",
+      "notes": "Current analysis frames the copied text and keyboard as evidence."
+    }
+  },
+  {
+    "name": "adult-menu-analysis-buttons-only",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "我在分析垃圾消息的按钮文案，下面只是样本，不提供任何资源。",
+      "reply_markup": {
+        "inline_keyboard": [
+          [
+            {
+              "text": "⚡ 🪽 PRESS NOW 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/0"
+            }
+          ],
+          [
+            {
+              "text": "⚡ 🪽 VIEW NOW 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/1"
+            }
+          ],
+          [
+            {
+              "text": "⚡ 🪽 ENTER NOW 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/2"
+            }
+          ],
+          [
+            {
+              "text": "⚡ 🪽 CLAIM ALL 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/3"
+            }
+          ],
+          [
+            {
+              "text": "⚡ 🪽 ACCESS READY 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/4"
+            }
+          ],
+          [
+            {
+              "text": "⚡ 🪽 VIEW IT ALL 🪽 ⚡ ↗",
+              "url": "https://example.invalid/entry/5"
+            }
+          ]
+        ]
+      }
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "synthetic boundary control",
+      "notes": "Current analysis frames the copied text and keyboard as evidence."
+    }
   }
 ]

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { readFile } from 'node:fs/promises';
 import { dispatch, model, telegram, database } from './worker-runtime.mjs';
 import { message, report } from './telegram-fake.mjs';
 
@@ -351,3 +352,50 @@ test('user: Given a valid chunked answer exactly at the size limit, When it flag
   assert.equal((await dispatch({ update_id: 12, message: message() })).status, 200);
   assert.equal(telegram.has(81), false);
 });
+
+const adultMenuCases = JSON.parse(await readFile(new URL('./decision-cases.json', import.meta.url), 'utf8'))
+  .filter(entry => entry.name.startsWith('screenshot-adult-menu-') || entry.name === 'adult-menu-current-analysis');
+assert.equal(adultMenuCases.length, 5);
+for (const entry of adultMenuCases) {
+  for (const mature of [false, true]) {
+    test(`user: ${entry.name} is indexed and classified with source isolation, mature=${mature}`, async () => {
+      if (mature) await database.prepare('INSERT INTO member_activity VALUES (123,-10012,22,10)').run();
+      const original = message();
+      const target = { ...original, ...structuredClone(entry.message),
+        from: { ...original.from, ...entry.message.from },
+        forward_origin: { type: 'channel', date: 1, chat: { id: -10044, type: 'channel', title: 'Example source' } },
+      };
+      if (!Object.hasOwn(entry.message, 'text')) delete target.text;
+      let evaluated = false;
+      model.response = async (url, body) => {
+        evaluated = true;
+        const indexed = await database.prepare('SELECT sender_id, activity_eligible FROM recent_messages WHERE message_id=?')
+          .bind(target.message_id).first();
+        assert.equal(indexed.sender_id, 22, 'indexing precedes the model call');
+        assert.equal(indexed.activity_eligible, 1);
+        const state = JSON.parse(body.input);
+        assert.equal(state.message.text ?? state.message.caption, entry.message.text ?? entry.message.caption);
+        for (const row of entry.message.reply_markup.inline_keyboard) {
+          for (const button of row) assert.ok(state.message.reply_markup.includes(button.text));
+        }
+        if (entry.message.rich_message) {
+          assert.deepEqual(state.message.rich_message, entry.message.rich_message.blocks.map(block => block.text));
+        }
+        assert.equal(JSON.stringify(state).includes('synthetic-not-sent'), false);
+        return Response.json({ answers: [{ name: 'spam', type: 'predicate', probability: entry.spam ? 0.90 : 0 }] });
+      };
+      telegram.send(message(70));
+      telegram.send(message(80, 11));
+      telegram.send(target);
+      assert.equal((await dispatch({ update_id: 1, message: target })).status, 200);
+      assert.equal(evaluated, true);
+      assert.equal(telegram.has(81), !entry.spam);
+      assert.equal(telegram.canSend(22), !entry.spam);
+      assert.equal(telegram.canJoin(22), true);
+      assert.equal(telegram.has(70), true);
+      assert.equal(telegram.has(80), true);
+      assert.equal(telegram.canSend(11), true);
+      assert.equal((await database.prepare('SELECT COUNT(*) AS n FROM blacklisted_users').first()).n, 0);
+    });
+  }
+}

@@ -15,13 +15,20 @@ from .constants import (
     SUPPORTED_FORWARD_ORIGINS,
     TOKEN_PART_COUNT,
 )
-from .rules import AUTHORED_SPAM_PATTERNS, REPEATED_SYMBOLS_RE, SPAM_PATTERNS
+from .rules import (
+    AUTHORED_SPAM_PATTERNS,
+    REFERENCE_WARNING_RE,
+    REPEATED_SYMBOLS_RE,
+    SEXUAL_ENDORSEMENT_RE,
+    SEXUAL_RESOURCE_RE,
+    SPAM_PATTERNS,
+)
 
 
 def matches_spam_pattern(message: dict[str, object]) -> bool:
-    """Check current visible fields without inspecting replies."""
+    """Check authored fields and the narrow, source-separated sexual endorsement rule."""
     texts = _pattern_texts(message)
-    if any(matches_spam_text(text) for text in texts):
+    if _endorses_sexual_resource(message) or any(matches_spam_text(text) for text in texts):
         return True
     markup = message.get("reply_markup")
     keyboard = markup.get("inline_keyboard") if isinstance(markup, dict) else None
@@ -39,6 +46,43 @@ def matches_spam_pattern(message: dict[str, object]) -> bool:
     return any(
         isinstance(text := message.get(field), str) and any(pattern.search(text) for pattern in AUTHORED_SPAM_PATTERNS)
         for field in ("text", "caption")
+    )
+
+
+def _endorses_sexual_resource(message: dict[str, object]) -> bool:
+    """Require the current reaction as well as an unframed visible resource offer."""
+    current = "\n".join(text for field in ("text", "caption") if isinstance(text := message.get(field), str))
+    if SEXUAL_ENDORSEMENT_RE.fullmatch(current) is None:
+        return False
+    references: list[tuple[str, str]] = []
+    replied = reply_target(message)
+    reply_name = ""
+    if replied is not None:
+        sender = replied.get("sender_chat") or replied.get("from")
+        if isinstance(sender, dict):
+            title = sender.get("title")
+            reply_name = title if isinstance(title, str) else display_name(sender)
+        content = "\n".join(text for field in ("text", "caption") if isinstance(text := replied.get(field), str))
+        references.append((content, reply_name))
+    quote = message.get("quote")
+    if isinstance(quote, dict) and isinstance(text := quote.get("text"), str):
+        name = reply_name
+        external = message.get("external_reply")
+        origin = external.get("origin") if isinstance(external, dict) else None
+        if isinstance(origin, dict):
+            source = origin.get("chat") or origin.get("sender_chat") or origin.get("sender_user")
+            if isinstance(source, dict):
+                title = source.get("title")
+                name = title if isinstance(title, str) else display_name(source)
+            elif isinstance(hidden_name := origin.get("sender_user_name"), str):
+                name = hidden_name
+        references.append((text[:1024], name))
+    return any(
+        ("资源" in name or "资源" in text)
+        and SEXUAL_RESOURCE_RE.search(text)
+        and REFERENCE_WARNING_RE.search(name) is None
+        and REFERENCE_WARNING_RE.search(text) is None
+        for text, name in references
     )
 
 

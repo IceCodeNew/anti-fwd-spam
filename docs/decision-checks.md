@@ -8,7 +8,7 @@ This document defines the repeatable procedure for testing GPT-6 Luna Decisions 
 - Use sanitized text, synthetic usernames, placeholder contacts such as `@<contact>`, and reserved URLs such as `https://example.invalid/`.
 - Keep real member IDs, phone numbers, report JSON, credentials, and private destinations out of the repository.
 - Mark reconstructed context and unavailable fields explicitly; do not infer historical scores from deleted or completed task state.
-- Skip only cases owned by deterministic local rules. Keep semantic positives, semantic negatives, and reference cases active.
+- Skip only cases owned by deterministic local rules. Keep semantic positives, semantic negatives, and reference cases active. Keep semantic regression cases for an established-sender boundary active even when a local regex covers the same content for low-history senders; local-only fixtures do not replace those model checks.
 - Add paired positive and negative controls for each boundary: current-sender intent, quoted promotion versus warning/analysis, profile-only context, product/service discussion, and ordinary technical or personal experience.
 
 ## Running the check

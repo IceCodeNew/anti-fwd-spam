@@ -1563,5 +1563,537 @@
       "kind": "synthetic boundary control",
       "notes": "An ordinary message and an own sales pitch share an advertising biography; profile context alone must not classify the current message as promotion. All identities and contacts are synthetic."
     }
+  },
+  {
+    "name": "sexual-resource-endorsement-reply",
+    "spam": true,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "射了",
+      "reply_to_message": {
+        "from": {
+          "first_name": "资源分享"
+        },
+        "text": "😍成人cos私密写真资源，完整版进频道观看"
+      }
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "synthetic boundary control",
+      "notes": "Synthetic intent boundary; no real identity or destination."
+    }
+  },
+  {
+    "name": "sexual-resource-warning-reply",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "这是色情广告，请管理员删除，别点。",
+      "reply_to_message": {
+        "from": {
+          "first_name": "资源分享"
+        },
+        "text": "😍成人cos私密写真资源，完整版进频道观看"
+      }
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "synthetic boundary control",
+      "notes": "Synthetic intent boundary; no real identity or destination."
+    }
+  },
+  {
+    "name": "sexual-resource-analysis-reply",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "这种广告下面用“射了”附和是在引流，请处理。",
+      "reply_to_message": {
+        "from": {
+          "first_name": "资源分享"
+        },
+        "text": "😍成人cos私密写真资源，完整版进频道观看"
+      }
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "synthetic boundary control",
+      "notes": "Synthetic intent boundary; no real identity or destination."
+    }
+  },
+  {
+    "name": "sexual-resource-neutral-reply",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "这是什么？",
+      "reply_to_message": {
+        "from": {
+          "first_name": "资源分享"
+        },
+        "text": "😍成人cos私密写真资源，完整版进频道观看"
+      }
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "synthetic boundary control",
+      "notes": "Synthetic intent boundary; no real identity or destination."
+    }
+  },
+  {
+    "name": "sexual-resource-report-short-reply",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "举报了",
+      "reply_to_message": {
+        "from": {
+          "first_name": "资源分享"
+        },
+        "text": "😍成人cos私密写真资源，完整版进频道观看"
+      }
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "synthetic boundary control",
+      "notes": "Synthetic intent boundary; no real identity or destination."
+    }
+  },
+  {
+    "name": "sexual-resource-endorsement-external",
+    "spam": true,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "射了",
+      "external_reply": {
+        "origin": {
+          "type": "channel",
+          "chat": {
+            "title": "资源分享"
+          }
+        }
+      },
+      "quote": {
+        "text": "😍成人cos私密写真资源，完整版进频道观看"
+      }
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "synthetic boundary control",
+      "notes": "Synthetic intent boundary; no real identity or destination."
+    }
+  },
+  {
+    "name": "sexual-resource-warning-external",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "这是色情广告，请管理员删除，别点。",
+      "external_reply": {
+        "origin": {
+          "type": "channel",
+          "chat": {
+            "title": "资源分享"
+          }
+        }
+      },
+      "quote": {
+        "text": "😍成人cos私密写真资源，完整版进频道观看"
+      }
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "synthetic boundary control",
+      "notes": "Synthetic intent boundary; no real identity or destination."
+    }
+  },
+  {
+    "name": "sexual-resource-analysis-external",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "这种广告下面用“射了”附和是在引流，请处理。",
+      "external_reply": {
+        "origin": {
+          "type": "channel",
+          "chat": {
+            "title": "资源分享"
+          }
+        }
+      },
+      "quote": {
+        "text": "😍成人cos私密写真资源，完整版进频道观看"
+      }
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "synthetic boundary control",
+      "notes": "Synthetic intent boundary; no real identity or destination."
+    }
+  },
+  {
+    "name": "sexual-resource-neutral-external",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "这是什么？",
+      "external_reply": {
+        "origin": {
+          "type": "channel",
+          "chat": {
+            "title": "资源分享"
+          }
+        }
+      },
+      "quote": {
+        "text": "😍成人cos私密写真资源，完整版进频道观看"
+      }
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "synthetic boundary control",
+      "notes": "Synthetic intent boundary; no real identity or destination."
+    }
+  },
+  {
+    "name": "sexual-resource-report-short-external",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "举报了",
+      "external_reply": {
+        "origin": {
+          "type": "channel",
+          "chat": {
+            "title": "资源分享"
+          }
+        }
+      },
+      "quote": {
+        "text": "😍成人cos私密写真资源，完整版进频道观看"
+      }
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "synthetic boundary control",
+      "notes": "Synthetic intent boundary; no real identity or destination."
+    }
+  },
+  {
+    "name": "sexual-resource-verification",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "有人用这条广告配文“射了”，算推广吗？",
+      "reply_to_message": {
+        "from": {
+          "first_name": "资源分享"
+        },
+        "text": "😍成人cos私密写真资源，完整版进频道观看"
+      }
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "synthetic boundary control",
+      "notes": "Synthetic intent boundary; no real identity or destination."
+    }
+  },
+  {
+    "name": "sexual-resource-opposition",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "别发这种东西",
+      "reply_to_message": {
+        "from": {
+          "first_name": "资源分享"
+        },
+        "text": "😍成人cos私密写真资源，完整版进频道观看"
+      }
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "synthetic boundary control",
+      "notes": "Synthetic intent boundary; no real identity or destination."
+    }
+  },
+  {
+    "name": "sexual-reaction-without-reference",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "射了"
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "synthetic boundary control",
+      "notes": "Synthetic intent boundary; no real identity or destination."
+    }
+  },
+  {
+    "name": "shooting-game-short-reply",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "射了",
+      "reply_to_message": {
+        "from": {
+          "first_name": "资源分享"
+        },
+        "text": "刚才游戏里谁先开枪？"
+      }
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "synthetic boundary control",
+      "notes": "Synthetic intent boundary; no real identity or destination."
+    }
+  },
+  {
+    "name": "photography-short-reply",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "拍摄了",
+      "reply_to_message": {
+        "from": {
+          "first_name": "资源分享"
+        },
+        "text": "周末人像摄影练习，照片拍了吗？"
+      }
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "synthetic boundary control",
+      "notes": "Synthetic intent boundary; no real identity or destination."
+    }
+  },
+  {
+    "name": "sexual-health-discussion",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "刚射了以后不舒服，应该看哪个科？"
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "synthetic boundary control",
+      "notes": "Synthetic intent boundary; no real identity or destination."
+    }
+  },
+  {
+    "name": "cosplay-nonsexual-discussion",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "这套成年角色cos服装的裁剪怎么做？"
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "synthetic boundary control",
+      "notes": "Synthetic intent boundary; no real identity or destination."
+    }
+  },
+  {
+    "name": "sexual-resource-explicit-redistribution",
+    "spam": true,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "这个资源很棒，大家点频道看完整版",
+      "reply_to_message": {
+        "from": {
+          "first_name": "资源分享"
+        },
+        "text": "😍成人cos私密写真资源，完整版进频道观看"
+      }
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "synthetic boundary control",
+      "notes": "Synthetic intent boundary; no real identity or destination."
+    }
+  },
+  {
+    "name": "sexual-reaction-question-fullwidth",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "射了？",
+      "reply_to_message": {
+        "from": {
+          "first_name": "Member"
+        },
+        "text": "成人cos私密写真资源，完整版进频道观看"
+      }
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "synthetic boundary control",
+      "notes": "Whole-current-reaction, punctuation and reference intent boundaries for mature-member semantic classification; no real identity, media or contact."
+    }
+  },
+  {
+    "name": "sexual-reaction-question-ascii",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "射了?",
+      "reply_to_message": {
+        "from": {
+          "first_name": "Member"
+        },
+        "text": "成人cos私密写真资源，完整版进频道观看"
+      }
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "synthetic boundary control",
+      "notes": "Whole-current-reaction, punctuation and reference intent boundaries for mature-member semantic classification; no real identity, media or contact."
+    }
+  },
+  {
+    "name": "sexual-reaction-photography-reference",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "射了",
+      "reply_to_message": {
+        "from": {
+          "first_name": "Member"
+        },
+        "text": "这组成年角色cos写真是我拍的，想交流灯光和构图。"
+      }
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "synthetic boundary control",
+      "notes": "Whole-current-reaction, punctuation and reference intent boundaries for mature-member semantic classification; no real identity, media or contact."
+    }
+  },
+  {
+    "name": "sexual-reaction-medical-reference",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "射了",
+      "reply_to_message": {
+        "from": {
+          "first_name": "Member"
+        },
+        "text": "医学科普：射精后不舒服应该如何就诊？"
+      }
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "synthetic boundary control",
+      "notes": "Whole-current-reaction, punctuation and reference intent boundaries for mature-member semantic classification; no real identity, media or contact."
+    }
+  },
+  {
+    "name": "sexual-reaction-resource-title-only",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "射了",
+      "reply_to_message": {
+        "from": {
+          "first_name": "全网最全资源"
+        },
+        "text": "今天周末，大家休息了吗？"
+      }
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "synthetic boundary control",
+      "notes": "Whole-current-reaction, punctuation and reference intent boundaries for mature-member semantic classification; no real identity, media or contact."
+    }
+  },
+  {
+    "name": "sexual-reaction-warning-reference",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "射了",
+      "reply_to_message": {
+        "from": {
+          "first_name": "资源新闻"
+        },
+        "text": "请举报成人cos私密写真资源广告，不要传播。"
+      }
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "synthetic boundary control",
+      "notes": "Whole-current-reaction, punctuation and reference intent boundaries for mature-member semantic classification; no real identity, media or contact."
+    }
+  },
+  {
+    "name": "sexual-resource-endorsement-caption",
+    "spam": true,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "射了",
+      "reply_to_message": {
+        "from": {
+          "first_name": "Member"
+        },
+        "caption": "成人cos私密写真资源，完整版进频道观看"
+      }
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "synthetic boundary control",
+      "notes": "Whole-current-reaction, punctuation and reference intent boundaries for mature-member semantic classification; no real identity, media or contact."
+    }
   }
 ]

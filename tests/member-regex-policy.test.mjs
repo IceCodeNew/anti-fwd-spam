@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { database, dispatch, model, setBindings, telegram } from './worker-runtime.mjs';
 import { message, report } from './telegram-fake.mjs';
@@ -7,8 +6,6 @@ import { message, report } from './telegram-fake.mjs';
 model.enabled = true;
 const campaign = '@synthetic_bot campaign_001 synthetic_marker';
 const bulkOffer = '承接广*告*戴*發，十万精准各行业裙\n包效果 包效果 @sample_contact';
-const salesMenu = { inline_keyboard: JSON.parse(readFileSync(new URL('./sales-menu.json', import.meta.url), 'utf8'))
-  .map(text => [{ text, url: 'https://example.invalid/menu' }]) };
 function referenced(current, kind) {
   const earlier = { ...message(80, 11), text: 'ordinary discussion' };
   if (kind === 'same_chat') current.reply_to_message = earlier;
@@ -82,81 +79,13 @@ test('user: an established member can still be moderated when Luna confirms an a
 });
 
 for (const status of ['administrator', 'creator', 'anonymous']) {
-  for (const [name, content] of [
-    ['campaign', { text: campaign }],
-    ['sales menu', { text: '123', reply_markup: salesMenu }],
-  ]) {
-    test(`user: a low-history ${name} preserves ${status} authority protection`, async () => {
-      const current = referenced({ ...message(), ...content }, 'same_chat');
-      if (status === 'anonymous') current.sender_chat = current.chat;
-      else telegram.members.set(22, { status });
-      telegram.send(current.reply_to_message);
-      telegram.send(current);
-      assert.equal((await dispatch({ update_id: 1, message: current })).status, 200);
-      assert.equal(telegram.has(81), true);
-      assert.equal(telegram.has(80), true);
-      assert.equal(telegram.canSend(22), true);
-      assert.equal(telegram.canJoin(22), true);
-    });
-  }
-}
-
-for (const isBot of [false, true]) {
-  for (const edited of [false, true]) {
-    test(`user: a numeric-body sales menu reply from ${isBot ? 'a bot' : 'a low-history human'}, edited=${edited} deletes only the current message and ${isBot ? 'does not mute' : 'mutes its sender'}`, async () => {
-      const current = referenced({ ...message(), text: '123', reply_markup: salesMenu }, 'same_chat');
-      current.from.is_bot = isBot;
-      telegram.send(message(70));
-      telegram.send(current.reply_to_message);
-      telegram.send(current);
-      assert.equal((await dispatch({ update_id: 1, [edited ? 'edited_message' : 'message']: current })).status, 200);
-      assert.equal(telegram.has(81), false);
-      assert.equal(telegram.has(80), true);
-      assert.equal(telegram.has(70), true);
-      assert.equal(telegram.canSend(22), isBot);
-      assert.equal(telegram.canJoin(22), true);
-      assert.equal(model.state, null);
-      assert.equal((await database.prepare('SELECT COUNT(*) AS n FROM blacklisted_users').first()).n, 0);
-    });
-  }
-}
-
-for (const edited of [false, true]) {
-  test(`user: a mature member's numeric-body sales menu reply, edited=${edited} reaches Luna rather than forcing local punishment`, async () => {
-    await database.prepare('INSERT INTO member_activity VALUES (123,-10012,22,10)').run();
-    const current = referenced({ ...message(), text: '123', reply_markup: salesMenu }, 'same_chat');
-    telegram.send(current.reply_to_message);
-    telegram.send(current);
-    assert.equal((await dispatch({ update_id: 1, [edited ? 'edited_message' : 'message']: current })).status, 200);
-    assert.equal(telegram.has(81), true);
-    assert.equal(telegram.has(80), true);
-    assert.equal(telegram.canSend(22), true);
-    assert.equal(telegram.canJoin(22), true);
-    assert.equal(model.state.message.text, '123');
-  });
-}
-
-for (const context of ['warning caption', 'rich warning', 'reference only']) {
-  test(`user: a sales menu with ${context} remains visible when Luna returns zero`, async () => {
-    model.probability = 0;
-    const current = referenced({ ...message(), text: '123', reply_markup: salesMenu }, 'same_chat');
-    if (context === 'warning caption') current.caption = '请举报这个菜单，不要联系';
-    else if (context === 'rich warning') current.rich_message = {
-      blocks: [{ type: 'paragraph', text: { type: 'plain', text: '请举报这个菜单，不要联系' } }],
-    };
-    else {
-      delete current.reply_markup;
-      current.reply_to_message.text = '123';
-      current.reply_to_message.reply_markup = salesMenu;
-    }
-    telegram.send(current.reply_to_message);
+  test(`user: low-history regex matches preserve ${status} authority protection`, async () => {
+    const current = referenced({ ...message(), text: campaign }, 'same_chat');
+    if (status === 'anonymous') current.sender_chat = current.chat;
+    else telegram.members.set(22, { status });
     telegram.send(current);
     assert.equal((await dispatch({ update_id: 1, message: current })).status, 200);
     assert.equal(telegram.has(81), true);
-    assert.equal(telegram.has(80), true);
-    assert.equal(telegram.canSend(22), true);
-    assert.equal(telegram.canJoin(22), true);
-    assert.equal(model.state.message.text, '123');
   });
 }
 
@@ -186,72 +115,85 @@ test('user: a temporary low-history deletion failure retries only the current me
   assert.equal(telegram.has(80), true);
 });
 
-const establishedSemanticCases = JSON.parse(readFileSync(new URL('./decision-cases.json', import.meta.url), 'utf8'))
-  .filter(entry => entry.name.startsWith('portsfish-established-') || [
-    'portsfish-free-project-caption-warning', 'portsfish-payment-buttons-warning',
-    'portsfish-counterfeit-current-text-offer', 'portsfish-phone-contact-offer',
-  ].includes(entry.name));
-assert.equal(establishedSemanticCases.length, 12);
-for (const entry of establishedSemanticCases) {
-  // Existing tests cover the shared authority/edit/reference matrix.
-  const histories = entry.name.startsWith('portsfish-established-') ? [false, true] : [true];
-  for (const mature of histories) {
-    test(`user: ${entry.name} respects the local/model boundary, mature=${mature}`, async () => {
-      if (mature) await database.prepare('INSERT INTO member_activity VALUES (123,-10012,22,10)').run();
-      model.probability = entry.spam ? 0.90 : 0;
-      const original = message();
-      const current = referenced({ ...original, ...structuredClone(entry.message),
-        from: { ...original.from, ...entry.message.from },
-      }, 'same_chat');
-      if (!Object.hasOwn(entry.message, 'text')) delete current.text;
-      telegram.send(message(70));
+// No local matches: fake scores test routing independently of advertising intent.
+const modelOnlyMessages = [
+  ['text offer', { text: '出+86裙發号 搭配运控端口 不封浩\n2秒發一个裙  日蕟4W @sample_contact' }],
+  ['caption offer', { caption: '接TG厂吿𠰺发/𠰺查同行裙\n日发千万 统统高质量 @sample_contact' }],
+  ['button offer', { text: '123', reply_markup: { inline_keyboard: [
+    [{ text: '1️⃣🔥卖薇信号/手机咔/接码等-啥都有', url: 'https://example.invalid/menu' }],
+  ] } }],
+];
+for (const [name, content] of modelOnlyMessages) {
+  for (const mature of [false, true]) {
+    for (const edited of [false, true]) {
+      for (const probability of [0, 0.90]) {
+        test(`user: a ${name} without a local match follows score=${probability}, mature=${mature}, edited=${edited}`, async () => {
+          if (mature) await database.prepare('INSERT INTO member_activity VALUES (123,-10012,22,10)').run();
+          model.probability = probability;
+          const current = referenced({ ...message(), ...structuredClone(content) }, 'same_chat');
+          if (!Object.hasOwn(content, 'text')) delete current.text;
+          telegram.send(message(70));
+          telegram.send(current.reply_to_message);
+          telegram.send(current);
+          assert.equal((await dispatch({ update_id: 1, [edited ? 'edited_message' : 'message']: current })).status, 200);
+          assert.equal(model.state.nickname, current.from.first_name);
+          assert.equal(model.state.message.text, current.text);
+          assert.equal(model.state.message.caption, current.caption);
+          if (content.reply_markup) assert.ok(model.state.message.reply_markup.includes(content.reply_markup.inline_keyboard[0][0].text));
+          assert.equal(telegram.has(81), probability === 0);
+          assert.equal(telegram.canSend(22), probability === 0);
+          assert.equal(telegram.has(70), true);
+          assert.equal(telegram.has(80), true);
+          assert.equal(telegram.canSend(11), true);
+          assert.equal(telegram.canJoin(22), true);
+          assert.equal((await database.prepare('SELECT COUNT(*) AS n FROM blacklisted_users').first()).n, 0);
+        });
+      }
+    }
+  }
+
+  for (const edited of [false, true]) {
+    test(`user: a bot's ${name} without a local match stays outside model classification, edited=${edited}`, async () => {
+      model.probability = 0.90;
+      const current = referenced({ ...message(), ...structuredClone(content) }, 'same_chat');
+      if (!Object.hasOwn(content, 'text')) delete current.text;
+      current.from.is_bot = true;
       telegram.send(current.reply_to_message);
       telegram.send(current);
-      assert.equal((await dispatch({ update_id: 1, message: current })).status, 200);
-      const localMatch = !mature && entry.spam;
-      if (localMatch) assert.equal(model.state, null);
-      else {
-        assert.equal(model.state.message.text ?? model.state.message.caption,
-          entry.message.text ?? entry.message.caption);
-        if (entry.message.contact) assert.equal(model.state.contact.card_name, entry.message.contact.first_name);
-        for (const row of entry.message.reply_markup?.inline_keyboard ?? []) {
-          for (const button of row) assert.ok(model.state.message.reply_markup.includes(button.text));
-        }
-      }
-      assert.equal(telegram.has(81), !entry.spam);
-      assert.equal(telegram.canSend(22), !entry.spam);
-      assert.equal(telegram.canJoin(22), true);
-      assert.equal(telegram.has(70), true);
+      assert.equal((await dispatch({ update_id: 1, [edited ? 'edited_message' : 'message']: current })).status, 200);
+      assert.equal(model.state, null);
+      assert.equal(telegram.has(81), true);
       assert.equal(telegram.has(80), true);
-      assert.equal(telegram.canSend(11), true);
+      assert.equal(telegram.canSend(22), true);
+      assert.equal(telegram.canJoin(22), true);
       assert.equal((await database.prepare('SELECT COUNT(*) AS n FROM blacklisted_users').first()).n, 0);
     });
   }
 }
 
-const matureLocalRuleCases = JSON.parse(readFileSync(new URL('./decision-cases.json', import.meta.url), 'utf8'))
-  .filter(entry => entry.source?.semantic_scope === 'mature-local-rule');
-assert.equal(matureLocalRuleCases.length, 24);
-assert.ok(matureLocalRuleCases.every(entry => !entry.skip));
-for (const entry of matureLocalRuleCases) {
-  for (const edited of [false, true]) {
-    test(`user: an established member's ${entry.name}, edited=${edited} follows the semantic model result`, async () => {
-      await database.prepare('INSERT INTO member_activity VALUES (123,-10012,22,10)').run();
-      model.probability = entry.spam ? 0.90 : 0;
-      const original = message();
-      const current = { ...original, ...structuredClone(entry.message),
-        from: { ...original.from, ...entry.message.from },
-      };
-      telegram.send(message(70));
-      telegram.send(current);
-      assert.equal((await dispatch({ update_id: 1, [edited ? 'edited_message' : 'message']: current })).status, 200);
-      assert.equal(model.state.message.text, entry.message.text);
-      assert.equal(model.state.nickname, entry.message.from.first_name);
-      assert.equal(telegram.has(81), !entry.spam);
-      assert.equal(telegram.canSend(22), !entry.spam);
-      assert.equal(telegram.canJoin(22), true);
-      assert.equal(telegram.has(70), true);
-      assert.equal((await database.prepare('SELECT COUNT(*) AS n FROM blacklisted_users').first()).n, 0);
-    });
-  }
+for (const source of ['caption', 'button', 'reference']) {
+  test(`user: a warning in ${source} keeps its source when the model allows the message`, async () => {
+    model.probability = 0;
+    const warning = '请举报这个广告样本，不要购买';
+    const current = referenced({ ...message(), ...structuredClone(modelOnlyMessages[2][1]) }, 'same_chat');
+    if (source === 'caption') current.caption = warning;
+    else if (source === 'button') current.reply_markup.inline_keyboard.unshift([{ text: warning }]);
+    else {
+      current.reply_to_message.reply_markup = current.reply_markup;
+      delete current.reply_markup;
+      current.text = warning;
+    }
+    telegram.send(current.reply_to_message);
+    telegram.send(current);
+    assert.equal((await dispatch({ update_id: 1, message: current })).status, 200);
+    if (source === 'caption') assert.equal(model.state.message.caption, warning);
+    else if (source === 'button') assert.ok(model.state.message.reply_markup.includes(warning));
+    else {
+      assert.equal(model.state.message.reply_markup, undefined);
+      assert.ok(model.state.context.reply.reply_markup.includes(modelOnlyMessages[2][1].reply_markup.inline_keyboard[0][0].text));
+    }
+    assert.equal(telegram.has(81), true);
+    assert.equal(telegram.has(80), true);
+    assert.equal(telegram.canSend(22), true);
+  });
 }

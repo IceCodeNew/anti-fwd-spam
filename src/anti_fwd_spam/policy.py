@@ -11,12 +11,11 @@ from .constants import (
     MAX_CONFIG_LENGTH,
     MAX_ID_ENTRIES,
     MAX_TELEGRAM_ID,
-    MODEL_CONTENT_FIELDS,
     SUPPORTED_CHAT_TYPES,
     SUPPORTED_FORWARD_ORIGINS,
     TOKEN_PART_COUNT,
 )
-from .rules import AUTHORED_SPAM_PATTERNS, BUTTON_OFFER_BODY_RE, REPEATED_SYMBOLS_RE, SALES_MENU_LABELS, SPAM_PATTERNS
+from .rules import AUTHORED_SPAM_PATTERNS, REPEATED_SYMBOLS_RE, SPAM_PATTERNS
 
 
 def matches_spam_pattern(message: dict[str, object]) -> bool:
@@ -27,24 +26,14 @@ def matches_spam_pattern(message: dict[str, object]) -> bool:
     markup = message.get("reply_markup")
     keyboard = markup.get("inline_keyboard") if isinstance(markup, dict) else None
     if isinstance(keyboard, list):
-        labels = [
+        texts.extend(
             label
             for row in keyboard
             if isinstance(row, list)
             for button in row
             if isinstance(button, dict)
             if isinstance(label := button.get("text"), str)
-        ]
-        if (
-            MODEL_CONTENT_FIELDS.intersection(message) <= {"text", "caption"}
-            and all(
-                isinstance(text := message.get(field, ""), str) and BUTTON_OFFER_BODY_RE.fullmatch(text)
-                for field in ("text", "caption")
-            )
-            and tuple(labels) in (SALES_MENU_LABELS[:1], SALES_MENU_LABELS)
-        ):
-            return True
-        texts.extend(labels)
+        )
     if REPEATED_SYMBOLS_RE.search("\n".join(texts)):
         return True
     return any(

@@ -68,10 +68,11 @@ DISABLED_GROUP_NOTICE_RE = re.compile(
     r"|[^。\uff01\uff1f\n]{0,80}点击\s*(?:新地址|新链接|https?://\S+))"
 )
 
-# Whole-message signatures stay out of shared contact and profile checks.
+# Authored-message patterns stay out of shared contact and profile checks.
 AUTHORED_SPAM_PATTERNS = (
     DISABLED_GROUP_NOTICE_RE,
     re.compile(r"\A承接广\*告\*戴\*發\uff0c十万精准各行业裙\s+包效果 包效果 @[A-Za-z0-9_]{5,32}\s*\Z"),
+    re.compile(r"点我搜索\s*酒店偷拍|点上方链接\s*限时免费看禁忌资源"),
 )
 
 REPEATED_SYMBOLS_RE = re.compile(r"💰(?:[^💰]*💰){3}|🔴(?:[^🔴]*🔴){3}")

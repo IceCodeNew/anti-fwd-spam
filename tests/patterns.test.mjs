@@ -9,6 +9,53 @@ const campaign = '@synthetic_campaign_bot campaign_001 synthetic_marker_001';
 const flood = ('💰'.repeat(23) + '\n').repeat(8) + '💰'.repeat(8);
 const invite = 'https://t.me/+<invite>';
 
+// Visible screenshot wording; the complete Telegram payload is unavailable.
+const resourceLure = '点我搜索 酒店偷拍\n限时免费搜索\n万能检索 千万用户的选择\n\n'
+  + '点上方链接 限时免费看禁忌资源\n点上方链接 限时免费看禁忌资源';
+
+for (const [text, field, isBot, edited] of [
+  [resourceLure, 'text', false, false],
+  [resourceLure, 'caption', true, false],
+  ['其他文字\n点我搜索\t酒店偷拍\n其他文字', 'text', true, true],
+  ['其他文字 点上方链接\n限时免费看禁忌资源 其他文字', 'text', false, false],
+]) {
+  test(`user: Given a sexual-resource lure in ${field} from a ${isBot ? 'bot' : 'human'}, When ${edited ? 'edited' : 'received'}, Then only the current message and eligible human sending permission are removed`, async () => {
+    const previous = message(80);
+    const target = { ...message(), from: { ...message().from, is_bot: isBot }, reply_to_message: previous };
+    delete target.text;
+    target[field] = text;
+    telegram.send(previous);
+    telegram.send(target);
+    assert.equal((await dispatch({ update_id: 1, [edited ? 'edited_message' : 'message']: target })).status, 200);
+    assert.equal(telegram.has(81), false);
+    assert.equal(telegram.has(80), true);
+    assert.equal(telegram.canSend(22), isBot);
+    assert.equal(telegram.canJoin(22), true);
+    assert.equal((await database.prepare('SELECT COUNT(*) AS n FROM blacklisted_users').first()).n, 0);
+    assert.equal(model.state, null);
+  });
+}
+
+for (const context of ['reference', 'nickname', 'contact', 'biography', 'established', 'administrator']) {
+  test(`user: Given a sexual-resource lure in ${context}, When the model accepts the message, Then the current sender and message remain protected by that boundary`, async () => {
+    const target = message();
+    if (context === 'reference') target.reply_to_message = { ...message(80, 33), text: resourceLure };
+    else if (context === 'nickname') target.from.first_name = resourceLure;
+    else if (context === 'contact') target.contact = { first_name: resourceLure, phone_number: '<phone>' };
+    else if (context === 'biography') model.profile = { bio: resourceLure };
+    else {
+      target.text = resourceLure;
+      if (context === 'established') await database.prepare('INSERT INTO member_activity VALUES (123,-10012,22,10)').run();
+      else telegram.members.set(22, { status: 'administrator' });
+    }
+    telegram.send(target);
+    assert.equal((await dispatch({ update_id: 1, message: target })).status, 200);
+    assert.equal(telegram.has(81), true);
+    assert.equal(telegram.canSend(22), true);
+    if (context === 'established') assert.equal(model.state.message.text, resourceLure);
+  });
+}
+
 for (const [text, reference, edited] of [
   [`🍿 前排留个位置，一起看热闹。\n${invite}`, 'same_chat', false],
   [`🍉 来看看，有没有你漏掉的细节。\n${invite}`, 'external', true],
@@ -354,6 +401,8 @@ test('user: Given an anonymous group administrator, When a local pattern matches
 test('user: Given ordinary discussion and short emoji runs, When Jev accepts them, Then local filtering leaves them visible', async () => {
   const examples = [
     '讨论公司福利', '讨论强奸案件', '请举报偷拍和禁忌资源', '网黄是什么？',
+    '酒店偷拍案件如何举报？', '点我搜索 酒店地图', '点上方链接 限时免费看铁路地图',
+    '点我搜索\n这是一段关于酒店偷拍的新闻', '点上方链接举报，切勿观看禁忌资源',
     `示例：${'💰'.repeat(3)}`, '@example_bot campaign_update',
     '💰'.repeat(3), '🔴 '.repeat(3),
     '💰'.repeat(2) + '🔴'.repeat(2), '普通消息',

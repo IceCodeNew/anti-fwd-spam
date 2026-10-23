@@ -185,3 +185,73 @@ test('user: a temporary low-history deletion failure retries only the current me
   assert.equal(telegram.canSend(22), false);
   assert.equal(telegram.has(80), true);
 });
+
+const establishedSemanticCases = JSON.parse(readFileSync(new URL('./decision-cases.json', import.meta.url), 'utf8'))
+  .filter(entry => entry.name.startsWith('portsfish-established-') || [
+    'portsfish-free-project-caption-warning', 'portsfish-payment-buttons-warning',
+    'portsfish-counterfeit-current-text-offer', 'portsfish-phone-contact-offer',
+  ].includes(entry.name));
+assert.equal(establishedSemanticCases.length, 12);
+for (const entry of establishedSemanticCases) {
+  // Existing tests cover the shared authority/edit/reference matrix.
+  const histories = entry.name.startsWith('portsfish-established-') ? [false, true] : [true];
+  for (const mature of histories) {
+    test(`user: ${entry.name} respects the local/model boundary, mature=${mature}`, async () => {
+      if (mature) await database.prepare('INSERT INTO member_activity VALUES (123,-10012,22,10)').run();
+      model.probability = entry.spam ? 0.90 : 0;
+      const original = message();
+      const current = referenced({ ...original, ...structuredClone(entry.message),
+        from: { ...original.from, ...entry.message.from },
+      }, 'same_chat');
+      if (!Object.hasOwn(entry.message, 'text')) delete current.text;
+      telegram.send(message(70));
+      telegram.send(current.reply_to_message);
+      telegram.send(current);
+      assert.equal((await dispatch({ update_id: 1, message: current })).status, 200);
+      const localMatch = !mature && entry.spam;
+      if (localMatch) assert.equal(model.state, null);
+      else {
+        assert.equal(model.state.message.text ?? model.state.message.caption,
+          entry.message.text ?? entry.message.caption);
+        if (entry.message.contact) assert.equal(model.state.contact.card_name, entry.message.contact.first_name);
+        for (const row of entry.message.reply_markup?.inline_keyboard ?? []) {
+          for (const button of row) assert.ok(model.state.message.reply_markup.includes(button.text));
+        }
+      }
+      assert.equal(telegram.has(81), !entry.spam);
+      assert.equal(telegram.canSend(22), !entry.spam);
+      assert.equal(telegram.canJoin(22), true);
+      assert.equal(telegram.has(70), true);
+      assert.equal(telegram.has(80), true);
+      assert.equal(telegram.canSend(11), true);
+      assert.equal((await database.prepare('SELECT COUNT(*) AS n FROM blacklisted_users').first()).n, 0);
+    });
+  }
+}
+
+const matureLocalRuleCases = JSON.parse(readFileSync(new URL('./decision-cases.json', import.meta.url), 'utf8'))
+  .filter(entry => entry.source?.semantic_scope === 'mature-local-rule');
+assert.equal(matureLocalRuleCases.length, 24);
+assert.ok(matureLocalRuleCases.every(entry => !entry.skip));
+for (const entry of matureLocalRuleCases) {
+  for (const edited of [false, true]) {
+    test(`user: an established member's ${entry.name}, edited=${edited} follows the semantic model result`, async () => {
+      await database.prepare('INSERT INTO member_activity VALUES (123,-10012,22,10)').run();
+      model.probability = entry.spam ? 0.90 : 0;
+      const original = message();
+      const current = { ...original, ...structuredClone(entry.message),
+        from: { ...original.from, ...entry.message.from },
+      };
+      telegram.send(message(70));
+      telegram.send(current);
+      assert.equal((await dispatch({ update_id: 1, [edited ? 'edited_message' : 'message']: current })).status, 200);
+      assert.equal(model.state.message.text, entry.message.text);
+      assert.equal(model.state.nickname, entry.message.from.first_name);
+      assert.equal(telegram.has(81), !entry.spam);
+      assert.equal(telegram.canSend(22), !entry.spam);
+      assert.equal(telegram.canJoin(22), true);
+      assert.equal(telegram.has(70), true);
+      assert.equal((await database.prepare('SELECT COUNT(*) AS n FROM blacklisted_users').first()).n, 0);
+    });
+  }
+}

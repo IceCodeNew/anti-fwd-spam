@@ -41,10 +41,7 @@ def matches_spam_pattern(message: dict[str, object]) -> bool:
                 isinstance(text := message.get(field, ""), str) and BUTTON_OFFER_BODY_RE.fullmatch(text)
                 for field in ("text", "caption")
             )
-            and (
-                (len(labels) == 1 and labels[0] == "1️⃣🔥卖薇信号/手机咔/接码等-啥都有")
-                or tuple(labels) == SALES_MENU_LABELS
-            )
+            and tuple(labels) in (SALES_MENU_LABELS[:1], SALES_MENU_LABELS)
         ):
             return True
         texts.extend(labels)

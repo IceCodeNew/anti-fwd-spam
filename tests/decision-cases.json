@@ -302,12 +302,17 @@
   {
     "name": "generic-group-replacement-invite",
     "spam": true,
-    "message": {"from": {"first_name": "Member"}, "text": "本群已停用，请加入新群一起聊天：https://example.invalid/new-group"},
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "本群已停用，请加入新群一起聊天：https://example.invalid/new-group"
+    },
     "source": {
       "kind": "sanitized screenshot reconstruction",
-      "notes": "Generic replacement-group invitation without a concrete discussion, event, learning, or collaboration purpose; destination is a placeholder."
-    },
-    "skip": "Dedicated maintenance regex handles unreferenced group replacement notices; referenced migration remains a Jev case."
+      "notes": "Generic replacement-group invitation without a concrete discussion, event, learning, or collaboration purpose; destination is a placeholder.",
+      "semantic_scope": "mature-local-rule"
+    }
   },
   {
     "name": "private-invite-warning",
@@ -340,47 +345,67 @@
   },
   {
     "name": "campaign-marker-screenshot",
-    "spam": true,
-    "message": {"from": {"first_name": "Member"}, "text": "@synthetic_campaign_bot campaign_001 synthetic_marker_001"},
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "@synthetic_campaign_bot campaign_001 synthetic_marker_001"
+    },
     "source": {
       "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/17",
       "kind": "historical screenshot fixture",
-      "notes": "Advertising text and context retained; names, contacts and campaign identifiers use synthetic placeholders. Unavailable profiles and unreadable decorations omitted."
-    },
-    "skip": "PR #17 campaign-marker regex remains; this sample is not a Jev acceptance requirement."
+      "notes": "Advertising text and context retained; names, contacts and campaign identifiers use synthetic placeholders. Unavailable profiles and unreadable decorations omitted. Semantic model label: Synthetic opaque bot handle and campaign identifiers alone do not show an offer, recruiting, or contact funnel. Historical local signature is not semantic ad evidence.",
+      "semantic_scope": "mature-local-rule"
+    }
   },
   {
     "name": "money-bag-flood-screenshot",
-    "spam": true,
-    "message": {"from": {"first_name": "Member"}, "text": "💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰\n💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰\n💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰\n💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰\n💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰\n💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰\n💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰\n💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰\n💰💰💰💰💰💰💰💰"},
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰\n💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰\n💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰\n💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰\n💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰\n💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰\n💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰\n💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰\n💰💰💰💰💰💰💰💰"
+    },
     "source": {
       "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/17",
       "kind": "historical screenshot fixture",
-      "notes": "Advertising text and context retained; names, contacts and campaign identifiers use synthetic placeholders. Unavailable profiles and unreadable decorations omitted."
-    },
-    "skip": "PR #17 repeated-emoji regex remains; this sample is not a Jev acceptance requirement."
+      "notes": "Advertising text and context retained; names, contacts and campaign identifiers use synthetic placeholders. Unavailable profiles and unreadable decorations omitted. Semantic model label: Repeated emoji alone have no visible offer/recruitment or instruction attack under the existing model scope. The stricter low-history repetition rule is independent.",
+      "semantic_scope": "mature-local-rule"
+    }
   },
   {
     "name": "sexual-text-and-nickname-screenshot",
     "spam": true,
-    "message": {"from": {"first_name": "示例昵称🌼（约课上门）看头像q <contact>"}, "text": "极品新人小萝莉 <contact>"},
+    "message": {
+      "from": {
+        "first_name": "示例昵称🌼（约课上门）看头像q <contact>"
+      },
+      "text": "极品新人小萝莉 <contact>"
+    },
     "source": {
       "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/26",
       "kind": "reported text and nickname",
-      "notes": "Advertising text and context retained; names, contacts and campaign identifiers use synthetic placeholders. Unavailable profiles and unreadable decorations omitted."
-    },
-    "skip": "PR #26 sexual-solicitation and avatar-contact regex rules remain; PR #30 confirmed this model miss."
+      "notes": "Advertising text and context retained; names, contacts and campaign identifiers use synthetic placeholders. Unavailable profiles and unreadable decorations omitted.",
+      "semantic_scope": "mature-local-rule"
+    }
   },
   {
     "name": "home-visit-sexual-offer",
     "spam": true,
-    "message": {"from": {"first_name": "Member"}, "text": "小雅 包夜上门"},
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "小雅 包夜上门"
+    },
     "source": {
       "pr": "https://github.com/IceCodeNew/anti-fwd-spam/pull/26",
       "kind": "synthetic positive control",
-      "notes": "Representative behavior fixture, not a reported original. PR #30 evaluated it at 0.95 but retained the mixed regex."
-    },
-    "skip": "PR #26 home-visit regex remains; one passing model sample does not replace the retained rule."
+      "notes": "Representative behavior fixture, not a reported original. PR #30 evaluated it at 0.95 but retained the mixed regex.",
+      "semantic_scope": "mature-local-rule"
+    }
   },
   {
     "name": "fashion-discussion",
@@ -1177,9 +1202,17 @@
   {
     "name": "export-laundering-income",
     "spam": true,
-    "skip": "Owned by the local laundering/income rule.",
-    "message": {"from": {"first_name": "Member"}, "text": "来洗米 日入上W"},
-    "source": {"kind": "sanitized HTML export", "notes": "Current text only; historical profiles and missing replies are unknown."}
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "来洗米 日入上W"
+    },
+    "source": {
+      "kind": "sanitized HTML export",
+      "notes": "Current text only; historical profiles and missing replies are unknown.",
+      "semantic_scope": "mature-local-rule"
+    }
   },
   {
     "name": "export-collection-9q",
@@ -1202,9 +1235,17 @@
   {
     "name": "export-bulk-account-sale",
     "spam": true,
-    "skip": "Owned by the local bulk-sale rule.",
-    "message": {"from": {"first_name": "Member"}, "text": "批量出售飞机号"},
-    "source": {"kind": "sanitized HTML export", "notes": "Current text only; historical profiles and missing replies are unknown."}
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "批量出售飞机号"
+    },
+    "source": {
+      "kind": "sanitized HTML export",
+      "notes": "Current text only; historical profiles and missing replies are unknown.",
+      "semantic_scope": "mature-local-rule"
+    }
   },
   {
     "name": "export-api-resale",
@@ -1262,10 +1303,18 @@
   },
   {
     "name": "export-vague-fragment",
-    "spam": true,
-    "skip": "Owned by the exact whole-field local rule.",
-    "message": {"from": {"first_name": "Member"}, "text": "只吸引对的人"},
-    "source": {"kind": "sanitized HTML export", "notes": "Operator-selected exact local phrase; not a semantic advertising label."}
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "只吸引对的人"
+    },
+    "source": {
+      "kind": "sanitized HTML export",
+      "notes": "Operator-selected exact local phrase; not a semantic advertising label. Semantic model label: Isolated slogan has no offer, product, contact funnel or recruitment. The operator-selected exact local phrase cannot set the semantic model label.",
+      "semantic_scope": "mature-local-rule"
+    }
   },
   {
     "name": "export-distribution-howto",
@@ -2092,6 +2141,688 @@
       "date": "2026-10-21",
       "kind": "synthetic negative control",
       "notes": "Gift-brushing recruitment in a visible card rather than existing text-only gift-task fixtures; card metadata omitted. Contacts are placeholders; unavailable profiles and references are not reconstructed."
+    }
+  },
+  {
+    "name": "portsfish-established-distribution-sms-offer",
+    "spam": true,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "出+86裙發号 搭配运控端口 不封浩\n2秒發一个裙  日蕟4W @sample_contact"
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "synthetic established-sender semantic boundary",
+      "notes": "Exact existing local signature with synthetic contact/reserved URL; remains active to validate model classification for established senders. Warning framing is a synthetic paired control, not a historical score."
+    }
+  },
+  {
+    "name": "portsfish-established-distribution-sms-warning",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "请举报这条广告，不要联系：\n出+86裙發号 搭配运控端口 不封浩\n2秒發一个裙  日蕟4W @sample_contact"
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "synthetic established-sender semantic boundary",
+      "notes": "Exact existing local signature with synthetic contact/reserved URL; remains active to validate model classification for established senders. Warning framing is a synthetic paired control, not a historical score."
+    }
+  },
+  {
+    "name": "portsfish-established-distribution-telegram-offer",
+    "spam": true,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "caption": "接TG厂吿𠰺发/𠰺查同行裙\n日发千万 统统高质量 @sample_contact"
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "synthetic established-sender semantic boundary",
+      "notes": "Exact existing local signature with synthetic contact/reserved URL; remains active to validate model classification for established senders. Warning framing is a synthetic paired control, not a historical score."
+    }
+  },
+  {
+    "name": "portsfish-established-distribution-telegram-warning",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "caption": "请举报这条广告，不要联系：\n接TG厂吿𠰺发/𠰺查同行裙\n日发千万 统统高质量 @sample_contact"
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "synthetic established-sender semantic boundary",
+      "notes": "Exact existing local signature with synthetic contact/reserved URL; remains active to validate model classification for established senders. Warning framing is a synthetic paired control, not a historical score."
+    }
+  },
+  {
+    "name": "portsfish-established-sole-menu-offer",
+    "spam": true,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "123",
+      "reply_markup": {
+        "inline_keyboard": [
+          [
+            {
+              "text": "1️⃣🔥卖薇信号/手机咔/接码等-啥都有",
+              "url": "https://example.invalid/menu"
+            }
+          ]
+        ]
+      }
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "synthetic established-sender semantic boundary",
+      "notes": "Exact existing local signature with synthetic contact/reserved URL; remains active to validate model classification for established senders. Warning framing is a synthetic paired control, not a historical score."
+    }
+  },
+  {
+    "name": "portsfish-established-sole-menu-warning",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "123",
+      "reply_markup": {
+        "inline_keyboard": [
+          [
+            {
+              "text": "警告：以下是广告样本，请勿联系或购买"
+            }
+          ],
+          [
+            {
+              "text": "1️⃣🔥卖薇信号/手机咔/接码等-啥都有",
+              "url": "https://example.invalid/menu"
+            }
+          ]
+        ]
+      }
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "synthetic established-sender semantic boundary",
+      "notes": "Exact existing local signature with synthetic contact/reserved URL; remains active to validate model classification for established senders. Warning framing is a synthetic paired control, not a historical score."
+    }
+  },
+  {
+    "name": "portsfish-established-complete-menu-offer",
+    "spam": true,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "123",
+      "reply_markup": {
+        "inline_keyboard": [
+          [
+            {
+              "text": "1️⃣🔥卖薇信号/手机咔/接码等-啥都有",
+              "url": "https://example.invalid/menu"
+            }
+          ],
+          [
+            {
+              "text": "2️⃣代发全球短信[不限行业】",
+              "url": "https://example.invalid/menu"
+            }
+          ],
+          [
+            {
+              "text": "3️⃣【搬砖]话费/油咔/等【安全】",
+              "url": "https://example.invalid/menu"
+            }
+          ],
+          [
+            {
+              "text": "4️⃣查：开房记录_网逃等【啥都能查】",
+              "url": "https://example.invalid/menu"
+            }
+          ],
+          [
+            {
+              "text": "5️⃣卖：高仿RMB_美元/香烟",
+              "url": "https://example.invalid/menu"
+            }
+          ],
+          [
+            {
+              "text": "6️⃣收各种账号,招代理免费带发财",
+              "url": "https://example.invalid/menu"
+            }
+          ],
+          [
+            {
+              "text": "7️⃣卖：宝妈_网账博采数据【齐全】",
+              "url": "https://example.invalid/menu"
+            }
+          ],
+          [
+            {
+              "text": "8️⃣【搬砖】出嘿U安全",
+              "url": "https://example.invalid/menu"
+            }
+          ],
+          [
+            {
+              "text": "9️⃣人民币代收API/手动丝滑",
+              "url": "https://example.invalid/menu"
+            }
+          ],
+          [
+            {
+              "text": "🔟卖：迷女干💊吹情💊招小弟干活",
+              "url": "https://example.invalid/menu"
+            }
+          ],
+          [
+            {
+              "text": "⏸️免费会员动态表情",
+              "url": "https://example.invalid/menu"
+            }
+          ],
+          [
+            {
+              "text": "1️⃣2️⃣出：国内外全部社交账号",
+              "url": "https://example.invalid/menu"
+            }
+          ],
+          [
+            {
+              "text": "1️⃣3️⃣接码：接全球冷热门平台注册",
+              "url": "https://example.invalid/menu"
+            }
+          ],
+          [
+            {
+              "text": "1️⃣4️⃣短信/电话轰炸机",
+              "url": "https://example.invalid/menu"
+            }
+          ],
+          [
+            {
+              "text": "1️⃣5️⃣TG会员在线开通",
+              "url": "https://example.invalid/menu"
+            }
+          ],
+          [
+            {
+              "text": "1️⃣6️⃣U兑换TRX",
+              "url": "https://example.invalid/menu"
+            }
+          ],
+          [
+            {
+              "text": "1️⃣7️⃣低价充：话费/油卡/抖币等",
+              "url": "https://example.invalid/menu"
+            }
+          ],
+          [
+            {
+              "text": "1️⃣8️⃣低价充-电费，视频会员等",
+              "url": "https://example.invalid/menu"
+            }
+          ],
+          [
+            {
+              "text": "1️⃣9️⃣供需买卖搬砖大集合",
+              "url": "https://example.invalid/menu"
+            }
+          ],
+          [
+            {
+              "text": "2️⃣0️⃣🔥超.会玩需要代发引流_点我",
+              "url": "https://example.invalid/menu"
+            }
+          ]
+        ]
+      }
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "synthetic established-sender semantic boundary",
+      "notes": "Exact existing local signature with synthetic contact/reserved URL; remains active to validate model classification for established senders. Warning framing is a synthetic paired control, not a historical score."
+    }
+  },
+  {
+    "name": "portsfish-established-complete-menu-warning",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "123",
+      "reply_markup": {
+        "inline_keyboard": [
+          [
+            {
+              "text": "警告：以下是广告样本，请勿联系或购买"
+            }
+          ],
+          [
+            {
+              "text": "1️⃣🔥卖薇信号/手机咔/接码等-啥都有",
+              "url": "https://example.invalid/menu"
+            }
+          ],
+          [
+            {
+              "text": "2️⃣代发全球短信[不限行业】",
+              "url": "https://example.invalid/menu"
+            }
+          ],
+          [
+            {
+              "text": "3️⃣【搬砖]话费/油咔/等【安全】",
+              "url": "https://example.invalid/menu"
+            }
+          ],
+          [
+            {
+              "text": "4️⃣查：开房记录_网逃等【啥都能查】",
+              "url": "https://example.invalid/menu"
+            }
+          ],
+          [
+            {
+              "text": "5️⃣卖：高仿RMB_美元/香烟",
+              "url": "https://example.invalid/menu"
+            }
+          ],
+          [
+            {
+              "text": "6️⃣收各种账号,招代理免费带发财",
+              "url": "https://example.invalid/menu"
+            }
+          ],
+          [
+            {
+              "text": "7️⃣卖：宝妈_网账博采数据【齐全】",
+              "url": "https://example.invalid/menu"
+            }
+          ],
+          [
+            {
+              "text": "8️⃣【搬砖】出嘿U安全",
+              "url": "https://example.invalid/menu"
+            }
+          ],
+          [
+            {
+              "text": "9️⃣人民币代收API/手动丝滑",
+              "url": "https://example.invalid/menu"
+            }
+          ],
+          [
+            {
+              "text": "🔟卖：迷女干💊吹情💊招小弟干活",
+              "url": "https://example.invalid/menu"
+            }
+          ],
+          [
+            {
+              "text": "⏸️免费会员动态表情",
+              "url": "https://example.invalid/menu"
+            }
+          ],
+          [
+            {
+              "text": "1️⃣2️⃣出：国内外全部社交账号",
+              "url": "https://example.invalid/menu"
+            }
+          ],
+          [
+            {
+              "text": "1️⃣3️⃣接码：接全球冷热门平台注册",
+              "url": "https://example.invalid/menu"
+            }
+          ],
+          [
+            {
+              "text": "1️⃣4️⃣短信/电话轰炸机",
+              "url": "https://example.invalid/menu"
+            }
+          ],
+          [
+            {
+              "text": "1️⃣5️⃣TG会员在线开通",
+              "url": "https://example.invalid/menu"
+            }
+          ],
+          [
+            {
+              "text": "1️⃣6️⃣U兑换TRX",
+              "url": "https://example.invalid/menu"
+            }
+          ],
+          [
+            {
+              "text": "1️⃣7️⃣低价充：话费/油卡/抖币等",
+              "url": "https://example.invalid/menu"
+            }
+          ],
+          [
+            {
+              "text": "1️⃣8️⃣低价充-电费，视频会员等",
+              "url": "https://example.invalid/menu"
+            }
+          ],
+          [
+            {
+              "text": "1️⃣9️⃣供需买卖搬砖大集合",
+              "url": "https://example.invalid/menu"
+            }
+          ],
+          [
+            {
+              "text": "2️⃣0️⃣🔥超.会玩需要代发引流_点我",
+              "url": "https://example.invalid/menu"
+            }
+          ]
+        ]
+      }
+    },
+    "source": {
+      "date": "2026-10-22",
+      "kind": "synthetic established-sender semantic boundary",
+      "notes": "Exact existing local signature with synthetic contact/reserved URL; remains active to validate model classification for established senders. Warning framing is a synthetic paired control, not a historical score."
+    }
+  },
+  {
+    "name": "mature-local-rule-generic-group-replacement-invite-control-1",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "请警惕这类群迁移广告：本群已停用，请加入新群一起聊天：https://example.invalid/new-group 。不要点击或加入。"
+    },
+    "source": {
+      "kind": "synthetic paired semantic control",
+      "semantic_scope": "mature-local-rule",
+      "paired_with": "generic-group-replacement-invite",
+      "notes": "Sanitized/reserved contacts; labels fixed from current advertising/attack contract before live calls. Current warning/discussion is distinct from stricter low-history local matching."
+    }
+  },
+  {
+    "name": "mature-local-rule-generic-group-replacement-invite-control-2",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "本群旧讨论链接已失效。Python学习小组每周二晚讨论asyncio调试，请加入新的课程讨论群：https://example.invalid/python-study"
+    },
+    "source": {
+      "kind": "synthetic paired semantic control",
+      "semantic_scope": "mature-local-rule",
+      "paired_with": "generic-group-replacement-invite",
+      "notes": "Sanitized/reserved contacts; labels fixed from current advertising/attack contract before live calls. Current warning/discussion is distinct from stricter low-history local matching."
+    }
+  },
+  {
+    "name": "mature-local-rule-campaign-marker-screenshot-control-1",
+    "spam": true,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "@synthetic_campaign_bot campaign_001 synthetic_marker_001 免费带做赚钱项目，零门槛日入上万，进群报名：https://example.invalid/bonus"
+    },
+    "source": {
+      "kind": "synthetic paired semantic control",
+      "semantic_scope": "mature-local-rule",
+      "paired_with": "campaign-marker-screenshot",
+      "notes": "Sanitized/reserved contacts; labels fixed from current advertising/attack contract before live calls. Current warning/discussion is distinct from stricter low-history local matching."
+    }
+  },
+  {
+    "name": "mature-local-rule-campaign-marker-screenshot-control-2",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "调试记录中的 @synthetic_campaign_bot campaign_001 synthetic_marker_001 只是测试活动标识，正在研究日志格式，不招募参与者。"
+    },
+    "source": {
+      "kind": "synthetic paired semantic control",
+      "semantic_scope": "mature-local-rule",
+      "paired_with": "campaign-marker-screenshot",
+      "notes": "Sanitized/reserved contacts; labels fixed from current advertising/attack contract before live calls. Current warning/discussion is distinct from stricter low-history local matching."
+    }
+  },
+  {
+    "name": "mature-local-rule-money-bag-flood-screenshot-control-1",
+    "spam": true,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰\n💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰\n💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰\n💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰\n💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰\n💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰\n💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰\n💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰\n💰💰💰💰💰💰💰💰\n带码收米，零门槛日入上万，报名找 @sample_contact"
+    },
+    "source": {
+      "kind": "synthetic paired semantic control",
+      "semantic_scope": "mature-local-rule",
+      "paired_with": "money-bag-flood-screenshot",
+      "notes": "Sanitized/reserved contacts; labels fixed from current advertising/attack contract before live calls. Current warning/discussion is distinct from stricter low-history local matching."
+    }
+  },
+  {
+    "name": "mature-local-rule-money-bag-flood-screenshot-control-2",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "测试消息长度和emoji渲染，以下是压测样本，不提供赚钱项目：\n💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰\n💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰\n💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰\n💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰\n💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰\n💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰\n💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰\n💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰💰\n💰💰💰💰💰💰💰💰"
+    },
+    "source": {
+      "kind": "synthetic paired semantic control",
+      "semantic_scope": "mature-local-rule",
+      "paired_with": "money-bag-flood-screenshot",
+      "notes": "Sanitized/reserved contacts; labels fixed from current advertising/attack contract before live calls. Current warning/discussion is distinct from stricter low-history local matching."
+    }
+  },
+  {
+    "name": "mature-local-rule-sexual-text-and-nickname-screenshot-control-1",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "请举报这条色情广告样本：“极品新人小萝莉 <contact>；昵称：示例昵称🌼（约课上门）看头像q <contact>”。不要联系或购买。"
+    },
+    "source": {
+      "kind": "synthetic paired semantic control",
+      "semantic_scope": "mature-local-rule",
+      "paired_with": "sexual-text-and-nickname-screenshot",
+      "notes": "Sanitized/reserved contacts; labels fixed from current advertising/attack contract before live calls. Current warning/discussion is distinct from stricter low-history local matching."
+    }
+  },
+  {
+    "name": "mature-local-rule-sexual-text-and-nickname-screenshot-control-2",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "舞台服装研究中“萝莉风”是穿衣风格。今天讨论服饰搭配，不出售资源或提供约会服务。"
+    },
+    "source": {
+      "kind": "synthetic paired semantic control",
+      "semantic_scope": "mature-local-rule",
+      "paired_with": "sexual-text-and-nickname-screenshot",
+      "notes": "Sanitized/reserved contacts; labels fixed from current advertising/attack contract before live calls. Current warning/discussion is distinct from stricter low-history local matching."
+    }
+  },
+  {
+    "name": "mature-local-rule-home-visit-sexual-offer-control-1",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "反诈课堂展示这句招嫖广告：“小雅 包夜上门”。请举报，勿联系。"
+    },
+    "source": {
+      "kind": "synthetic paired semantic control",
+      "semantic_scope": "mature-local-rule",
+      "paired_with": "home-visit-sexual-offer",
+      "notes": "Sanitized/reserved contacts; labels fixed from current advertising/attack contract before live calls. Current warning/discussion is distinct from stricter low-history local matching."
+    }
+  },
+  {
+    "name": "mature-local-rule-home-visit-sexual-offer-control-2",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "小雅昨天预约了家政人员上门清洁。这是已完成服务的个人经历，不接单也不介绍客户。"
+    },
+    "source": {
+      "kind": "synthetic paired semantic control",
+      "semantic_scope": "mature-local-rule",
+      "paired_with": "home-visit-sexual-offer",
+      "notes": "Sanitized/reserved contacts; labels fixed from current advertising/attack contract before live calls. Current warning/discussion is distinct from stricter low-history local matching."
+    }
+  },
+  {
+    "name": "mature-local-rule-export-laundering-income-control-1",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "请举报“来洗米 日入上W”这种洗钱招募，千万别参与，也不要联系。"
+    },
+    "source": {
+      "kind": "synthetic paired semantic control",
+      "semantic_scope": "mature-local-rule",
+      "paired_with": "export-laundering-income",
+      "notes": "Sanitized/reserved contacts; labels fixed from current advertising/attack contract before live calls. Current warning/discussion is distinct from stricter low-history local matching."
+    }
+  },
+  {
+    "name": "mature-local-rule-export-laundering-income-control-2",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "下班回家先洗米煮饭，工资一万是我本月的个人记账，不是在招人赚钱。"
+    },
+    "source": {
+      "kind": "synthetic paired semantic control",
+      "semantic_scope": "mature-local-rule",
+      "paired_with": "export-laundering-income",
+      "notes": "Sanitized/reserved contacts; labels fixed from current advertising/attack contract before live calls. Current warning/discussion is distinct from stricter low-history local matching."
+    }
+  },
+  {
+    "name": "mature-local-rule-export-bulk-account-sale-control-1",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "举报广告原文：“批量出售飞机号”。不要购买或联系卖家。"
+    },
+    "source": {
+      "kind": "synthetic paired semantic control",
+      "semantic_scope": "mature-local-rule",
+      "paired_with": "export-bulk-account-sale",
+      "notes": "Sanitized/reserved contacts; labels fixed from current advertising/attack contract before live calls. Current warning/discussion is distinct from stricter low-history local matching."
+    }
+  },
+  {
+    "name": "mature-local-rule-export-bulk-account-sale-control-2",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "航空博物馆在整理飞机编号，讨论如何把历史机号批量导入数据库，没有买卖账号。"
+    },
+    "source": {
+      "kind": "synthetic paired semantic control",
+      "semantic_scope": "mature-local-rule",
+      "paired_with": "export-bulk-account-sale",
+      "notes": "Sanitized/reserved contacts; labels fixed from current advertising/attack contract before live calls. Current warning/discussion is distinct from stricter low-history local matching."
+    }
+  },
+  {
+    "name": "mature-local-rule-export-vague-fragment-control-1",
+    "spam": true,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "只吸引对的人，免费带做赚钱项目，零门槛日入上万，报名找 @sample_contact"
+    },
+    "source": {
+      "kind": "synthetic paired semantic control",
+      "semantic_scope": "mature-local-rule",
+      "paired_with": "export-vague-fragment",
+      "notes": "Sanitized/reserved contacts; labels fixed from current advertising/attack contract before live calls. Current warning/discussion is distinct from stricter low-history local matching."
+    }
+  },
+  {
+    "name": "mature-local-rule-export-vague-fragment-control-2",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "读书笔记里写着“只吸引对的人”，这是摘录感想，没有商品、报名或联系入口。"
+    },
+    "source": {
+      "kind": "synthetic paired semantic control",
+      "semantic_scope": "mature-local-rule",
+      "paired_with": "export-vague-fragment",
+      "notes": "Sanitized/reserved contacts; labels fixed from current advertising/attack contract before live calls. Current warning/discussion is distinct from stricter low-history local matching."
+    }
+  },
+  {
+    "name": "warning-sample-with-independent-current-offer",
+    "spam": true,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "前面那条是诈骗广告，请不要联系原卖家。我的业务另外开售：我现在批量出售Telegram账号，现货秒发，下单联系 @sample_contact。"
+    },
+    "source": {
+      "kind": "synthetic current-author intent control",
+      "notes": "Current author makes an independent explicit supply offer outside the warning about another seller; a warning label does not exempt this offer. Label fixed before live."
+    }
+  },
+  {
+    "name": "warning-sample-without-current-offer",
+    "spam": false,
+    "message": {
+      "from": {
+        "first_name": "Member"
+      },
+      "text": "请举报这个诈骗广告样本：“我现在批量出售Telegram账号，现货秒发，下单联系 @sample_contact”。这都是原广告的内容，我不供货，请勿联系或购买。"
+    },
+    "source": {
+      "kind": "synthetic current-author intent control",
+      "notes": "The same sale/contact phrases are entirely framed as the reported sample. Current author denies offering; label fixed before live."
     }
   }
 ]

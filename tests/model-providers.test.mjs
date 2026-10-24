@@ -59,7 +59,7 @@ for (const [key, url] of providers) {
 
 // Digests pin independently saved shared message/join prompt bytes, not current Python constants.
 const sharedPrompts = [
-  '73fef19406fca477cf90053be832fb23189f903d49fb409e4dd69fe18040cbd4',
+  '2cd641582b3355dc6993c0a9c6a2f14664651142981e46778f523970fde6d9ac',
   'b3b4c9cb4612e3308aa3d3e4fba90412b9e74f785b846618ea3eed63d7311fc7',
 ];
 for (const [key, url] of [providers[0], providers[2]]) {

@@ -5,10 +5,11 @@ This document defines the repeatable procedure for testing GPT-6 Luna Decisions 
 ## Fixture rules
 
 - Keep semantic cases in `tests/decision-cases.json` with an expected `spam` label and a `source` note.
+- Group cases with a descriptive `category`. Keep one or two representative positives per advertising category, plus negatives for distinct intent and source boundaries. Do not duplicate cases only to change handles, currencies or decoration; test equivalent transport layouts in deterministic tests. Category metadata is not sent to the model.
 - Use sanitized text, synthetic usernames, placeholder contacts such as `@<contact>`, and reserved URLs such as `https://example.invalid/`.
 - Keep real member IDs, phone numbers, report JSON, credentials, and private destinations out of the repository.
 - Mark reconstructed context and unavailable fields explicitly; do not infer historical scores from deleted or completed task state.
-- Skip only cases owned by deterministic local rules. Keep semantic positives, semantic negatives, and reference cases active.
+- Keep semantic positives, semantic negatives, and reference cases active. A local-rule match is not grounds to skip an established-sender semantic case: established humans reach the model even for the same text. Derive each model label from visible advertising or attack intent, independently of the stricter low-history regex label, and record any historical label correction in the source note.
 - Add paired positive and negative controls for each boundary: current-sender intent, quoted promotion versus warning/analysis, profile-only context, product/service discussion, and ordinary technical or personal experience.
 
 ## Running the check

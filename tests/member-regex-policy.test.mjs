@@ -197,3 +197,136 @@ for (const source of ['caption', 'button', 'reference']) {
     assert.equal(telegram.canSend(22), true);
   });
 }
+
+const sexualResource = '成人cos私密写真资源，完整版进频道观看';
+function resourceReference(current, kind) {
+  const earlier = { ...message(80, 11), text: sexualResource };
+  if (kind === 'reply') current.reply_to_message = earlier;
+  else if (kind === 'caption') {
+    delete earlier.text;
+    earlier.caption = sexualResource;
+    current.reply_to_message = earlier;
+  } else {
+    current.quote = { text: sexualResource };
+    if (kind === 'external') current.external_reply = { origin: { type: 'channel', chat: { title: '资源分享' } } };
+  }
+  return current;
+}
+
+for (const [kind, edited] of [['reply', false], ['caption', false], ['external', true], ['quote', false]]) {
+  test("user: exact sexual endorsement with " + kind + ", edited=" + edited + " is locally moderated without a model", async () => {
+    await setBindings({ EXPERIENTIAL_API_KEY: undefined });
+    const current = resourceReference({ ...message(), text: '射了' }, kind);
+    telegram.send(message(70));
+    telegram.send(message(80, 11));
+    telegram.send(current);
+    assert.equal((await dispatch({ update_id: 1, [edited ? 'edited_message' : 'message']: current })).status, 200);
+    assert.equal(telegram.has(81), false);
+    assert.equal(telegram.canSend(22), false);
+    assert.equal(telegram.canJoin(22), true);
+    assert.equal(telegram.has(80), true);
+    assert.equal(telegram.has(70), true);
+    assert.equal(telegram.canSend(11), true);
+    assert.equal(model.state, null);
+    assert.equal((await database.prepare('SELECT COUNT(*) AS n FROM blacklisted_users').first()).n, 0);
+  });
+}
+
+for (const kind of ['reply', 'external']) {
+  for (const text of ['这是什么？', '举报了', '这种广告用“射了”附和来引流，请处理']) {
+    test("user: a neutral reply or report of sexual resources in " + kind + " remains without a model: " + text, async () => {
+      await setBindings({ EXPERIENTIAL_API_KEY: undefined });
+      const current = resourceReference({ ...message(), text }, kind);
+      telegram.send(current);
+      assert.equal((await dispatch({ update_id: 1, message: current })).status, 200);
+      assert.equal(telegram.has(81), true);
+      assert.equal(telegram.canSend(22), true);
+      assert.equal(model.state, null);
+    });
+  }
+  test("user: a below-threshold model answer still protects an established sender of a local match in " + kind, async () => {
+    await database.prepare('INSERT INTO member_activity VALUES (123,-10012,22,10)').run();
+    const current = resourceReference({ ...message(), text: '射了' }, kind);
+    model.probability = 0;
+    telegram.send(current);
+    assert.equal((await dispatch({ update_id: 1, message: current })).status, 200);
+    assert.equal(telegram.has(81), true);
+    assert.equal(telegram.canSend(22), true);
+    assert.equal(model.state.message.text, '射了');
+    assert.ok(model.state.context);
+  });
+}
+
+for (const field of ['text', 'caption']) {
+  test('user: a partial quote cannot strip the warning from its visible reply ' + field, async () => {
+    await setBindings({ EXPERIENTIAL_API_KEY: undefined });
+    const earlier = { ...message(80, 11) };
+    delete earlier.text;
+    earlier[field] = '请举报' + sexualResource + '，不要传播。';
+    const current = { ...message(), text: '射了', reply_to_message: earlier, quote: { text: sexualResource } };
+    telegram.send(earlier);
+    telegram.send(current);
+    assert.equal((await dispatch({ update_id: 1, message: current })).status, 200);
+    assert.equal(telegram.has(81), true);
+    assert.equal(telegram.canSend(22), true);
+    assert.equal(telegram.has(80), true);
+    assert.equal(telegram.canSend(11), true);
+    assert.equal(model.state, null);
+  });
+}
+
+for (const authority of ['administrator', 'creator', 'anonymous']) {
+  test("user: the sexual endorsement rule preserves " + authority + " protection", async () => {
+    await setBindings({ EXPERIENTIAL_API_KEY: undefined });
+    const current = resourceReference({ ...message(), text: '射了' }, 'reply');
+    if (authority === 'anonymous') current.sender_chat = current.chat;
+    else telegram.members.set(22, { status: authority });
+    telegram.send(current);
+    assert.equal((await dispatch({ update_id: 1, message: current })).status, 200);
+    assert.equal(telegram.has(81), true);
+  });
+}
+
+test('user: a bot sexual endorsement is deleted without muting its guest caller or banning its reference', async () => {
+  await setBindings({ EXPERIENTIAL_API_KEY: undefined });
+  const current = resourceReference({ ...message(), text: '射了' }, 'reply');
+  current.from.is_bot = true;
+  current.guest_bot_caller_user = { id: 11, is_bot: false, first_name: 'Caller' };
+  telegram.send(message(80, 11));
+  telegram.send(current);
+  assert.equal((await dispatch({ update_id: 1, message: current })).status, 200);
+  assert.equal(telegram.has(81), false);
+  assert.equal(telegram.canSend(22), true);
+  assert.equal(telegram.has(80), true);
+  assert.equal(telegram.canSend(11), true);
+  assert.equal(model.state, null);
+  assert.equal((await database.prepare('SELECT COUNT(*) AS n FROM blacklisted_users').first()).n, 0);
+});
+
+for (const kind of ['reply', 'caption', 'external']) {
+  for (const edited of [false, true]) {
+    for (const [text, probability] of [['射了', 0.90], ['射了？', 0], ['这是什么？', 0], ['举报了', 0]]) {
+      test("user: an established member's " + kind + ", edited=" + edited + " is decided by the model without bypassing reference protection: " + text, async () => {
+        await database.prepare('INSERT INTO member_activity VALUES (123,-10012,22,10)').run();
+        const current = resourceReference({ ...message(), text }, kind);
+        model.probability = probability;
+        telegram.send(message(70));
+        telegram.send(message(80, 11));
+        telegram.send(current);
+        assert.equal((await dispatch({ update_id: 1, [edited ? 'edited_message' : 'message']: current })).status, 200);
+        assert.equal(model.state.message.text, text, 'an established sender must reach the model');
+        const context = model.state.context;
+        const referencedText = kind === 'external' ? context.quoted_text
+          : kind === 'caption' ? context.reply.caption : context.reply.text;
+        assert.equal(referencedText, sexualResource);
+        assert.equal(telegram.has(81), probability < 0.90);
+        assert.equal(telegram.canSend(22), probability < 0.90);
+        assert.equal(telegram.canJoin(22), true);
+        assert.equal(telegram.has(80), true);
+        assert.equal(telegram.has(70), true);
+        assert.equal(telegram.canSend(11), true);
+        assert.equal((await database.prepare('SELECT COUNT(*) AS n FROM blacklisted_users').first()).n, 0);
+      });
+    }
+  }
+}

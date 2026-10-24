@@ -55,6 +55,8 @@ Optional classification uses GPT-6 Luna Decisions when a supported provider key 
 
 The model evaluates the current sender's intent across text, captions, visible contact-card names and buttons; callback data is excluded. Offers and recruitment can be promotional without an explicit sale verb or price. Warnings, reports and analysis remain non-promotional, including when they reproduce an offer in a caption or button. References and fetched profiles remain source-separated, and local-rule labels do not determine semantic labels. Content without a [local match](docs/behavior.md#local-filtering) uses the model only on eligible human paths; bots receive local filtering only. A score at or above the inclusive threshold triggers current-message moderation; see [live model checks](docs/decision-checks.md).
 
+A narrow local rule also matches an exact approving reaction to a visibly advertised sexual resource under the existing member-maturity policy. Established senders use the shared model prompt for that endorsement boundary. A reference alone, questions, reports and analysis samples are insufficient.
+
 Message classification also treats direct attempts to override moderation instructions or force a score as spam. Discussing defenses or reporting a quoted prompt-injection example does not itself count as an attack.
 
 Only valid model scores can trigger moderation; invalid answers and refusals do not. See the [behavior contract](docs/behavior.md#model-classification).

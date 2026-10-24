@@ -26,7 +26,9 @@ test('user: Given paused model tasks without a secret, When a message is edited,
   const saved = await database.prepare('SELECT phase, input_json, expires_at FROM model_tasks').first();
   assert.equal(saved.phase, 'done');
   assert.equal(saved.input_json, null);
-  assert.equal(saved.expires_at, now + 3 * 86400);
+  // The Worker handles the edit after the request can cross a second.
+  assert.ok(saved.expires_at >= now + 3 * 86400
+    && saved.expires_at <= Math.floor(Date.now() / 1000) + 3 * 86400);
   assert.equal(model.state, null);
   assert.equal(telegram.has(81), true);
 });

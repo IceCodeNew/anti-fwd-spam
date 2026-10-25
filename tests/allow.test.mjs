@@ -374,7 +374,8 @@ for (const restriction of ['automatic', 'manual']) {
     await Promise.race([entered.promise, Promise.all([first, second])]);
     telegram.faults.clear();
     try {
-      assert.equal((await first).status, 200);
+      // Either delivery may reach the first membership check.
+      assert.equal((await Promise.race([first, second])).status, 200);
       if (restriction === 'automatic') {
         const fresh = { update_id: 851, message: { ...message(851), text: '@campaign_bot campaign_9' } };
         telegram.send(fresh.message);
@@ -385,7 +386,7 @@ for (const restriction of ['automatic', 'manual']) {
       assert.equal(telegram.canSend(22), false);
     } finally {
       release.resolve();
-      await second;
+      await Promise.all([first, second]);
       telegram.faults.clear();
     }
     assert.equal(telegram.canSend(22), false, 'a stale concurrent command must not lift a fresh restriction');

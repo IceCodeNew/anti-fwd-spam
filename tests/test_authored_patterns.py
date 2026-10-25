@@ -91,6 +91,81 @@ class AuthoredPatternTests(unittest.TestCase):
         for field in ("reply_to_message", "quote", "external_reply"):
             self.assertFalse(matches_spam_pattern({"text": "请核实这个广告样本", field: {"text": BULK_OFFER}}))
 
+    def test_sexual_endorsement_requires_current_reaction_and_visible_resource_offer(self) -> None:
+        offer = "成人cos私密写真资源"
+        for current in ("射了", " 射了\uff01 "):
+            for reference in (
+                {"reply_to_message": {"text": offer}},
+                {"reply_to_message": {"caption": offer}},
+                {
+                    "external_reply": {"origin": {"type": "channel", "chat": {"title": "资源分享"}}},
+                    "quote": {"text": offer},
+                },
+                {"quote": {"text": offer}},
+            ):
+                for field in ("text", "caption"):
+                    with self.subTest(current=current, field=field, reference=reference):
+                        self.assertTrue(matches_spam_pattern({field: current, **reference}))
+
+    def test_partial_resource_quote_does_not_exempt_its_visible_reply_warning(self) -> None:
+        offer = "成人cos私密写真资源广告"
+        for field in ("text", "caption"):
+            with self.subTest(field=field):
+                message: dict[str, object] = {
+                    "text": "射了",
+                    "reply_to_message": {field: "请举报" + offer + "\uff0c不要传播。"},
+                    "quote": {"text": offer},
+                }
+                self.assertTrue(matches_spam_pattern(message))
+
+    def test_resource_warning_words_do_not_exempt_endorsement(self) -> None:
+        for reference in (
+            {"reply_to_message": {"text": "请举报成人私密写真资源广告"}},
+            {"reply_to_message": {"text": "成人cos私密写真资源\uff0c禁止未成年人观看\uff0c不要外传"}},
+            {"reply_to_message": {"from": {"first_name": "资源新闻"}, "text": "成人cos私密写真"}},
+            {
+                "external_reply": {"origin": {"type": "channel", "chat": {"title": "资源新闻"}}},
+                "quote": {"text": "请举报成人cos私密写真广告"},
+            },
+        ):
+            with self.subTest(reference=reference):
+                self.assertTrue(matches_spam_pattern({"text": "射了", **reference}))
+
+    def test_sexual_endorsement_keeps_current_warnings_neutral_replies_and_unrelated_context(self) -> None:
+        offer = {"reply_to_message": {"text": "成人cos私密写真资源"}}
+        for text in (
+            "这是什么\uff1f",
+            "举报了",
+            "别发这种东西",
+            "这是广告\uff0c别点",
+            "这种广告用“射了”附和引流\uff0c请处理",
+            "刚射了以后不舒服\uff0c应该看哪个科\uff1f",
+            "有人配文“射了”\uff0c算推广吗\uff1f",
+        ):
+            with self.subTest(text=text):
+                self.assertFalse(matches_spam_pattern({"text": text, **offer}))
+        for text in (
+            "刚才游戏里谁先开枪\uff1f",
+            "成人cos服装裁剪教程",
+            "这是色情资源广告的新闻分析\uff0c不要传播",
+            "色情资源",
+        ):
+            with self.subTest(reference=text):
+                self.assertFalse(matches_spam_pattern({"text": "射了", "reply_to_message": {"text": text}}))
+        messages: tuple[dict[str, object], ...] = (
+            {"text": "射了", "reply_to_message": {"from": {"first_name": "小资"}, "text": "源成人cos私密写真"}},
+            {"text": "射了"},
+            {"text": "举报", "caption": "射了", **offer},
+            {"text": "射了", "reply_to_message": {"text": "成人cos私密写真资源", "forum_topic_created": {}}},
+            {"text": "射了", "reply_to_message": {"from": {"first_name": "成人cos私密写真资源"}}},
+            {"text": "ordinary", "from": {"first_name": "射了"}, **offer},
+            {"text": "ordinary", "contact": {"first_name": "射了"}, **offer},
+        )
+        for message in messages:
+            with self.subTest(message=message):
+                self.assertFalse(matches_spam_pattern(message))
+        self.assertFalse(matches_spam_text("射了"))
+
 
 if __name__ == "__main__":
     unittest.main()

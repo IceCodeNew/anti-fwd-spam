@@ -51,15 +51,11 @@ Local text/profile regexes apply before model classification until a member has 
 
 ## Optional model classification
 
-Optional classification uses GPT-6 Luna Decisions when a supported provider key is configured. See [provider setup](docs/setup.md#optional-model-provider) for keys, routing, and cost boundaries, and [compatibility and migration](docs/setup.md#compatibility-and-migration) before upgrading a Jev deployment. Classification runs after local rules, blacklist checks, sticker checks, and report handling. It receives bounded text context and selected profile data; the bot does not download or inspect images, video, or audio.
+Configure a supported provider key to enable GPT-6 Luna Decisions for eligible human messages. Bots receive local filtering only. See [provider setup](docs/setup.md#optional-model-provider) for configuration, privacy and cost boundaries, and [compatibility and migration](docs/setup.md#compatibility-and-migration) before upgrading a Jev deployment. The bot sends bounded text context and selected profile data; it does not download or inspect images, video or audio.
 
-The model uses the current sender's intent as the primary evidence, including visible contact-card pitches and button text/URLs. Callback data is excluded. A narrow full-message template additionally covers an obfuscated bulk-advertising offer in current text/captions under the existing member-maturity policy. Referenced content and profile data remain source-separated. A score at or above the configured inclusive threshold triggers the same current-message moderation action; see [live model checks](docs/decision-checks.md) for the validation procedure.
+The model judges whether the current sender is promoting an offer or recruiting participants, including through captions, contact cards and buttons. Warnings, reports, analysis and ordinary discussion are not themselves promotion. A spam decision removes the current message and can mute its sender; it does not punish referenced authors. Local filtering can act before the model under the [member-maturity policy](docs/behavior.md#member-maturity).
 
-Message classification also treats direct attempts to override moderation instructions or force a score as spam. Discussing defenses or reporting a quoted prompt-injection example does not itself count as an attack.
-
-Only valid model scores can trigger moderation; invalid answers and refusals do not. See the [behavior contract](docs/behavior.md#model-classification).
-
-Read [live model checks](docs/decision-checks.md) before running provider tests. Provider configuration belongs in deployment secrets, not repository files.
+Invalid model answers and refusals do not trigger punishment. See [model classification](docs/behavior.md#model-classification) for the complete decision and protection rules.
 
 ## Documentation map
 

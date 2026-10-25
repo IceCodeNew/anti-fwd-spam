@@ -17,7 +17,6 @@ from .constants import (
 )
 from .rules import (
     AUTHORED_SPAM_PATTERNS,
-    REFERENCE_WARNING_RE,
     REPEATED_SYMBOLS_RE,
     SEXUAL_ENDORSEMENT_RE,
     SEXUAL_RESOURCE_RE,
@@ -50,7 +49,7 @@ def matches_spam_pattern(message: dict[str, object]) -> bool:
 
 
 def _endorses_sexual_resource(message: dict[str, object]) -> bool:
-    """Require the current reaction as well as an unframed visible resource offer."""
+    """Require the exact current reaction and visible resource features, regardless of framing."""
     current = "\n".join(text for field in ("text", "caption") if isinstance(text := message.get(field), str))
     if SEXUAL_ENDORSEMENT_RE.fullmatch(current) is None:
         return False
@@ -64,9 +63,6 @@ def _endorses_sexual_resource(message: dict[str, object]) -> bool:
             reply_name = title if isinstance(title, str) else display_name(sender)
         content = "\n".join(text for field in ("text", "caption") if isinstance(text := replied.get(field), str))
         references.append((content, reply_name))
-        # A selected quote cannot strip the warning from its visible source message.
-        if not isinstance(message.get("external_reply"), dict) and REFERENCE_WARNING_RE.search(content):
-            return False
     quote = message.get("quote")
     if isinstance(quote, dict) and isinstance(text := quote.get("text"), str):
         name = reply_name
@@ -80,13 +76,7 @@ def _endorses_sexual_resource(message: dict[str, object]) -> bool:
             elif isinstance(hidden_name := origin.get("sender_user_name"), str):
                 name = hidden_name
         references.append((text[:1024], name))
-    return any(
-        ("资源" in name or "资源" in text)
-        and SEXUAL_RESOURCE_RE.search(text)
-        and REFERENCE_WARNING_RE.search(name) is None
-        and REFERENCE_WARNING_RE.search(text) is None
-        for text, name in references
-    )
+    return any(("资源" in name or "资源" in text) and SEXUAL_RESOURCE_RE.search(text) for text, name in references)
 
 
 def matches_spam_text(text: object) -> bool:

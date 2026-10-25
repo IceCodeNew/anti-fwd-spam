@@ -244,9 +244,11 @@ for (const kind of ['reply', 'external']) {
       assert.equal(model.state, null);
     });
   }
-  test("user: a below-threshold model answer still protects an established sender of a local match in " + kind, async () => {
+  test("user: a below-threshold model answer protects an established sender endorsing a warning in " + kind, async () => {
     await database.prepare('INSERT INTO member_activity VALUES (123,-10012,22,10)').run();
     const current = resourceReference({ ...message(), text: '射了' }, kind);
+    const reference = kind === 'reply' ? current.reply_to_message : current.quote;
+    reference.text = '请举报' + sexualResource + '，不要传播。';
     model.probability = 0;
     telegram.send(current);
     assert.equal((await dispatch({ update_id: 1, message: current })).status, 200);
@@ -258,7 +260,7 @@ for (const kind of ['reply', 'external']) {
 }
 
 for (const field of ['text', 'caption']) {
-  test('user: a partial quote cannot strip the warning from its visible reply ' + field, async () => {
+  test('user: a warning in the visible reply ' + field + ' does not exempt an exact current endorsement', async () => {
     await setBindings({ EXPERIENTIAL_API_KEY: undefined });
     const earlier = { ...message(80, 11) };
     delete earlier.text;
@@ -267,11 +269,13 @@ for (const field of ['text', 'caption']) {
     telegram.send(earlier);
     telegram.send(current);
     assert.equal((await dispatch({ update_id: 1, message: current })).status, 200);
-    assert.equal(telegram.has(81), true);
-    assert.equal(telegram.canSend(22), true);
+    assert.equal(telegram.has(81), false);
+    assert.equal(telegram.canSend(22), false);
+    assert.equal(telegram.canJoin(22), true);
     assert.equal(telegram.has(80), true);
     assert.equal(telegram.canSend(11), true);
     assert.equal(model.state, null);
+    assert.equal((await database.prepare('SELECT COUNT(*) AS n FROM blacklisted_users').first()).n, 0);
   });
 }
 

@@ -84,7 +84,6 @@ SEXUAL_ENDORSEMENT_RE = re.compile(r"\A\s*射了[。\uff01!…]*\s*\Z")
 SEXUAL_RESOURCE_RE = re.compile(
     r"成人.{0,12}私密写真|色情资源.{0,16}(?:完整版|进频道|私聊|观看|下载)|[粉嫩]穴.{0,8}萝莉"
 )
-REFERENCE_WARNING_RE = re.compile(r"警告|警惕|举报|不要|禁止|勿|分析|科普|新闻|不提供|不是|别(?:点|信|传|发|看|转)")
 
 
 # Group migration notices (current text and captions only).

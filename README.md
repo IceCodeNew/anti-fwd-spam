@@ -51,17 +51,11 @@ Local text/profile regexes apply before model classification until a member has 
 
 ## Optional model classification
 
-Optional classification uses GPT-6 Luna Decisions when a supported provider key is configured. See [provider setup](docs/setup.md#optional-model-provider) for keys, routing, and cost boundaries, and [compatibility and migration](docs/setup.md#compatibility-and-migration) before upgrading a Jev deployment. Classification runs after local rules, blacklist checks, sticker checks, and report handling. It receives bounded text context and selected profile data; the bot does not download or inspect images, video, or audio.
+Configure a supported provider key to enable GPT-6 Luna Decisions for eligible human messages. Bots receive local filtering only. See [provider setup](docs/setup.md#optional-model-provider) for configuration, privacy and cost boundaries, and [compatibility and migration](docs/setup.md#compatibility-and-migration) before upgrading a Jev deployment. The bot sends bounded text context and selected profile data; it does not download or inspect images, video or audio.
 
-The model evaluates the current sender's intent across text, captions, visible contact-card names and buttons; callback data is excluded. Offers and recruitment can be promotional without an explicit sale verb or price. Warnings, reports and analysis remain non-promotional, including when they reproduce an offer in a caption or button. References and fetched profiles remain source-separated, and local-rule labels do not determine semantic labels. Content without a [local match](docs/behavior.md#local-filtering) uses the model only on eligible human paths; bots receive local filtering only. A score at or above the inclusive threshold triggers current-message moderation; see [live model checks](docs/decision-checks.md).
+The model judges whether the current sender is promoting an offer or recruiting participants, including through captions, contact cards and buttons. Warnings, reports, analysis and ordinary discussion are not themselves promotion. A spam decision removes the current message and can mute its sender; it does not punish referenced authors. Local filtering can act before the model under the [member-maturity policy](docs/behavior.md#member-maturity).
 
-A narrow local rule also matches an exact “射了” reaction to visible sexual-resource features under the existing member-maturity policy. Warning, report or analysis wording in the reference or its source name does not exempt that reaction. Established senders use the shared model prompt to distinguish promotion from warnings and discussion. A reference alone, or a current question, report or longer analysis, is insufficient for this local rule.
-
-Message classification also treats direct attempts to override moderation instructions or force a score as spam. Discussing defenses or reporting a quoted prompt-injection example does not itself count as an attack.
-
-Only valid model scores can trigger moderation; invalid answers and refusals do not. See the [behavior contract](docs/behavior.md#model-classification).
-
-Read [live model checks](docs/decision-checks.md) before running provider tests. Provider configuration belongs in deployment secrets, not repository files.
+Invalid model answers and refusals do not trigger punishment. See [model classification](docs/behavior.md#model-classification) for the complete decision and protection rules.
 
 ## Documentation map
 

@@ -10,6 +10,6 @@
     "test:contract": "node --test tests/telegram.contract.mjs"
   },
   "devDependencies": {
-    "wrangler": "4.151.3"
+    "wrangler": "4.154.0"
   }
 }

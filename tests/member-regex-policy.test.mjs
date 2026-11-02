@@ -153,7 +153,7 @@ for (const [name, content] of modelOnlyMessages) {
   }
 
   for (const edited of [false, true]) {
-    test(`user: a bot's ${name} without a local match stays outside model classification, edited=${edited}`, async () => {
+    test(`user: a bot's ${name} without a local match receives model classification and deletion only, edited=${edited}`, async () => {
       model.probability = 0.90;
       const current = referenced({ ...message(), ...structuredClone(content) }, 'same_chat');
       if (!Object.hasOwn(content, 'text')) delete current.text;
@@ -161,8 +161,8 @@ for (const [name, content] of modelOnlyMessages) {
       telegram.send(current.reply_to_message);
       telegram.send(current);
       assert.equal((await dispatch({ update_id: 1, [edited ? 'edited_message' : 'message']: current })).status, 200);
-      assert.equal(model.state, null);
-      assert.equal(telegram.has(81), true);
+      assert.notEqual(model.state, null);
+      assert.equal(telegram.has(81), false);
       assert.equal(telegram.has(80), true);
       assert.equal(telegram.canSend(22), true);
       assert.equal(telegram.canJoin(22), true);

@@ -1,10 +1,105 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFile } from 'node:fs/promises';
-import { dispatch, model, telegram, database } from './worker-runtime.mjs';
+import { dispatch, model, telegram, database, task, tick, setBindings } from './worker-runtime.mjs';
 import { message, report } from './telegram-fake.mjs';
 
 model.enabled = true;
+
+// Screenshot excerpts with synthetic identities; the original update was not retained in D1.
+const botResourceLure = '点下方链接 限时免费看禁忌资源\n点我搜索 酒店偷拍\n看情侣实时直播\n点上方链接 限时免费看禁忌资源';
+
+for (const [field, referenced, probability, status] of [
+  ['text', false, 0.90, 'member'],
+  ['text', true, 0.90, 'member'],
+  ['caption', true, 0.90, 'member'],
+  ['text', true, 0.8999, 'member'],
+  ['text', true, null, 'member'],
+  ['text', true, 1, 'administrator'],
+]) {
+  test(`user: a bot resource offer is model-classified with ${field}, reply=${referenced}, score=${probability}, status=${status}`, async () => {
+    const target = { ...message(), from: { ...message().from, is_bot: true, first_name: 'Example bot' },
+      guest_bot_caller_user: { id: 33, is_bot: false, first_name: 'Guest caller' } };
+    delete target.text;
+    target[field] = botResourceLure;
+    if (referenced) target.reply_to_message = message(80, 11);
+    telegram.members.set(22, { status });
+    telegram.members.set(33, { status: 'member' });
+    model.profile = new Response('{"ok":false,"error_code":400}', { status: 400 });
+    model.probability = probability;
+    telegram.send(message(70));
+    telegram.send(message(80, 11));
+    telegram.send(target);
+    assert.equal((await dispatch({ update_id: 1, message: target })).status, 200);
+    assert.equal(model.state?.message[field], botResourceLure);
+    assert.equal(model.state.nickname, 'Example bot');
+    assert.equal(model.state.bio, null);
+    assert.equal(JSON.stringify(model.state).includes('Guest caller'), false);
+    assert.equal(telegram.has(81), status === 'administrator' || probability === null || probability < 0.90);
+    assert.equal(telegram.has(70), true);
+    assert.equal(telegram.has(80), true);
+    assert.equal(telegram.canSend(22), true);
+    assert.equal(telegram.canSend(33), true);
+    assert.equal(telegram.canJoin(22), true);
+    assert.equal((await database.prepare('SELECT COUNT(*) AS n FROM blacklisted_users').first()).n, 0);
+    assert.deepEqual((await database.prepare('SELECT source_id FROM blacklisted_sources').all()).results,
+      [{ source_id: 7788 }]);
+  });
+}
+
+for (const stage of ['inference', 'deletion']) {
+  test(`user: a bot's ${stage} retry retains deletion-only identity and does not reclassify a saved decision`, async () => {
+    const target = { ...message(), from: { ...message().from, is_bot: true }, text: botResourceLure,
+      guest_bot_caller_user: message(80, 33).from };
+    telegram.members.set(33, { status: 'member' });
+    model.probability = 0.90;
+    if (stage === 'inference') model.response = new Response('unavailable', { status: 503 });
+    else telegram.faults.set('deleteMessage', () => Response.json({ ok: false, error_code: 429 }, { status: 429 }));
+    telegram.send(target);
+    await dispatch({ update_id: 1, message: target });
+    const pending = await task();
+    assert.ok(pending, 'bot messages must create durable model work');
+    assert.equal(telegram.has(81), true);
+    telegram.faults.clear();
+    model.response = null;
+    if (stage === 'deletion') model.probability = 0;
+    await tick(pending.due_at);
+    assert.equal(telegram.has(81), false);
+    assert.equal(telegram.canSend(22), true);
+    assert.equal(telegram.canSend(33), true);
+    assert.equal(telegram.canJoin(22), true);
+    assert.equal((await task()).input_json, null);
+  });
+}
+
+test('user: an unreferenced bot edit replaces pending inference and is classified on its own content', async () => {
+  const target = { ...message(), from: { ...message().from, is_bot: true }, text: 'ordinary message' };
+  model.response = new Response('unavailable', { status: 503 });
+  telegram.send(target);
+  await dispatch({ update_id: 1, message: target });
+  const pending = await task();
+  assert.ok(pending, 'the original bot message must reach classification');
+  model.response = null;
+  model.probability = 0.90;
+  const edited = { ...target, text: botResourceLure };
+  telegram.send(edited);
+  await dispatch({ update_id: 2, edited_message: edited });
+  assert.equal(model.state?.message.text, botResourceLure);
+  assert.equal(telegram.has(81), false);
+  assert.equal(telegram.canSend(22), true);
+  await tick(pending.due_at);
+  assert.equal((await task()).phase, 'done');
+});
+
+test('user: an unmatched bot message without a model provider remains visible', async () => {
+  await setBindings({ EXPERIENTIAL_API_KEY: '' });
+  const target = { ...message(), from: { ...message().from, is_bot: true }, text: botResourceLure };
+  telegram.send(target);
+  await dispatch({ update_id: 1, message: target });
+  assert.equal(telegram.has(81), true);
+  assert.equal(telegram.canSend(22), true);
+  assert.equal(model.state, null);
+});
 
 for (const [isBot, mature] of [[true, false], [false, false], [false, true]]) {
   test(`user: accumulated button money obeys sender policy with bot=${isBot}, mature=${mature}`, async () => {
@@ -269,14 +364,13 @@ test('user: Given a permanent deletion rejection, When spam is detected, Then re
   assert.equal(telegram.has(81), true);
 });
 
-test('user: Given unrelated service events or non-user senders, When a new update arrives, Then the model cannot remove it', async () => {
+test('user: Given unrelated service events or chat identities, When a new update arrives, Then the model cannot remove it', async () => {
   model.probability = 1;
   const service = message();
   delete service.text;
   service.left_chat_member = message().from;
   const channel = { ...message(), sender_chat: { id: -10099, type: 'channel' } };
-  const bot = { ...message(), from: { ...message().from, is_bot: true } };
-  for (const target of [service, channel, bot]) {
+  for (const target of [service, channel]) {
     telegram.send(target);
     assert.equal((await dispatch({ update_id: 8, message: target })).status, 200);
     assert.equal(telegram.has(81), true);

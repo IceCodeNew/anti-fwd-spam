@@ -22,7 +22,7 @@ Use a **supergroup** for the complete feature set. Basic groups can delete messa
 | An unlisted member submits a valid reply report | Save evidence without automatic punishment. |
 | A message comes from a registered source bot | Delete the current message; moderate the source account separately. |
 | A new message matches a local rule or registered sticker | Delete the current message and mute its sender when Telegram supports it. |
-| The model classifies a message as spam | Delete the current message and mute its sender; referenced authors are not punished. |
+| The model classifies a message as spam | Delete the current message and mute human senders when supported; bots receive deletion only. Referenced authors and guest callers are not punished. |
 | A joining account advertises through its nickname or profile | Permanently ban the matched member and delete the join notice, even before they speak. |
 | A message is edited or a network request fails temporarily | Fence stale work and retry only the pending operation. |
 
@@ -51,7 +51,7 @@ Local text/profile regexes apply before model classification until a member has 
 
 ## Optional model classification
 
-Configure a supported provider key to enable GPT-6 Luna Decisions for eligible human messages. Bots receive local filtering only. See [provider setup](docs/setup.md#optional-model-provider) for configuration, privacy and cost boundaries, and [compatibility and migration](docs/setup.md#compatibility-and-migration) before upgrading a Jev deployment. The bot sends bounded text context and selected profile data; it does not download or inspect images, video or audio.
+Configure a supported provider key to enable GPT-6 Luna Decisions for eligible human and bot messages. Unmatched bot messages, including edits, receive model classification after local filtering. See [provider setup](docs/setup.md#optional-model-provider) for configuration, privacy and cost boundaries, and [compatibility and migration](docs/setup.md#compatibility-and-migration) before upgrading a Jev deployment. The bot sends bounded text context and selected profile data; it does not download or inspect images, video or audio.
 
 The model judges whether the current sender is promoting an offer or recruiting participants, including through captions, contact cards and buttons. Warnings, reports, analysis and ordinary discussion are not themselves promotion. A spam decision removes the current message and can mute its sender; it does not punish referenced authors. Local filtering can act before the model under the [member-maturity policy](docs/behavior.md#member-maturity).
 

@@ -24,7 +24,7 @@ For a new group message, processing follows this order:
 3. Route a join notice to independent checks of its new members, rather than its inviter.
 4. For other messages, match explicit source identities and account blacklists.
 5. Index an eligible message for possible later history cleanup, then apply reply reports and remaining command handling.
-6. Apply all current-message text, nickname, contact-name and maintenance regexes before model classification for human senders below the mature-message threshold, with or without a reference. Established senders use the model for regex matches. Sticker checks retain their existing reference boundary, and bot senders retain local-only filtering.
+6. Apply all current-message text, nickname, contact-name and maintenance regexes before model classification for human senders below the mature-message threshold, with or without a reference. Established senders use the model for regex matches. Sticker checks retain their existing reference boundary. Bot senders use local rules first, followed by model classification when unmatched.
 7. Queue model classification for the remaining eligible input.
 8. Leave the message unchanged when no rule or model decision reaches the configured threshold.
 
@@ -58,8 +58,7 @@ flowchart TD
     Y -->|Sticker match| P
     Y -->|No match| N
     O -->|Match| P[Action 1 on current sender]
-    O -->|No match, human sender| N
-    O -->|No match, bot sender| Q[Leave message unchanged]
+    O -->|No match| N
     N -->|Spam at threshold| P
     N -->|Below threshold or unavailable| Q[Leave message unchanged]
 ```
@@ -68,7 +67,7 @@ A human sender's mature-message count selects one policy for all text/profile re
 
 Referenced advertisements alone, reference-author profiles and guest caller metadata never count as current-sender regex evidence. The narrow sexual-resource endorsement rule requires an exact current reaction as well as visible reference context; it never treats the referenced author as a moderation target. Existing command and reply-report routing takes precedence. A campaign-like text match neither registers its named bot as a source nor punishes that bot or the referenced author. Human reference messages still bypass sticker-list checks; this membership policy does not broaden sticker enforcement.
 
-Actual bot senders, including guest bots, still undergo the existing local checks on their own message even when replying; they do not enter model classification. Referenced content and guest caller metadata never substitute for the current sender's content or identity. A forum topic attachment that is not an explicit reply does not count as a reference.
+Actual bot senders, including guest bots, undergo local checks on their own message even when replying. Unmatched messages enter model classification with the bot's own nickname, authored content and available profile, plus source-separated reference context. An unavailable biography remains unknown and does not prevent classification. A model match deletes only the current message, without muting the bot, cleaning history or registering a blacklist entry. Administrators remain protected. Guest caller metadata is neither model evidence nor a moderation target. Referenced content never substitutes for the current sender's content or identity. A forum topic attachment that is not an explicit reply does not count as a reference.
 
 ## Moderation decision map
 
@@ -146,7 +145,7 @@ These local rules do not exempt warnings, questions or quoted wording embedded i
 
 A separate full-field template matches an obfuscated bulk-advertising offer with its contact handle in current text or captions only. It does not inspect profiles, shared contacts or referenced text. Warning prefixes, explanatory suffixes and partial quotations do not match this template, but the general rules above can still match the same field. An unframed verbatim copy remains indistinguishable from the offer itself; the existing member-maturity and authority protections still apply.
 
-Content outside the local rules, including sales buttons, is classified on eligible human model paths. Bot messages never enter the model path; a missing model provider, an ineligible edit or an unavailable model answer leaves unmatched content visible.
+Content outside the local rules, including sales buttons, is classified on eligible human and bot message paths. A missing model provider, an ineligible human edit or an unavailable model answer leaves unmatched content visible.
 
 A permitted local match ends model classification for that message. All text/profile regexes, including the sexual-resource endorsement rule, share the mature-member gate; established humans instead receive model classification. A deterministic match is not a promise that the model will assign the same label to an established sender. The same local regex and sticker checks apply to new and edited bot messages regardless of a reference. Floods found only in referenced content do not count as a local match. Bots receive deletion only for a content match, while administrator/anonymous-group protection still applies. A registered source match uses Action 2 on the bot separately from content filtering.
 
@@ -186,7 +185,7 @@ The inclusive score threshold is the `SPAM_THRESHOLD` value maintained in `src/a
 
 ## Edits and retries
 
-An edit fences older model work for that message. An edited message still passes source and report routing. An edited low-history human message without a reference can use immediate local rules but does not start fresh profile classification; an eligible referenced edit or established member's edit starts fresh model classification. Bot messages use local rules even when referenced and never enter model classification. Edits do not rerun automatic account-blacklist checks.
+An edit fences older model work for that message. An edited message still passes source and report routing. An edited low-history human message without a reference can use immediate local rules but does not start fresh profile classification; an eligible referenced edit or established member's edit starts fresh model classification. Bot edits use local rules first and start fresh model classification when unmatched, with or without a reference. Durable classification and deletion retries retain the actual bot identity and cannot mute a guest caller or turn the bot into a human moderation target. Edits do not rerun automatic account-blacklist checks.
 
 Webhook delivery retries and scheduled task retries are separate. Durable task leases prevent concurrent work from repeating a completed moderation action. A confirmed deletion or ban is not repeated after a later redelivery; uncertain operations remain retryable or require manual inspection.
 

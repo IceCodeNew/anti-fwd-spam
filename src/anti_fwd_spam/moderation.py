@@ -177,9 +177,6 @@ class Moderator:
             if "new_chat_members" in update.message:
                 return await self.check_join(update)
             sources = await self.store.matching_sources(update.sources) if update.sources else ()
-            if sources:
-                introduced = await self.store.introduced_sources(self.actions.bot_id, update.update_id)
-                sources = tuple(identifier for identifier in sources if identifier not in introduced)
         except EvidenceError:
             return AppResponse(503, "source list unavailable; retry pending")
         if update.edited:

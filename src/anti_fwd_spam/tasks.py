@@ -334,8 +334,6 @@ class ModelTasks:
             action["mute"] = mute
 
         async def can_act() -> bool:
-            if not await self._owns(task, max(now, int(time.time()))):
-                return False
             identifier = target["from"]["id"] if target is not None else None
             update_id = payload.get("update_id")
             return (
@@ -344,7 +342,7 @@ class ModelTasks:
                     await self.store.newer_allow(self.bot_id, identifier, update_id if type(update_id) is int else None)
                 )
                 is None
-            )
+            ) and await self._owns(task, max(now, int(time.time())))
 
         if task.phase == "classify":
             if not await can_act():
@@ -373,17 +371,11 @@ class ModelTasks:
             if deletion is None:
                 return
             task = deletion
-        retry = await self._moderate(payload, fetcher, token, task=task, can_act=can_act)
+        retry = await self._moderate(payload, fetcher, token, can_act=can_act)
         await self.finish(task, "delete" if retry else "done", max(now, int(time.time())), retry=retry)
 
     async def _moderate(
-        self,
-        payload: dict[str, object],
-        fetcher: Fetch,
-        token: str,
-        *,
-        task: Task,
-        can_act: Callable[[], Awaitable[bool]],
+        self, payload: dict[str, object], fetcher: Fetch, token: str, *, can_act: Callable[[], Awaitable[bool]]
     ) -> bool:
         target = payload.get("target")
         if not isinstance(target, dict):
@@ -403,7 +395,6 @@ class ModelTasks:
                 target,
                 can_act=can_act,
                 mute=payload.get("mute") is not False,
-                task=task,
                 update_id=update_id if type(update_id) is int else None,
             )
         return response.status == HTTPStatus.SERVICE_UNAVAILABLE

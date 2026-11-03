@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING
 from unittest.mock import patch
 
-from anti_fwd_spam.evidence import ALLOW_REQUESTED, ALLOWED, RETENTION_SECONDS, EvidenceError, ReportStore
+from anti_fwd_spam.evidence import ALLOW_REQUESTED, ALLOWED, RETENTION_SECONDS, ReportStore
 from anti_fwd_spam.model import ModelConfig
 from anti_fwd_spam.moderation import Moderator
 from anti_fwd_spam.policy import Config
@@ -106,7 +106,7 @@ class Telegram:
         if name == "getChatMember":
             result = {"status": self.status, "user": {"id": parameters["user_id"]}}
         elif name == "getChat":
-            result = {"id": parameters["chat_id"], "type": "private", "first_name": "Bot"}
+            result = {"id": 22, "type": "private", "first_name": "Bot", "username": "example_bot"}
         elif name == "deleteMessage":
             self.messages.discard(parameters["message_id"])
         elif name == "deleteMessages":
@@ -140,6 +140,25 @@ def allow() -> dict[str, object]:
     }
 
 
+def source_command(*, chat_id: int = -100, named: bool = False) -> dict[str, object]:
+    update = {
+        "update_id": 11,
+        "message": {
+            **message(91),
+            "chat": {"id": chat_id, "type": "supergroup"},
+            "from": {"id": 99, "is_bot": False, "first_name": "Reporter"},
+            "text": "/bs",
+            "entities": [{"type": "bot_command", "offset": 0, "length": 3}],
+            "reply_to_message": {**message(), "chat": {"id": chat_id, "type": "supergroup"}},
+        },
+    }
+
+    if named:
+        update["message"]["text"] = "/bs @example_bot"
+        del update["message"]["reply_to_message"]
+    return update
+
+
 class SourceFenceTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self.clock = patch("time.time", return_value=NOW)
@@ -165,7 +184,7 @@ class SourceFenceTests(unittest.IsolatedAsyncioTestCase):
     async def pending_delete(self) -> SimpleNamespace:
         self.telegram.faults.add("deleteMessage")
         await self.dispatch({"update_id": 10, "message": message()})
-        self.assertTrue(await self.source_exists())
+        self.assertFalse(await self.source_exists())
         row = await self.database.prepare("SELECT * FROM model_tasks").first()
         assert row is not None
         self.assertEqual(row.phase, "delete")
@@ -183,7 +202,7 @@ class SourceFenceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(80, self.telegram.messages)
 
     async def test_replayed_content_decision_only_retries_deletion(self) -> None:
-        """user: Given registration then a 429, When the update replays, Then it cannot ban or clean history."""
+        """user: Given a spam decision then a 429, When the update replays, Then it cannot ban or clean history."""
         pending = await self.pending_delete()
         await self.dispatch({"update_id": 10, "message": message()})
         await self.assert_no_escalation()
@@ -194,25 +213,25 @@ class SourceFenceTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(81, self.telegram.messages)
         await self.assert_no_escalation()
 
-    async def test_no_replay_keeps_content_action_and_new_event_uses_source(self) -> None:
-        """user: Given no redelivery, When content is spam, Then only a new event can use source routing."""
+    async def test_new_content_event_does_not_escalate(self) -> None:
+        """user: Given bot spam, When a new benign message arrives, Then history and membership stay intact."""
         await self.dispatch({"update_id": 10, "message": message()})
-        self.assertTrue(await self.source_exists())
+        self.assertFalse(await self.source_exists())
         self.assertNotIn(81, self.telegram.messages)
         await self.assert_no_escalation()
+        self.telegram.probability = 0
         await self.dispatch({"update_id": 11, "message": message(82)})
-        self.assertIn("banChatMember", [name for name, _ in self.telegram.calls])
-        self.assertNotIn(80, self.telegram.messages)
+        await self.assert_no_escalation()
 
     async def test_incomplete_allow_cannot_remove_newer_source_decision(self) -> None:
-        """user: Given an interrupted allow, When newer bot spam registers, Then the old allow is superseded."""
+        """user: Given an interrupted allow, When newer authorized bs registers, Then the old allow is superseded."""
         self.telegram.faults.add("getChatMember")
         self.assertEqual((await self.dispatch(allow())).status, 503)
         row = await self.database.prepare("SELECT moderation_result FROM reports WHERE update_id = 10").first()
         assert row is not None
         self.assertEqual(row.moderation_result, ALLOW_REQUESTED)
         self.telegram.faults.clear()
-        await self.dispatch({"update_id": 11, "message": message()})
+        await self.dispatch(source_command())
         self.assertTrue(await self.source_exists())
         calls = len(self.telegram.calls)
         response = await self.dispatch(allow())
@@ -226,9 +245,9 @@ class SourceFenceTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotEqual(row.moderation_result, ALLOWED)
 
     async def test_completed_allow_replay_preserves_newer_registration(self) -> None:
-        """user: Given a completed allow, When newer spam registers and allow replays, Then the source stays."""
+        """user: Given a completed allow, When newer bs registers and allow replays, Then the source stays."""
         self.assertEqual((await self.dispatch(allow())).status, 200)
-        await self.dispatch({"update_id": 11, "message": message()})
+        await self.dispatch(source_command())
         self.assertTrue(await self.source_exists())
         calls = len(self.telegram.calls)
         self.assertEqual((await self.dispatch(allow())).status, 200)
@@ -253,8 +272,8 @@ class SourceFenceTests(unittest.IsolatedAsyncioTestCase):
         assert row is not None
         self.assertEqual((row.phase, row.revision), ("done", 11))
 
-    async def test_edit_during_allow_read_fences_source_insert(self) -> None:
-        """user: Given an owned deletion pauses in can_act, When a benign edit completes, Then no source leaks."""
+    async def test_edit_during_allow_read_cancels_deletion(self) -> None:
+        """user: Given deletion pauses in can_act, When a benign edit completes, Then no stale deletion occurs."""
         task = await self.deletion_task()
         self.database.pause_allow = True
         running = asyncio.create_task(self.tasks.run(task, self.telegram, CONFIG.bot_token, MODELS, NOW))
@@ -268,8 +287,8 @@ class SourceFenceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(81, self.telegram.messages)
         await self.assert_no_escalation()
 
-    async def test_edit_before_old_task_runs_prevents_registration(self) -> None:
-        """user: Given cancellation precedes stale task execution, When it runs, Then registration stays absent."""
+    async def test_edit_before_old_task_runs_prevents_deletion(self) -> None:
+        """user: Given cancellation precedes stale task execution, When it runs, Then deletion is cancelled."""
         task = await self.deletion_task()
         await self.benign_edit()
         await self.tasks.run(task, self.telegram, CONFIG.bot_token, MODELS, NOW)
@@ -277,47 +296,61 @@ class SourceFenceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(81, self.telegram.messages)
         await self.assert_no_escalation()
 
-    async def test_allow_sql_fences_survive_a_late_source_registration(self) -> None:
-        """user: Given a newer source, When old recovery claims or completes directly, Then neither SQL write wins."""
+    async def test_allow_sql_fences_preserve_newer_bs_in_another_group(self) -> None:
+        """user: Given a newer cross-group bs, When old recovery claims or completes, Then neither write wins."""
         await self.store.save((BOT_ID, 10), json.dumps(allow()), NOW, 0)
         await self.store.pin_command_source(BOT_ID, 10, 22)
         await self.store.request_allow(BOT_ID, 10)
-        await self.store.add_source(22, bot_id=BOT_ID, update_id=11)
+        # A repeated registration must protect an already-listed source too.
+        await self.store.add_source(22, bot_id=BOT_ID, update_id=9)
+        await self.dispatch(source_command(chat_id=-200, named=True))
         self.assertFalse(await self.store.claim_access_recovery(BOT_ID, 10))
         await self.database.prepare("UPDATE reports SET moderation_result = 'unbanned' WHERE update_id = 10").run()
         self.assertFalse(await self.store.complete_allow(BOT_ID, 22, 10))
         self.assertTrue(await self.source_exists())
 
-    async def test_source_and_ledger_roll_back_together(self) -> None:
-        """user: Given a failed source write, When registration retries, Then no orphan ledger changes routing."""
-        self.database.connection.executescript(
-            "CREATE TRIGGER reject_source BEFORE INSERT ON blacklisted_sources "
-            "BEGIN SELECT RAISE(ABORT, 'injected failure'); END;"
-        )
-        with self.assertRaises(EvidenceError):
-            await self.store.add_source(22, bot_id=BOT_ID, update_id=10)
-        self.assertEqual(await self.store.introduced_sources(BOT_ID, 10), ())
-        self.assertFalse(await self.source_exists())
-        self.database.connection.execute("DROP TRIGGER reject_source")
-        await self.store.add_source(22, bot_id=BOT_ID, update_id=10)
-        await self.store.add_source(22, bot_id=BOT_ID, update_id=10)
-        self.assertEqual(await self.store.introduced_sources(BOT_ID, 10), (22,))
-        self.assertTrue(await self.source_exists())
+    async def test_bs_after_recovery_claim_prevents_external_restoration(self) -> None:
+        """user: Given recovery is claimed, When a newer named bs completes, Then old recovery does not unban."""
+        claim = self.store.claim_access_recovery
 
-    async def test_expired_or_reclaimed_lease_cannot_register(self) -> None:
-        """user: Given expired or reclaimed ownership, When source insertion runs, Then it creates no decision."""
+        async def register_after_claim(bot_id: int, update_id: int) -> bool:
+            claimed = await claim(bot_id, update_id)
+            self.assertTrue(claimed)
+            self.assertEqual((await self.dispatch(source_command(chat_id=-200, named=True))).status, 200)
+            return claimed
+
+        self.telegram.status = "kicked"
+        with patch.object(self.store, "claim_access_recovery", side_effect=register_after_claim):
+            response = await self.dispatch(allow())
+        self.assertTrue(response.needs_confirmation)
+        self.assertTrue(await self.source_exists())
+        self.assertNotIn("unbanChatMember", [name for name, _ in self.telegram.calls])
+        self.assertEqual(self.telegram.status, "kicked")
+
+    async def test_newer_other_group_allow_is_not_a_source_command(self) -> None:
+        """user: Given another group's newer recovery, When old recovery runs, Then it is not a bs fence."""
+        newer = allow()
+        newer["update_id"] = 11
+        newer["message"]["chat"]["id"] = -200
+        self.assertEqual((await self.dispatch(newer)).status, 200)
+        response = await self.dispatch(allow())
+        self.assertFalse(response.needs_confirmation)
+        self.assertEqual(response.body, ALLOWED)
+
+    async def test_expired_or_reclaimed_lease_cannot_delete(self) -> None:
+        """user: Given expired or reclaimed ownership, When old deletion runs, Then it leaves the message."""
         task = await self.deletion_task()
         with patch("time.time", return_value=NOW + 30):
-            await self.store.add_source(22, bot_id=BOT_ID, update_id=10, task=task)
-        self.assertFalse(await self.source_exists())
+            await self.tasks.run(task, self.telegram, CONFIG.bot_token, MODELS, NOW + 30)
+        self.assertIn(81, self.telegram.messages)
         await self.database.prepare("UPDATE model_tasks SET generation = generation + 1").run()
-        await self.store.add_source(22, bot_id=BOT_ID, update_id=10, task=task)
+        await self.tasks.run(task, self.telegram, CONFIG.bot_token, MODELS, NOW)
+        self.assertIn(81, self.telegram.messages)
         self.assertFalse(await self.source_exists())
-        self.assertEqual(await self.store.introduced_sources(BOT_ID, 10), ())
+        await self.assert_no_escalation()
 
-    async def test_ledger_expiry_keeps_the_long_lived_source(self) -> None:
-        """user: Given an aged decision, When evidence expires, Then its replay fence expires but its source remains."""
-        await self.store.add_source(22, bot_id=BOT_ID, update_id=10)
+    async def test_report_expiry_keeps_explicit_source(self) -> None:
+        """user: Given an aged explicit registration, When evidence expires, Then the source remains."""
+        await self.dispatch(source_command())
         await self.store.expire(NOW + RETENTION_SECONDS)
-        self.assertEqual(await self.store.introduced_sources(BOT_ID, 10), ())
         self.assertTrue(await self.source_exists())

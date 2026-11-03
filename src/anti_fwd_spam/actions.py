@@ -25,7 +25,6 @@ if TYPE_CHECKING:
 
     from .evidence import ReportStore, StoredReport
     from .policy import TelegramUpdate
-    from .tasks import Task
     from .telegram import Fetch
 
 ADMIN_STATUSES = frozenset({"creator", "administrator"})
@@ -114,16 +113,15 @@ class Actions:
             raise TelegramError(retryable=True)
         return result["status"]
 
-    async def delete_and_mute(  # noqa: PLR0911 - Keep authority, cancellation and retry outcomes explicit.
+    async def delete_and_mute(
         self,
         message: dict[str, object],
         *,
         can_act: Callable[[], Awaitable[bool]] | None = None,
         mute: bool = True,
         update_id: int | None = None,
-        task: Task | None = None,
     ) -> AppResponse:
-        """Delete one message, muting humans or registering bot sources, with administrator protection."""
+        """Delete one message and permanently mute humans, preserving administrators and history."""
         chat, message_id = message.get("chat"), message.get("message_id")
         if not isinstance(chat, dict) or type(chat.get("id")) is not int or type(message_id) is not int:
             return AppResponse(400, "invalid moderation target")
@@ -138,13 +136,6 @@ class Actions:
             return AppResponse(503 if error.retryable else 200, "automatic authority check failed")
         if can_act is not None and not await can_act():
             return AppResponse(200, "moderation cancelled")
-        if identifier is not None and user_id(message) is None:
-            try:
-                await self.store.add_source(identifier, bot_id=self.bot_id, update_id=update_id, task=task)
-            except EvidenceError:
-                return AppResponse(503, "source registration unavailable; retry pending")
-            if can_act is not None and not await can_act():
-                return AppResponse(200, "moderation cancelled")
         await self.store.invalidate_activity(self.bot_id, chat_id, message_id)
         response = await self._delete_target(chat_id, message_id)
         identifier = user_id(message)

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from http import HTTPStatus
@@ -12,7 +11,6 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from .tasks import Task
 
 RETENTION_SECONDS = 3 * 24 * 60 * 60
 # This deletion window also delays activity credit against farming; retention changes require behavior review.
@@ -101,8 +99,9 @@ class ReportStore:
                 self.database.prepare(
                     "UPDATE reports SET moderation_result = ? WHERE bot_id = ? AND update_id = ? AND subject_id = 0 "
                     "AND moderation_result = ? AND response_status IS NULL AND NOT EXISTS "
-                    "(SELECT 1 FROM source_registrations AS s WHERE s.bot_id = reports.bot_id "
-                    "AND s.source_id = reports.command_source_id AND s.update_id > reports.update_id) "
+                    "(SELECT 1 FROM reports AS s WHERE s.bot_id = reports.bot_id AND s.subject_id = 0 "
+                    "AND s.command_source_id = reports.command_source_id AND s.update_id > reports.update_id "
+                    "AND (s.moderation_result IS NULL OR s.moderation_result NOT IN (?, ?, ?, ?))) "
                     "AND NOT EXISTS (SELECT 1 FROM automatic_mutes AS m WHERE m.bot_id = reports.bot_id "
                     "AND m.chat_id = json_extract(reports.raw_update, '$.message.chat.id') "
                     "AND m.user_id = reports.command_source_id AND m.update_id > reports.update_id) "
@@ -113,7 +112,7 @@ class ReportStore:
                     "json_extract(reports.raw_update, '$.message.chat.id') "
                     "AND newer.moderation_result IN (?, ?, ?, ?)) RETURNING bot_id"
                 )
-                .bind(ACCESS_RECOVERING, bot_id, update_id, ALLOW_REQUESTED, *ALLOW_MARKERS)
+                .bind(ACCESS_RECOVERING, bot_id, update_id, ALLOW_REQUESTED, *ALLOW_MARKERS, *ALLOW_MARKERS)
                 .first()
             )
         return row is not None
@@ -203,13 +202,12 @@ class ReportStore:
                         "UPDATE reports SET moderation_result = ? WHERE bot_id = ? AND update_id = ? "
                         "AND subject_id = 0 AND moderation_result = ? AND response_status IS NULL "
                         "AND NOT EXISTS (SELECT 1 FROM reports AS n WHERE n.bot_id = ? AND n.update_id > ? AND "
-                        "((n.command_source_id = ? AND n.moderation_result IS NULL) OR "
+                        "((n.command_source_id = ? AND (n.moderation_result IS NULL "
+                        "OR n.moderation_result NOT IN (?, ?, ?, ?))) OR "
                         "((n.subject_id = ? OR (n.subject_id = 0 AND "
                         "COALESCE(json_extract(n.raw_update, '$.message.reply_to_message.from.id'), "
                         "json_extract(n.raw_update, '$.edited_message.reply_to_message.from.id')) = ?)) "
                         "AND (n.ban_claimed = 1 OR n.moderation_result = ? OR n.moderation_result LIKE '%; banned')))) "
-                        "AND NOT EXISTS (SELECT 1 FROM source_registrations AS s WHERE s.bot_id = reports.bot_id "
-                        "AND s.source_id = reports.command_source_id AND s.update_id > reports.update_id) "
                         "AND NOT EXISTS (SELECT 1 FROM automatic_mutes AS m WHERE m.bot_id = reports.bot_id "
                         "AND m.chat_id = json_extract(reports.raw_update, '$.message.chat.id') "
                         "AND m.user_id = reports.command_source_id AND m.update_id > reports.update_id) "
@@ -219,7 +217,18 @@ class ReportStore:
                         "AND json_extract(newer.raw_update, '$.message.chat.id') = "
                         "json_extract(reports.raw_update, '$.message.chat.id') "
                         "AND newer.moderation_result IN (?, ?, ?, ?))"
-                    ).bind(ALLOWED, *key, UNBANNED, *key, identifier, identifier, identifier, BANNED, *ALLOW_MARKERS),
+                    ).bind(
+                        ALLOWED,
+                        *key,
+                        UNBANNED,
+                        *key,
+                        identifier,
+                        *ALLOW_MARKERS,
+                        identifier,
+                        identifier,
+                        BANNED,
+                        *ALLOW_MARKERS,
+                    ),
                     self.database.prepare(
                         "DELETE FROM blacklisted_users WHERE bot_id = ? AND user_id = ? AND EXISTS "
                         "(SELECT 1 FROM reports WHERE bot_id = ? AND update_id = ? AND subject_id = 0 "
@@ -254,69 +263,29 @@ class ReportStore:
             )
         return row is not None and row.response_status == HTTPStatus.OK
 
-    async def add_source(self, source_id: int, *, bot_id: int, update_id: int | None, task: Task | None = None) -> None:
-        """Atomically retain the decision and source only while its allow and task fences permit it."""
-        now = int(time.time())
-        predicate = (
-            "NOT EXISTS (SELECT 1 FROM reports WHERE bot_id = ? AND subject_id = 0 AND command_source_id = ? "
-            "AND moderation_result IN (?, ?, ?, ?) AND (? IS NULL OR update_id > ?))"
-        )
-        parameters = (bot_id, source_id, *ALLOW_MARKERS, update_id, update_id)
-        if task is not None:
-            predicate += (
-                " AND EXISTS (SELECT 1 FROM model_tasks WHERE bot_id = ? AND chat_id = ? AND message_id = ? "
-                "AND subject_id = ? AND generation = ? AND phase = ? "
-                "AND lease_until > ? AND stop_at > ? AND expires_at > ?)"
-            )
-            parameters += (
-                bot_id,
-                task.chat_id,
-                task.message_id,
-                task.subject_id,
-                task.generation,
-                task.phase,
-                now,
-                now,
-                now,
-            )
-        statements = []
-        if update_id is not None:
-            statements.append(
-                self.database.prepare(
-                    "INSERT INTO source_registrations (bot_id, update_id, source_id, introduced, expires_at) "  # noqa: S608 - Only literal SQL predicates; values are bound.
-                    "SELECT ?, ?, ?, NOT EXISTS (SELECT 1 FROM blacklisted_sources WHERE source_id = ?), ? WHERE "
-                    + predicate
-                    + " ON CONFLICT DO NOTHING"
-                ).bind(bot_id, update_id, source_id, source_id, now + RETENTION_SECONDS, *parameters)
-            )
-        statements.append(
-            self.database.prepare(
-                "INSERT INTO blacklisted_sources (source_id) SELECT ? WHERE " + predicate + " ON CONFLICT DO NOTHING"
-            ).bind(source_id, *parameters)
-        )
+    async def add_source(self, source_id: int, *, bot_id: int, update_id: int) -> None:
+        """Persist a source once unless a newer allow command fenced this registration."""
         with storage_errors():
-            await self.database.batch(statements)
-
-    async def introduced_sources(self, bot_id: int, update_id: int | None) -> tuple[int, ...]:
-        """Keep redelivery on the route preceding this event's own source registrations."""
-        with storage_errors():
-            rows = await (
+            await (
                 self.database.prepare(
-                    "SELECT source_id FROM source_registrations WHERE bot_id = ? AND update_id = ? AND introduced = 1"
+                    "INSERT INTO blacklisted_sources (source_id) SELECT ? WHERE NOT EXISTS "
+                    "(SELECT 1 FROM reports WHERE bot_id = ? AND subject_id = 0 AND command_source_id = ? "
+                    "AND moderation_result IN (?, ?, ?, ?) AND update_id > ?) "
+                    "ON CONFLICT DO NOTHING",
                 )
-                .bind(bot_id, update_id)
-                .all()
+                .bind(source_id, bot_id, source_id, *ALLOW_MARKERS, update_id)
+                .run()
             )
-        return tuple(int(row.source_id) for row in rows.results)
 
     async def later_source(self, bot_id: int, identifier: int, update_id: int) -> bool:
-        """Preserve a newer shared-source decision even when recovery is in another group."""
+        """Preserve a newer pinned source command, including one issued in another group."""
         with storage_errors():
             row = await (
                 self.database.prepare(
-                    "SELECT 1 FROM source_registrations WHERE bot_id = ? AND source_id = ? AND update_id > ? LIMIT 1"
+                    "SELECT 1 FROM reports WHERE bot_id = ? AND subject_id = 0 AND command_source_id = ? "
+                    "AND update_id > ? AND (moderation_result IS NULL OR moderation_result NOT IN (?, ?, ?, ?)) LIMIT 1"
                 )
-                .bind(bot_id, identifier, update_id)
+                .bind(bot_id, identifier, update_id, *ALLOW_MARKERS)
                 .first()
             )
         return row is not None
@@ -619,14 +588,6 @@ class ReportStore:
                     "(SELECT rowid FROM recent_messages WHERE sent_at <= ? ORDER BY sent_at, rowid LIMIT 1000)",
                 ).bind(cutoff),
             ],
-        )
-        await (
-            self.database.prepare(
-                "DELETE FROM source_registrations WHERE rowid IN "
-                "(SELECT rowid FROM source_registrations WHERE expires_at <= ? ORDER BY expires_at LIMIT 1000)",
-            )
-            .bind(now)
-            .run()
         )
         await (
             self.database.prepare(

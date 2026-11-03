@@ -247,17 +247,17 @@ class ReportStore:
             )
         return row is not None and row.response_status == HTTPStatus.OK
 
-    async def add_source(self, source_id: int, *, bot_id: int, update_id: int) -> None:
+    async def add_source(self, source_id: int, *, bot_id: int, update_id: int | None) -> None:
         """Persist a source once unless a newer allow command fenced this registration."""
         with storage_errors():
             await (
                 self.database.prepare(
                     "INSERT INTO blacklisted_sources (source_id) SELECT ? WHERE NOT EXISTS "
                     "(SELECT 1 FROM reports WHERE bot_id = ? AND subject_id = 0 AND command_source_id = ? "
-                    "AND moderation_result IN (?, ?, ?, ?) AND update_id > ?) "
+                    "AND moderation_result IN (?, ?, ?, ?) AND (? IS NULL OR update_id > ?)) "
                     "ON CONFLICT DO NOTHING",
                 )
-                .bind(source_id, bot_id, source_id, *ALLOW_MARKERS, update_id)
+                .bind(source_id, bot_id, source_id, *ALLOW_MARKERS, update_id, update_id)
                 .run()
             )
 

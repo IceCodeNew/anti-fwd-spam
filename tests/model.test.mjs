@@ -9,6 +9,80 @@ model.enabled = true;
 // Screenshot excerpts with synthetic identities; the original update was not retained in D1.
 const botResourceLure = '点下方链接 限时免费看禁忌资源\n点我搜索 酒店偷拍\n看情侣实时直播\n点上方链接 限时免费看禁忌资源';
 
+for (const detection of ['local', 'model']) {
+  for (const provenance of ['direct', 'inline', 'forward']) {
+    test(`user: a ${detection} spam bot becomes a blocked source for later ${provenance} messages`, async () => {
+      const bot = { id: 22, is_bot: true, first_name: 'Example bot' };
+      telegram.members.set(33, { status: 'member' });
+      telegram.members.set(44, { status: 'member' });
+      const history = { ...message(70), from: bot };
+      telegram.send(history);
+      await dispatch({ update_id: 1, message: history });
+      const spam = { ...message(), from: bot, text: detection === 'local' ? '💰💰💰💰' : botResourceLure,
+        guest_bot_caller_user: message(80, 33).from };
+      model.probability = 0.90;
+      telegram.send(spam);
+      await dispatch({ update_id: 2, message: spam });
+      assert.equal(telegram.has(81), false);
+      assert.equal(telegram.has(70), true);
+      assert.equal(telegram.canJoin(22), true);
+      assert.deepEqual((await database.prepare('SELECT source_id FROM blacklisted_sources ORDER BY source_id').all()).results,
+        [{ source_id: 22 }, { source_id: 7788 }]);
+      model.state = null;
+      model.probability = 0;
+      const later = { ...message(82, 44), guest_bot_caller_user: message(80, 33).from };
+      if (provenance === 'direct') later.from = bot;
+      else if (provenance === 'inline') later.via_bot = bot;
+      else later.forward_origin = { type: 'user', date: later.date, sender_user: bot };
+      telegram.send(later);
+      await dispatch({ update_id: 3, message: later });
+      assert.equal(telegram.has(82), false);
+      assert.equal(telegram.has(70), false);
+      assert.equal(telegram.canJoin(22), false);
+      assert.equal(telegram.canSend(33), true);
+      assert.equal(telegram.canSend(44), provenance === 'direct');
+      assert.equal(model.state, null);
+    });
+  }
+
+  test(`user: a failed ${detection} source registration retries without losing the spam decision`, async () => {
+    await database.exec("CREATE TRIGGER fail_source BEFORE INSERT ON blacklisted_sources WHEN NEW.source_id=22 BEGIN SELECT RAISE(ABORT,'unavailable'); END");
+    const target = { ...message(), from: { ...message().from, is_bot: true },
+      text: detection === 'local' ? '💰💰💰💰' : botResourceLure };
+    model.probability = 0.90;
+    telegram.send(target);
+    assert.equal((await dispatch({ update_id: 1, message: target })).status, detection === 'local' ? 503 : 200);
+    assert.equal(telegram.has(81), true);
+    assert.equal(await database.prepare('SELECT source_id FROM blacklisted_sources WHERE source_id=22').first(), null);
+    await database.exec('DROP TRIGGER fail_source');
+    model.probability = 0;
+    if (detection === 'local') await dispatch({ update_id: 1, message: target });
+    else await tick((await task()).due_at);
+    assert.equal(telegram.has(81), false);
+    assert.equal(telegram.canSend(22), true);
+    assert.deepEqual(await database.prepare('SELECT source_id FROM blacklisted_sources WHERE source_id=22').first(), { source_id: 22 });
+  });
+
+  test(`user: allow fences an older ${detection} bot decision after source registration and failed deletion`, async () => {
+    const target = { ...message(), from: { ...message().from, is_bot: true },
+      text: detection === 'local' ? '💰💰💰💰' : botResourceLure };
+    model.probability = 0.90;
+    telegram.faults.set('deleteMessage', () => Response.json({ ok: false, error_code: 429 }, { status: 429 }));
+    telegram.send(target);
+    await dispatch({ update_id: 1, message: target });
+    const pending = await task();
+    assert.deepEqual(await database.prepare('SELECT source_id FROM blacklisted_sources WHERE source_id=22').first(), { source_id: 22 });
+    telegram.faults.clear();
+    const recovery = { ...message(90, 11), text: '/allow 22', entities: [{ type: 'bot_command', offset: 0, length: 6 }] };
+    await dispatch({ update_id: 2, message: recovery });
+    if (detection === 'local') await dispatch({ update_id: 1, message: target });
+    else await tick(pending.due_at);
+    assert.equal(telegram.has(81), true);
+    assert.equal(await database.prepare('SELECT source_id FROM blacklisted_sources WHERE source_id=22').first(), null);
+    assert.equal(telegram.canJoin(22), true);
+  });
+}
+
 for (const [field, referenced, probability, status] of [
   ['text', false, 0.90, 'member'],
   ['text', true, 0.90, 'member'],
@@ -42,8 +116,8 @@ for (const [field, referenced, probability, status] of [
     assert.equal(telegram.canSend(33), true);
     assert.equal(telegram.canJoin(22), true);
     assert.equal((await database.prepare('SELECT COUNT(*) AS n FROM blacklisted_users').first()).n, 0);
-    assert.deepEqual((await database.prepare('SELECT source_id FROM blacklisted_sources').all()).results,
-      [{ source_id: 7788 }]);
+    assert.deepEqual((await database.prepare('SELECT source_id FROM blacklisted_sources ORDER BY source_id').all()).results,
+      status === 'member' && probability >= 0.90 ? [{ source_id: 22 }, { source_id: 7788 }] : [{ source_id: 7788 }]);
   });
 }
 

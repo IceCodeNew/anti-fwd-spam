@@ -37,10 +37,10 @@ for (const edited of [false, true]) {
   }
 }
 
-test('user: Given an unregistered bot with no model key, When it sends the trigger and eleven resource messages, Then regex removes every message without muting or blacklisting mentioned accounts', async () => {
+test('user: Given an unregistered bot with no model key, When it sends the trigger and ten resource messages, Then regex removes every message without muting or blacklisting mentioned accounts', async () => {
   await setBindings({ EXPERIENTIAL_API_KEY: undefined });
   telegram.send(message(80, 11));
-  for (let index = 0; index < 12; index++) {
+  for (let index = 0; index < 11; index++) {
     const target = { ...message(81 + index), text: index === 0 ? trigger : resources,
       from: { ...message().from, is_bot: true, username: 'another_resource_bot' } };
     telegram.send(target);

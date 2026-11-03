@@ -379,10 +379,12 @@ class Moderator:
         now = int(time.time())
         if update.sent_at is not None and recent(update.sent_at, now):
             identifier = user_id(update.message)
+            sender = update.message.get("from")
             classify = (
                 reply_target(update.message) is not None
                 or isinstance(update.message.get("external_reply"), dict)
                 or isinstance(update.message.get("quote"), dict)
+                or (isinstance(sender, dict) and sender.get("is_bot") is True and "sender_chat" not in update.message)
                 or (
                     identifier is not None
                     and await self.store.is_established(self.actions.bot_id, update.chat_id, identifier)
@@ -429,7 +431,7 @@ class Moderator:
             return AppResponse(503, "moderation storage unavailable; retry pending")
 
     async def check_content(self, update: TelegramUpdate) -> AppResponse:
-        """Apply local rules, then queue profile checks and classification for new messages and referenced edits.
+        """Apply local rules, then queue profile checks and classification for eligible messages and edits.
 
         A denied report on local-rule spam is deleted without a mute, so a member who quotes that spam keeps speaking.
         """
@@ -442,16 +444,17 @@ class Moderator:
             or isinstance(message.get("external_reply"), dict)
             or isinstance(message.get("quote"), dict)
         )
-        identifier = user_id(message)
+        sender = message.get("from")
+        bot_sender = isinstance(sender, dict) and sender.get("is_bot") is True and "sender_chat" not in message
+        identifier = user_id(message, include_bots=True)
         pattern_match = matches_spam_pattern(message)
         established = (
             identifier is not None
+            and not bot_sender
             and (pattern_match or (update.edited and not referenced))
             and await self.store.is_established(self.actions.bot_id, update.chat_id, identifier)
         )
         spam = pattern_match and not established
-        sender = message.get("from")
-        bot_sender = isinstance(sender, dict) and sender.get("is_bot") is True and "sender_chat" not in message
         if not spam and (not referenced or bot_sender):
             try:
                 spam = await self.matches_sticker(message)
@@ -460,7 +463,7 @@ class Moderator:
         if spam:
             return await self.delete_current(update, mute=mute)
         if (
-            (update.edited and not referenced and not established)
+            (update.edited and not referenced and not established and not bot_sender)
             or identifier is None
             or not MODEL_CONTENT_FIELDS.intersection(message)
         ):
@@ -470,7 +473,7 @@ class Moderator:
             "target": {
                 "chat": {"id": update.chat_id, "type": update.chat_type},
                 "message_id": update.message_id,
-                "from": {"id": user_id(message), "is_bot": False},
+                "from": {"id": identifier, "is_bot": bot_sender},
             },
             "mute": mute,
             "profile_ids": profile_ids(message),

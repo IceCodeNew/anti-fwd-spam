@@ -317,7 +317,7 @@ for (const [text, matches] of [
     assert.equal(telegram.has(80), true);
     assert.equal(telegram.canSend(22), true);
     assert.equal(telegram.canJoin(22), true);
-    assert.equal(model.state, null);
+    assert.equal(model.state === null, matches);
   });
 }
 

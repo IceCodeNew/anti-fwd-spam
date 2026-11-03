@@ -1,10 +1,232 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFile } from 'node:fs/promises';
-import { dispatch, model, telegram, database } from './worker-runtime.mjs';
+import { dispatch, model, telegram, database, task, tick, setBindings } from './worker-runtime.mjs';
 import { message, report } from './telegram-fake.mjs';
 
 model.enabled = true;
+
+// Screenshot excerpts with synthetic identities; the original update was not retained in D1.
+const botResourceLure = '点下方链接 限时免费看禁忌资源\n点我搜索 酒店偷拍\n看情侣实时直播\n点上方链接 限时免费看禁忌资源';
+
+for (const detection of ['local', 'model']) {
+  for (const provenance of ['direct', 'inline', 'forward']) {
+    for (const destination of [-10012, -10099]) {
+      test(`user: ${detection} bot spam does not blacklist later ${provenance} messages in group ${destination}`, async () => {
+        const bot = { id: 22, is_bot: true, first_name: 'Example bot' };
+        telegram.groups.set(-10099, new Map([22, 33, 44].map(id => [id, { status: 'member' }])));
+        telegram.members.set(33, { status: 'member' });
+        telegram.members.set(44, { status: 'member' });
+        const history = { ...message(70), from: bot };
+        telegram.send(history);
+        await dispatch({ update_id: 1, message: history });
+        const spam = { ...message(), from: bot, text: detection === 'local' ? '💰💰💰💰' : botResourceLure,
+          guest_bot_caller_user: message(80, 33).from };
+        model.probability = 0.90;
+        telegram.send(spam);
+        await dispatch({ update_id: 2, message: spam });
+        assert.equal(telegram.has(81), false);
+        assert.equal(telegram.has(70), true);
+        assert.equal(telegram.canJoin(22), true);
+        assert.deepEqual((await database.prepare('SELECT source_id FROM blacklisted_sources ORDER BY source_id').all()).results,
+          [{ source_id: 7788 }]);
+        model.state = null;
+        model.probability = 0;
+        const later = { ...message(82, 44), chat: { id: destination, type: 'supergroup' },
+          guest_bot_caller_user: message(80, 33).from };
+        if (provenance === 'direct') later.from = bot;
+        else if (provenance === 'inline') later.via_bot = bot;
+        else later.forward_origin = { type: 'user', date: later.date, sender_user: bot };
+        telegram.send(later);
+        await dispatch({ update_id: 3, message: later });
+        assert.equal(telegram.has(82, destination), true);
+        assert.equal(telegram.has(70), true);
+        for (const group of [-10012, -10099]) {
+          assert.equal(telegram.canJoin(22, group), true);
+          assert.equal(telegram.canSend(33, 'can_send_messages', group), true);
+          assert.equal(telegram.canSend(44, 'can_send_messages', group), true);
+        }
+        assert.equal(model.state?.message.text, later.text);
+        assert.equal((await database.prepare('SELECT COUNT(*) AS n FROM blacklisted_users').first()).n, 0);
+        assert.deepEqual((await database.prepare('SELECT source_id FROM blacklisted_sources').all()).results,
+          [{ source_id: 7788 }]);
+      });
+    }
+  }
+
+  test(`user: ${detection} bot deletion never attempts a global source write`, async () => {
+    await database.exec("CREATE TRIGGER fail_source BEFORE INSERT ON blacklisted_sources WHEN NEW.source_id=22 BEGIN SELECT RAISE(ABORT,'unavailable'); END");
+    try {
+      const target = { ...message(), from: { ...message().from, is_bot: true },
+        text: detection === 'local' ? '💰💰💰💰' : botResourceLure };
+      model.probability = 0.90;
+      telegram.send(target);
+      assert.equal((await dispatch({ update_id: 1, message: target })).status, 200);
+      assert.equal(telegram.has(81), false);
+      assert.equal(telegram.canSend(22), true);
+      assert.equal(telegram.canJoin(22), true);
+      assert.equal(await database.prepare('SELECT source_id FROM blacklisted_sources WHERE source_id=22').first(), null);
+      if (detection === 'model') assert.equal((await task()).phase, 'done');
+    } finally {
+      await database.exec('DROP TRIGGER fail_source');
+    }
+  });
+
+  test(`user: replay of a ${detection} bot decision cannot escalate after failed deletion`, async () => {
+    const history = { ...message(70), from: { ...message().from, is_bot: true } };
+    telegram.send(history);
+    await dispatch({ update_id: 1, message: history });
+    const target = { ...message(), from: history.from,
+      text: detection === 'local' ? '💰💰💰💰' : botResourceLure };
+    model.probability = 1;
+    telegram.faults.set('deleteMessage', () => Response.json({ ok: false, error_code: 429 }, { status: 429 }));
+    telegram.send(target);
+    await dispatch({ update_id: 2, message: target });
+    const pending = await task();
+    assert.equal(await database.prepare('SELECT source_id FROM blacklisted_sources WHERE source_id=22').first(), null);
+    telegram.faults.clear();
+    await dispatch({ update_id: 2, message: target });
+    assert.equal(telegram.canJoin(22), true);
+    assert.equal(telegram.has(70), true);
+    if (detection === 'model') await tick(pending.due_at);
+    assert.equal(telegram.has(81), false);
+    assert.equal(telegram.canJoin(22), true);
+    assert.equal(telegram.has(70), true);
+    assert.equal((await database.prepare('SELECT history_removed FROM recent_messages WHERE message_id=70').first()).history_removed, 0);
+  });
+
+  test(`user: an interrupted allow can finish after newer ${detection} bot deletion`, async () => {
+    const recovery = { ...message(90, 11), text: '/allow 22', entities: [{ type: 'bot_command', offset: 0, length: 6 }] };
+    telegram.faults.set('getChatMember:22', () => Response.json({ ok: false, error_code: 429 }, { status: 429 }));
+    assert.equal((await dispatch({ update_id: 10, message: recovery })).status, 503);
+    telegram.faults.clear();
+    const target = { ...message(), from: { ...message().from, is_bot: true },
+      text: detection === 'local' ? '💰💰💰💰' : botResourceLure };
+    model.probability = 1;
+    telegram.send(target);
+    await dispatch({ update_id: 11, message: target });
+    assert.equal(await database.prepare('SELECT source_id FROM blacklisted_sources WHERE source_id=22').first(), null);
+    await dispatch({ update_id: 10, message: recovery });
+    assert.equal(await database.prepare('SELECT source_id FROM blacklisted_sources WHERE source_id=22').first(), null);
+    const saved = await database.prepare('SELECT moderation_result, response_status FROM reports WHERE update_id=10 AND subject_id=0').first();
+    assert.equal(saved.moderation_result, 'allowed');
+    assert.equal(saved.response_status, 200);
+    assert.equal(telegram.has(81), false);
+    assert.equal(telegram.canJoin(22), true);
+  });
+
+  test(`user: allow fences an older ${detection} bot decision after failed deletion`, async () => {
+    const target = { ...message(), from: { ...message().from, is_bot: true },
+      text: detection === 'local' ? '💰💰💰💰' : botResourceLure };
+    model.probability = 0.90;
+    telegram.faults.set('deleteMessage', () => Response.json({ ok: false, error_code: 429 }, { status: 429 }));
+    telegram.send(target);
+    await dispatch({ update_id: 1, message: target });
+    const pending = await task();
+    assert.equal(await database.prepare('SELECT source_id FROM blacklisted_sources WHERE source_id=22').first(), null);
+    telegram.faults.clear();
+    const recovery = { ...message(90, 11), text: '/allow 22', entities: [{ type: 'bot_command', offset: 0, length: 6 }] };
+    await dispatch({ update_id: 2, message: recovery });
+    if (detection === 'local') await dispatch({ update_id: 1, message: target });
+    else await tick(pending.due_at);
+    assert.equal(telegram.has(81), true);
+    assert.equal(await database.prepare('SELECT source_id FROM blacklisted_sources WHERE source_id=22').first(), null);
+    assert.equal(telegram.canJoin(22), true);
+  });
+}
+
+for (const [field, referenced, probability, status] of [
+  ['text', false, 0.90, 'member'],
+  ['text', true, 0.90, 'member'],
+  ['caption', true, 0.90, 'member'],
+  ['text', true, 0.8999, 'member'],
+  ['text', true, null, 'member'],
+  ['text', true, 1, 'administrator'],
+]) {
+  test(`user: a bot resource offer is model-classified with ${field}, reply=${referenced}, score=${probability}, status=${status}`, async () => {
+    const target = { ...message(), from: { ...message().from, is_bot: true, first_name: 'Example bot' },
+      guest_bot_caller_user: { id: 33, is_bot: false, first_name: 'Guest caller' } };
+    delete target.text;
+    target[field] = botResourceLure;
+    if (referenced) target.reply_to_message = message(80, 11);
+    telegram.members.set(22, { status });
+    telegram.members.set(33, { status: 'member' });
+    model.profile = new Response('{"ok":false,"error_code":400}', { status: 400 });
+    model.probability = probability;
+    telegram.send(message(70));
+    telegram.send(message(80, 11));
+    telegram.send(target);
+    assert.equal((await dispatch({ update_id: 1, message: target })).status, 200);
+    assert.equal(model.state?.message[field], botResourceLure);
+    assert.equal(model.state.nickname, 'Example bot');
+    assert.equal(model.state.bio, null);
+    assert.equal(JSON.stringify(model.state).includes('Guest caller'), false);
+    assert.equal(telegram.has(81), status === 'administrator' || probability === null || probability < 0.90);
+    assert.equal(telegram.has(70), true);
+    assert.equal(telegram.has(80), true);
+    assert.equal(telegram.canSend(22), true);
+    assert.equal(telegram.canSend(33), true);
+    assert.equal(telegram.canJoin(22), true);
+    assert.equal((await database.prepare('SELECT COUNT(*) AS n FROM blacklisted_users').first()).n, 0);
+    assert.deepEqual((await database.prepare('SELECT source_id FROM blacklisted_sources ORDER BY source_id').all()).results,
+      [{ source_id: 7788 }]);
+  });
+}
+
+for (const stage of ['inference', 'deletion']) {
+  test(`user: a bot's ${stage} retry retains deletion-only identity and does not reclassify a saved decision`, async () => {
+    const target = { ...message(), from: { ...message().from, is_bot: true }, text: botResourceLure,
+      guest_bot_caller_user: message(80, 33).from };
+    telegram.members.set(33, { status: 'member' });
+    model.probability = 0.90;
+    if (stage === 'inference') model.response = new Response('unavailable', { status: 503 });
+    else telegram.faults.set('deleteMessage', () => Response.json({ ok: false, error_code: 429 }, { status: 429 }));
+    telegram.send(target);
+    await dispatch({ update_id: 1, message: target });
+    const pending = await task();
+    assert.ok(pending, 'bot messages must create durable model work');
+    assert.equal(telegram.has(81), true);
+    telegram.faults.clear();
+    model.response = null;
+    if (stage === 'deletion') model.probability = 0;
+    await tick(pending.due_at);
+    assert.equal(telegram.has(81), false);
+    assert.equal(telegram.canSend(22), true);
+    assert.equal(telegram.canSend(33), true);
+    assert.equal(telegram.canJoin(22), true);
+    assert.equal((await task()).input_json, null);
+    assert.equal(await database.prepare('SELECT source_id FROM blacklisted_sources WHERE source_id=22').first(), null);
+  });
+}
+
+test('user: an unreferenced bot edit replaces pending inference and is classified on its own content', async () => {
+  const target = { ...message(), from: { ...message().from, is_bot: true }, text: 'ordinary message' };
+  model.response = new Response('unavailable', { status: 503 });
+  telegram.send(target);
+  await dispatch({ update_id: 1, message: target });
+  const pending = await task();
+  assert.ok(pending, 'the original bot message must reach classification');
+  model.response = null;
+  model.probability = 0.90;
+  const edited = { ...target, text: botResourceLure };
+  telegram.send(edited);
+  await dispatch({ update_id: 2, edited_message: edited });
+  assert.equal(model.state?.message.text, botResourceLure);
+  assert.equal(telegram.has(81), false);
+  assert.equal(telegram.canSend(22), true);
+  await tick(pending.due_at);
+  assert.equal((await task()).phase, 'done');
+});
+
+test('user: an unmatched bot message without a model provider remains visible', async () => {
+  await setBindings({ EXPERIENTIAL_API_KEY: '' });
+  const target = { ...message(), from: { ...message().from, is_bot: true }, text: botResourceLure };
+  telegram.send(target);
+  await dispatch({ update_id: 1, message: target });
+  assert.equal(telegram.has(81), true);
+  assert.equal(telegram.canSend(22), true);
+  assert.equal(model.state, null);
+});
 
 for (const [isBot, mature] of [[true, false], [false, false], [false, true]]) {
   test(`user: accumulated button money obeys sender policy with bot=${isBot}, mature=${mature}`, async () => {
@@ -269,14 +491,13 @@ test('user: Given a permanent deletion rejection, When spam is detected, Then re
   assert.equal(telegram.has(81), true);
 });
 
-test('user: Given unrelated service events or non-user senders, When a new update arrives, Then the model cannot remove it', async () => {
+test('user: Given unrelated service events or chat identities, When a new update arrives, Then the model cannot remove it', async () => {
   model.probability = 1;
   const service = message();
   delete service.text;
   service.left_chat_member = message().from;
   const channel = { ...message(), sender_chat: { id: -10099, type: 'channel' } };
-  const bot = { ...message(), from: { ...message().from, is_bot: true } };
-  for (const target of [service, channel, bot]) {
+  for (const target of [service, channel]) {
     telegram.send(target);
     assert.equal((await dispatch({ update_id: 8, message: target })).status, 200);
     assert.equal(telegram.has(81), true);

@@ -121,7 +121,7 @@ class Actions:
         mute: bool = True,
         update_id: int | None = None,
     ) -> AppResponse:
-        """Delete one message and permanently mute its sender, preserving administrators and history."""
+        """Delete one message and permanently mute humans, preserving administrators and history."""
         chat, message_id = message.get("chat"), message.get("message_id")
         if not isinstance(chat, dict) or type(chat.get("id")) is not int or type(message_id) is not int:
             return AppResponse(400, "invalid moderation target")
@@ -185,6 +185,7 @@ class Actions:
     async def _allow_superseded(self, identifier: int, chat_id: int, update_id: int) -> bool:
         return (
             await self.store.later_confirmed_ban(self.bot_id, identifier, chat_id, update_id)
+            or await self.store.later_source(self.bot_id, identifier, update_id)
             or await self.store.later_mute(self.bot_id, identifier, chat_id, update_id)
             or (await self.store.newer_allow(self.bot_id, identifier, update_id, chat_id=chat_id)) is not None
         )

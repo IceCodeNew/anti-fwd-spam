@@ -21,8 +21,8 @@ Use a **supergroup** for the complete feature set. Basic groups can delete messa
 | An authorized reporter replies to a spam message and mentions the bot | Ban the reported sender and clean eligible indexed history. |
 | An unlisted member submits a valid reply report | Save evidence without automatic punishment. |
 | A message comes from a registered source bot | Delete the current message; moderate the source account separately. |
-| A new message matches a local rule or registered sticker | Delete the current message and mute its sender when Telegram supports it. |
-| The model classifies a message as spam | Delete the current message and mute its sender; referenced authors are not punished. |
+| A new message matches a local rule or registered sticker | Delete the current message; mute human senders when supported. Bot senders receive deletion only. |
+| The model classifies a message as spam | Delete the current message; mute human senders when supported. Bot senders receive deletion only. Referenced authors and guest callers are not punished. |
 | A joining account advertises through its nickname or profile | Permanently ban the matched member and delete the join notice, even before they speak. |
 | A message is edited or a network request fails temporarily | Fence stale work and retry only the pending operation. |
 
@@ -40,7 +40,7 @@ The complete copy-pasteable setup is in [Deployment setup](docs/setup.md). Start
 ## Everyday use
 
 - **Report spam:** reply to the target message and mention the moderation bot from a trusted reporting identity.
-- **Register a source:** send `/bs @source_bot` from a trusted identity. Registered sources include bots that send messages directly, including guest bots.
+- **Register a source:** send `/bs @source_bot` from a trusted identity. Only authorized `/bs` commands add sources to the global blacklist, which also covers direct and guest bot messages.
 - **Block and report a bot source:** reply with bare `/bs` to a direct bot message, or to an inline message when both its sender and source should be handled.
 - **Register a sticker set:** send its complete `https://t.me/addstickers/<set_name>` URL with `/bs`.
 - **Undo a ban or mute:** from a trusted identity in the affected supergroup, send `/allow @username` or `/allow <account ID>` to remove its blacklist entries and restore access. See [Operations](docs/operations.md) for username lookup limits and other false-positive recovery.
@@ -51,9 +51,9 @@ Local text/profile regexes apply before model classification until a member has 
 
 ## Optional model classification
 
-Configure a supported provider key to enable GPT-6 Luna Decisions for eligible human messages. Bots receive local filtering only. See [provider setup](docs/setup.md#optional-model-provider) for configuration, privacy and cost boundaries, and [compatibility and migration](docs/setup.md#compatibility-and-migration) before upgrading a Jev deployment. The bot sends bounded text context and selected profile data; it does not download or inspect images, video or audio.
+Configure a supported provider key to enable GPT-6 Luna Decisions for eligible human and bot messages. Unmatched bot messages, including edits, receive model classification after local filtering. See [provider setup](docs/setup.md#optional-model-provider) for configuration, privacy and cost boundaries, and [compatibility and migration](docs/setup.md#compatibility-and-migration) before upgrading a Jev deployment. The bot sends bounded text context and selected profile data; it does not download or inspect images, video or audio.
 
-The model judges whether the current sender is promoting an offer or recruiting participants, including through captions, contact cards and buttons. Warnings, reports, analysis and ordinary discussion are not themselves promotion. A spam decision removes the current message and can mute its sender; it does not punish referenced authors. Local filtering can act before the model under the [member-maturity policy](docs/behavior.md#member-maturity).
+The model judges whether the current sender is promoting an offer or recruiting participants, including through captions, contact cards and buttons. Warnings, reports, analysis and ordinary discussion are not themselves promotion. A spam decision removes the current message and can mute a human sender. For an actual bot sender, it only deletes that message; automatic content matches do not add global blacklist entries or affect other groups. It does not punish referenced authors or guest callers. Local filtering can act before the model under the [member-maturity policy](docs/behavior.md#member-maturity).
 
 Invalid model answers and refusals do not trigger punishment. See [model classification](docs/behavior.md#model-classification) for the complete decision and protection rules.
 

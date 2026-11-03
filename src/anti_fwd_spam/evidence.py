@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+
 RETENTION_SECONDS = 3 * 24 * 60 * 60
 # This deletion window also delays activity credit against farming; retention changes require behavior review.
 MESSAGE_WINDOW_SECONDS = 48 * 60 * 60
@@ -98,7 +99,10 @@ class ReportStore:
                 self.database.prepare(
                     "UPDATE reports SET moderation_result = ? WHERE bot_id = ? AND update_id = ? AND subject_id = 0 "
                     "AND moderation_result = ? AND response_status IS NULL AND NOT EXISTS "
-                    "(SELECT 1 FROM automatic_mutes AS m WHERE m.bot_id = reports.bot_id "
+                    "(SELECT 1 FROM reports AS s WHERE s.bot_id = reports.bot_id AND s.subject_id = 0 "
+                    "AND s.command_source_id = reports.command_source_id AND s.update_id > reports.update_id "
+                    "AND (s.moderation_result IS NULL OR s.moderation_result NOT IN (?, ?, ?, ?))) "
+                    "AND NOT EXISTS (SELECT 1 FROM automatic_mutes AS m WHERE m.bot_id = reports.bot_id "
                     "AND m.chat_id = json_extract(reports.raw_update, '$.message.chat.id') "
                     "AND m.user_id = reports.command_source_id AND m.update_id > reports.update_id) "
                     "AND NOT EXISTS (SELECT 1 FROM reports AS newer WHERE newer.bot_id = reports.bot_id "
@@ -108,7 +112,7 @@ class ReportStore:
                     "json_extract(reports.raw_update, '$.message.chat.id') "
                     "AND newer.moderation_result IN (?, ?, ?, ?)) RETURNING bot_id"
                 )
-                .bind(ACCESS_RECOVERING, bot_id, update_id, ALLOW_REQUESTED, *ALLOW_MARKERS)
+                .bind(ACCESS_RECOVERING, bot_id, update_id, ALLOW_REQUESTED, *ALLOW_MARKERS, *ALLOW_MARKERS)
                 .first()
             )
         return row is not None
@@ -198,7 +202,8 @@ class ReportStore:
                         "UPDATE reports SET moderation_result = ? WHERE bot_id = ? AND update_id = ? "
                         "AND subject_id = 0 AND moderation_result = ? AND response_status IS NULL "
                         "AND NOT EXISTS (SELECT 1 FROM reports AS n WHERE n.bot_id = ? AND n.update_id > ? AND "
-                        "((n.command_source_id = ? AND n.moderation_result IS NULL) OR "
+                        "((n.command_source_id = ? AND (n.moderation_result IS NULL "
+                        "OR n.moderation_result NOT IN (?, ?, ?, ?))) OR "
                         "((n.subject_id = ? OR (n.subject_id = 0 AND "
                         "COALESCE(json_extract(n.raw_update, '$.message.reply_to_message.from.id'), "
                         "json_extract(n.raw_update, '$.edited_message.reply_to_message.from.id')) = ?)) "
@@ -212,7 +217,18 @@ class ReportStore:
                         "AND json_extract(newer.raw_update, '$.message.chat.id') = "
                         "json_extract(reports.raw_update, '$.message.chat.id') "
                         "AND newer.moderation_result IN (?, ?, ?, ?))"
-                    ).bind(ALLOWED, *key, UNBANNED, *key, identifier, identifier, identifier, BANNED, *ALLOW_MARKERS),
+                    ).bind(
+                        ALLOWED,
+                        *key,
+                        UNBANNED,
+                        *key,
+                        identifier,
+                        *ALLOW_MARKERS,
+                        identifier,
+                        identifier,
+                        BANNED,
+                        *ALLOW_MARKERS,
+                    ),
                     self.database.prepare(
                         "DELETE FROM blacklisted_users WHERE bot_id = ? AND user_id = ? AND EXISTS "
                         "(SELECT 1 FROM reports WHERE bot_id = ? AND update_id = ? AND subject_id = 0 "
@@ -260,6 +276,19 @@ class ReportStore:
                 .bind(source_id, bot_id, source_id, *ALLOW_MARKERS, update_id)
                 .run()
             )
+
+    async def later_source(self, bot_id: int, identifier: int, update_id: int) -> bool:
+        """Preserve a newer pinned source command, including one issued in another group."""
+        with storage_errors():
+            row = await (
+                self.database.prepare(
+                    "SELECT 1 FROM reports WHERE bot_id = ? AND subject_id = 0 AND command_source_id = ? "
+                    "AND update_id > ? AND (moderation_result IS NULL OR moderation_result NOT IN (?, ?, ?, ?)) LIMIT 1"
+                )
+                .bind(bot_id, identifier, update_id, *ALLOW_MARKERS)
+                .first()
+            )
+        return row is not None
 
     async def matching_sources(self, source_ids: frozenset[int]) -> tuple[int, ...]:
         """Look up only the message's explicit source IDs using the primary key."""

@@ -63,6 +63,47 @@ for (const detection of ['local', 'model']) {
     assert.deepEqual(await database.prepare('SELECT source_id FROM blacklisted_sources WHERE source_id=22').first(), { source_id: 22 });
   });
 
+  test(`user: replay of a ${detection} bot decision cannot escalate after registration and failed deletion`, async () => {
+    const history = { ...message(70), from: { ...message().from, is_bot: true } };
+    telegram.send(history);
+    await dispatch({ update_id: 1, message: history });
+    const target = { ...message(), from: history.from,
+      text: detection === 'local' ? '💰💰💰💰' : botResourceLure };
+    model.probability = 1;
+    telegram.faults.set('deleteMessage', () => Response.json({ ok: false, error_code: 429 }, { status: 429 }));
+    telegram.send(target);
+    await dispatch({ update_id: 2, message: target });
+    const pending = await task();
+    assert.ok(await database.prepare('SELECT source_id FROM blacklisted_sources WHERE source_id=22').first());
+    telegram.faults.clear();
+    await dispatch({ update_id: 2, message: target });
+    assert.equal(telegram.canJoin(22), true);
+    assert.equal(telegram.has(70), true);
+    if (detection === 'model') await tick(pending.due_at);
+    assert.equal(telegram.has(81), false);
+    assert.equal(telegram.canJoin(22), true);
+    assert.equal(telegram.has(70), true);
+    assert.equal((await database.prepare('SELECT history_removed FROM recent_messages WHERE message_id=70').first()).history_removed, 0);
+  });
+
+  test(`user: an interrupted allow cannot remove a newer ${detection} source registration`, async () => {
+    const recovery = { ...message(90, 11), text: '/allow 22', entities: [{ type: 'bot_command', offset: 0, length: 6 }] };
+    telegram.faults.set('getChatMember:22', () => Response.json({ ok: false, error_code: 429 }, { status: 429 }));
+    assert.equal((await dispatch({ update_id: 10, message: recovery })).status, 503);
+    telegram.faults.clear();
+    const target = { ...message(), from: { ...message().from, is_bot: true },
+      text: detection === 'local' ? '💰💰💰💰' : botResourceLure };
+    model.probability = 1;
+    telegram.send(target);
+    await dispatch({ update_id: 11, message: target });
+    assert.ok(await database.prepare('SELECT source_id FROM blacklisted_sources WHERE source_id=22').first());
+    await dispatch({ update_id: 10, message: recovery });
+    assert.ok(await database.prepare('SELECT source_id FROM blacklisted_sources WHERE source_id=22').first());
+    const saved = await database.prepare('SELECT moderation_result, response_status FROM reports WHERE update_id=10 AND subject_id=0').first();
+    assert.equal(saved.moderation_result, 'allow requested');
+    assert.equal(saved.response_status, null);
+  });
+
   test(`user: allow fences an older ${detection} bot decision after source registration and failed deletion`, async () => {
     const target = { ...message(), from: { ...message().from, is_bot: true },
       text: detection === 'local' ? '💰💰💰💰' : botResourceLure };

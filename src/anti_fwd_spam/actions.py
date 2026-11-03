@@ -25,6 +25,7 @@ if TYPE_CHECKING:
 
     from .evidence import ReportStore, StoredReport
     from .policy import TelegramUpdate
+    from .tasks import Task
     from .telegram import Fetch
 
 ADMIN_STATUSES = frozenset({"creator", "administrator"})
@@ -120,6 +121,7 @@ class Actions:
         can_act: Callable[[], Awaitable[bool]] | None = None,
         mute: bool = True,
         update_id: int | None = None,
+        task: Task | None = None,
     ) -> AppResponse:
         """Delete one message, muting humans or registering bot sources, with administrator protection."""
         chat, message_id = message.get("chat"), message.get("message_id")
@@ -138,7 +140,7 @@ class Actions:
             return AppResponse(200, "moderation cancelled")
         if identifier is not None and user_id(message) is None:
             try:
-                await self.store.add_source(identifier, bot_id=self.bot_id, update_id=update_id)
+                await self.store.add_source(identifier, bot_id=self.bot_id, update_id=update_id, task=task)
             except EvidenceError:
                 return AppResponse(503, "source registration unavailable; retry pending")
             if can_act is not None and not await can_act():
@@ -192,6 +194,7 @@ class Actions:
     async def _allow_superseded(self, identifier: int, chat_id: int, update_id: int) -> bool:
         return (
             await self.store.later_confirmed_ban(self.bot_id, identifier, chat_id, update_id)
+            or await self.store.later_source(self.bot_id, identifier, update_id)
             or await self.store.later_mute(self.bot_id, identifier, chat_id, update_id)
             or (await self.store.newer_allow(self.bot_id, identifier, update_id, chat_id=chat_id)) is not None
         )

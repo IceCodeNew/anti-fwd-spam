@@ -373,11 +373,17 @@ class ModelTasks:
             if deletion is None:
                 return
             task = deletion
-        retry = await self._moderate(payload, fetcher, token, can_act=can_act)
+        retry = await self._moderate(payload, fetcher, token, task=task, can_act=can_act)
         await self.finish(task, "delete" if retry else "done", max(now, int(time.time())), retry=retry)
 
     async def _moderate(
-        self, payload: dict[str, object], fetcher: Fetch, token: str, *, can_act: Callable[[], Awaitable[bool]]
+        self,
+        payload: dict[str, object],
+        fetcher: Fetch,
+        token: str,
+        *,
+        task: Task,
+        can_act: Callable[[], Awaitable[bool]],
     ) -> bool:
         target = payload.get("target")
         if not isinstance(target, dict):
@@ -397,6 +403,7 @@ class ModelTasks:
                 target,
                 can_act=can_act,
                 mute=payload.get("mute") is not False,
+                task=task,
                 update_id=update_id if type(update_id) is int else None,
             )
         return response.status == HTTPStatus.SERVICE_UNAVAILABLE

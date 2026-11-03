@@ -106,6 +106,7 @@ beforeEach(async () => {
   await database.prepare('DELETE FROM blacklisted_sticker_sets').run();
   await database.prepare('DELETE FROM blacklisted_stickers').run();
   await database.prepare('DELETE FROM model_tasks').run();
+  await database.prepare('DELETE FROM source_registrations').run();
   await database.prepare('DELETE FROM blacklisted_sources').run();
   await database.prepare('INSERT INTO blacklisted_sources (source_id) VALUES (7788)').run();
 });

@@ -7,6 +7,7 @@ an import cycle between policy parsing and model classification.
 from __future__ import annotations
 
 import re
+from itertools import combinations
 
 # Profile handle extraction (not a moderation match).
 PROFILE_HANDLE_RE = re.compile(r"(?<![A-Za-z0-9_/@])@([A-Za-z0-9_]{1,32})(?![A-Za-z0-9_])")
@@ -101,7 +102,50 @@ DISABLED_GROUP_NOTICE_RE = re.compile(
 # Whole-message signatures stay out of shared contact and profile checks.
 AUTHORED_SPAM_PATTERNS = (
     DISABLED_GROUP_NOTICE_RE,
+    # Numeric /start payload plus multiple bot handles, each 5-32 ASCII characters
+    # including the bot suffix. Ordinary commands and mentions are not signatures.
+    re.compile(r"\A\s*/start\s+\d+(?:\s+@[A-Za-z0-9_]{2,29}(?i:bot)){2,}\s*\Z"),
     re.compile(r"\A承接广\*告\*戴\*發\uff0c十万精准各行业裙\s+包效果 包效果 @[A-Za-z0-9_]{5,32}\s*\Z"),
+)
+
+# Bounded non-word separators cover whitespace, zero-width characters, variation
+# selectors and emoji without allowing arbitrary words inside a resource phrase.
+_RESOURCE_SEPARATOR = r"[\W_]{0,4}"
+
+
+def _resource_phrase(*characters: str) -> str:
+    """Join literal characters or spelling alternatives with bounded separators."""
+    return _RESOURCE_SEPARATOR.join(characters)
+
+
+_RESOURCE_FREE = _resource_phrase("限", "[时時]", "免", "[费費]", "看", "禁", "[忌禁]", "[资資]", "源")
+_RESOURCE_INDEX = _resource_phrase("[万萬]", "能", "[检檢]", "索")
+_RESOURCE_USERS = _resource_phrase("千", "[万萬]", "[用拥擁]", "[户戶]")
+_RESOURCE_SEARCH = _resource_phrase("[点點]", "我", "搜", "索")
+_RESOURCE_TERMS = "|".join(
+    _resource_phrase(*term) for term in ("偷拍", "直播", "福利姬", "内射", "狂草", "资源", "資源", "內射")
+)
+# One feature per line of the observed list; repeating a line never counts twice.
+_RESOURCE_LIST_FEATURES = (
+    _resource_phrase("酒", "店", "偷", "拍"),
+    _resource_phrase("情", "[侣侶]", "[实實]", "[时時]", "直", "播"),
+    _resource_phrase("校", "花", "白", "虎"),
+    _resource_phrase("媚", "黑", "[国國]", "女"),
+    _resource_phrase("福", "利", "[姬鸡雞]") + r".{0,24}?" + _resource_phrase("免", "[费費]", "看"),
+    _resource_phrase("限", "[时時]", "免", "[费費]", "搜", "索"),
+    _resource_phrase("暴", "力", "[强強]", "[奸姦]"),
+    _RESOURCE_INDEX,
+)
+RESOURCE_LIST_RE = re.compile(
+    # Start at a feature, then require three distinct categories whose starts
+    # lie within the next 384 characters, including across line breaks.
+    r"(?s)(?=(?:" + "|".join(_RESOURCE_LIST_FEATURES) + r"))"
+    r"(?:"
+    + "|".join(
+        "".join(r"(?=.{0,384}?" + feature + r")" for feature in features)
+        for features in combinations(_RESOURCE_LIST_FEATURES, 3)
+    )
+    + r")"
 )
 
 REPEATED_SYMBOLS_RE = re.compile(r"💰(?:[^💰]*💰){3}|🔴(?:[^🔴]*🔴){3}")
@@ -124,6 +168,33 @@ SPAM_PATTERNS = (
     re.compile(r"(?:批量|源头)(?:出售|出手|直出|直发|直卖)"),
     # Income.
     re.compile(r"(?s)\A(?=.*(?:洗[米钱]|手\W*速\W*快|[来莱]))(?=.*日\W*[赚收撸入])"),
+    # Distinctive free-resource promise, including opening/closing link banners.
+    re.compile(_RESOURCE_FREE),
+    # Two phrases in either order, across lines, within a bounded window.
+    re.compile(
+        r"(?s)(?:"
+        + _RESOURCE_INDEX
+        + r".{0,128}?"
+        + _RESOURCE_USERS
+        + r"|"
+        + _RESOURCE_USERS
+        + r".{0,128}?"
+        + _RESOURCE_INDEX
+        + r")"
+    ),
+    re.compile(
+        r"(?s)(?:"
+        + _RESOURCE_SEARCH
+        + r".{0,128}?(?:"
+        + _RESOURCE_TERMS
+        + r")|(?:"
+        + _RESOURCE_TERMS
+        + r").{0,128}?"
+        + _RESOURCE_SEARCH
+        + r")"
+    ),
+    # Three distinct lines from the keyword list within one bounded block.
+    RESOURCE_LIST_RE,
     # Exact phrase.
     re.compile(r"\A只吸引对的人\Z"),
 )

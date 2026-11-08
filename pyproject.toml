@@ -7,7 +7,7 @@ dependencies = []
 
 [dependency-groups]
 dev = [
-  "ruff==0.17.3",
+  "ruff==0.17.4",
   "workers-py==1.17.9",
   "workers-runtime-sdk==1.9.5",
 ]

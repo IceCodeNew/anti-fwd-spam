@@ -79,7 +79,7 @@ class Telegram:
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict[str, object]]] = []
         self.faults: set[str] = set()
-        self.messages = {80, 81}
+        self.messages = {80, 81, 95}
         self.status = "member"
 
     async def __call__(self, url: str, *, method: str, headers: dict[str, str], body: str) -> Response:
@@ -129,7 +129,9 @@ def report_update(update_id: int = 500, reporter: int = 42) -> dict[str, object]
     }
 
 
-def source_command_update(update_id: int = 501, reporter: int = 42) -> dict[str, object]:
+def source_command_update(
+    update_id: int = 501, reporter: int = 42, target: dict[str, object] | None = None
+) -> dict[str, object]:
     return {
         "update_id": update_id,
         "message": {
@@ -139,7 +141,7 @@ def source_command_update(update_id: int = 501, reporter: int = 42) -> dict[str,
             "from": {"id": reporter, "is_bot": False, "first_name": "Member"},
             "text": "/bs",
             "entities": [{"type": "bot_command", "offset": 0, "length": 3}],
-            "reply_to_message": target_message(),
+            "reply_to_message": target if target is not None else target_message(),
         },
     }
 
@@ -154,6 +156,8 @@ class ReviewQueueTests(unittest.IsolatedAsyncioTestCase):
         self.store = ReportStore(self.database)
         self.telegram = Telegram()
         self.moderator = Moderator(CONFIG, self.telegram, self.store, "test_bot", ())
+        await self.store.remember_message(BOT_ID, -100, 80, 33, NOW)
+        await self.store.remember_message(BOT_ID, -100, 81, 33, NOW)
 
     async def dispatch(self, update: dict[str, object]) -> AppResponse:
         response = await self.moderator.process("application/json", json.dumps(update).encode())
@@ -212,38 +216,48 @@ class ReviewQueueTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((row.verdict, row.outcome), ("not_spam", "kept"))
         self.assertEqual(row.payload_json, "")
 
-    async def test_resolve_spam_deletes_only_the_target_message(self) -> None:
-        """user: Given a queued report, When the verdict is spam, Then only the target is deleted, nobody punished."""
+    async def test_resolve_spam_replays_the_listed_report_action(self) -> None:
+        """user: Given a queued report, When the verdict is spam, Then the sender is banned like a listed report."""
         await self.dispatch(report_update())
         response = await self.moderator.resolve_review(500, "spam")
         self.assertEqual(response.status, 200)
-        self.assertEqual(self.telegram.calls_named("deleteMessage"), [{"chat_id": -100, "message_id": 81}])
-        self.assertEqual(self.telegram.calls_named("banChatMember"), [])
-        self.assertEqual(self.telegram.calls_named("restrictChatMember"), [])
+        self.assertEqual(
+            self.telegram.calls_named("banChatMember"), [{"chat_id": -100, "user_id": 33, "until_date": 0}]
+        )
+        deleted = {call["message_id"] for call in self.telegram.calls_named("deleteMessage")}
+        self.assertIn(81, deleted)
+        self.assertIn(95, deleted)
+        self.assertEqual(self.telegram.calls_named("deleteMessages"), [{"chat_id": -100, "message_ids": [80, 81]}])
+        self.assertTrue(await self.store.is_blacklisted(BOT_ID, 33))
         row = (await self.queued())[0]
-        self.assertEqual((row.verdict, row.outcome), ("spam", "deleted"))
+        self.assertEqual((row.verdict, row.outcome), ("spam", "banned"))
         again = await self.moderator.resolve_review(500, "spam")
         self.assertIn("already resolved", again.body)
-        self.assertEqual(len(self.telegram.calls_named("deleteMessage")), 1)
+        self.assertEqual(len(self.telegram.calls_named("banChatMember")), 1)
 
-    async def test_resolve_spam_protects_administrators(self) -> None:
-        """user: Given a report on an administrator, When the verdict is spam, Then the message is not deleted."""
+    async def test_resolve_spam_on_an_administrator_deletes_the_target_without_a_ban(self) -> None:
+        """user: Given a report on an administrator, When the verdict is spam, Then only the target is deleted."""
         self.telegram.status = "administrator"
         await self.dispatch(report_update())
         response = await self.moderator.resolve_review(500, "spam")
         self.assertEqual(response.status, 200)
-        self.assertEqual(self.telegram.calls_named("deleteMessage"), [])
+        self.assertEqual(self.telegram.calls_named("banChatMember"), [])
+        self.assertIn(81, {call["message_id"] for call in self.telegram.calls_named("deleteMessage")})
+        self.assertFalse(await self.store.is_blacklisted(BOT_ID, 33))
         row = (await self.queued())[0]
-        self.assertEqual(row.outcome, "protected_administrator")
+        self.assertEqual(row.outcome, "deleted")
 
-    async def test_resolve_spam_accepts_an_already_absent_message(self) -> None:
-        """user: Given the target vanished first, When the verdict is spam, Then the review closes as already absent."""
+    async def test_resolve_spam_bans_the_sender_when_the_target_is_already_absent(self) -> None:
+        """user: Given the target vanished first, When the verdict is spam, Then the sender is still banned."""
         self.telegram.messages.discard(81)
         await self.dispatch(report_update())
         response = await self.moderator.resolve_review(500, "spam")
         self.assertEqual(response.status, 200)
+        self.assertEqual(
+            self.telegram.calls_named("banChatMember"), [{"chat_id": -100, "user_id": 33, "until_date": 0}]
+        )
         row = (await self.queued())[0]
-        self.assertEqual(row.outcome, "already_absent")
+        self.assertEqual(row.outcome, "banned")
 
     async def test_resolve_spam_retries_after_a_temporary_failure(self) -> None:
         """user: Given a temporary delete failure, When resolving, Then the review stays pending for a retry."""
@@ -256,6 +270,8 @@ class ReviewQueueTests(unittest.IsolatedAsyncioTestCase):
         response = await self.moderator.resolve_review(500, "spam")
         self.assertEqual(response.status, 200)
         self.assertNotIn(81, self.telegram.messages)
+        self.assertEqual(len(self.telegram.calls_named("banChatMember")), 1)
+        self.assertTrue(await self.store.is_blacklisted(BOT_ID, 33))
 
     async def test_resolve_spam_is_superseded_by_a_newer_allow(self) -> None:
         """user: Given a newer /allow for the sender, When the verdict is spam, Then the deletion is fenced off."""
@@ -266,8 +282,43 @@ class ReviewQueueTests(unittest.IsolatedAsyncioTestCase):
         response = await self.moderator.resolve_review(500, "spam")
         self.assertEqual(response.status, 200)
         self.assertEqual(self.telegram.calls_named("deleteMessage"), [])
+        self.assertEqual(self.telegram.calls_named("banChatMember"), [])
         row = (await self.queued())[0]
         self.assertEqual(row.outcome, "superseded_by_allow")
+
+    async def test_resolve_spam_registers_a_bare_bs_source(self) -> None:
+        """user: Given an unlisted bare /bs on a bot message, When spam, Then its source is registered and banned."""
+        bot_target: dict[str, object] = {
+            "message_id": 81,
+            "date": NOW,
+            "chat": {"id": -100, "type": "supergroup"},
+            "from": {"id": 22, "is_bot": True, "first_name": "Source Bot"},
+            "text": TARGET_TEXT,
+        }
+        await self.dispatch(source_command_update(target=bot_target))
+        rows = await self.queued()
+        self.assertEqual(json.loads(rows[0].payload_json)["source_id"], 22)
+        response = await self.moderator.resolve_review(501, "spam")
+        self.assertEqual(response.status, 200)
+        self.assertEqual(await self.store.matching_sources(frozenset({22})), (22,))
+        self.assertIn({"chat_id": -100, "user_id": 22, "until_date": 0}, self.telegram.calls_named("banChatMember"))
+        row = (await self.queued())[0]
+        self.assertEqual(row.outcome, "banned")
+
+    async def test_resolve_spam_registers_a_bare_bs_sticker_set(self) -> None:
+        """user: Given an unlisted bare /bs on a sticker, When spam, Then its set is registered like a listed /bs."""
+        sticker_target: dict[str, object] = {
+            "message_id": 81,
+            "date": NOW,
+            "chat": {"id": -100, "type": "supergroup"},
+            "from": {"id": 33, "is_bot": False, "first_name": "Spammer"},
+            "sticker": {"set_name": "Spam_Set", "file_unique_id": "stk1", "emoji": "x"},
+        }
+        await self.dispatch(source_command_update(target=sticker_target))
+        response = await self.moderator.resolve_review(501, "spam")
+        self.assertEqual(response.status, 200)
+        self.assertTrue(await self.store.is_sticker_blacklisted(BOT_ID, "spam_set", whole_set=True))
+        self.assertIn({"chat_id": -100, "user_id": 33, "until_date": 0}, self.telegram.calls_named("banChatMember"))
 
     async def test_resolve_rejects_unknown_reviews_and_verdicts(self) -> None:
         """user: Given an unknown review or verdict, When resolving, Then the request is rejected without action."""

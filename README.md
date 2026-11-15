@@ -19,7 +19,7 @@ Use a **supergroup** for the complete feature set. Basic groups can delete messa
 | Situation | Result |
 | --- | --- |
 | An authorized reporter replies to a spam message and mentions the bot | Ban the reported sender and clean eligible indexed history. |
-| An unlisted member submits a valid reply report | Save evidence and queue it for external review, without automatic punishment. A reviewer's spam verdict deletes only that message. |
+| An unlisted member submits a valid reply report | Save evidence and queue it for external review, without automatic punishment. A reviewer's spam verdict applies the same ban and cleanup as a trusted report. |
 | A message comes from a registered source bot | Delete the current message; moderate the source account separately. |
 | A new message matches a local rule or registered sticker | Delete the current message; mute human senders when supported. Bot senders receive deletion only. |
 | The model classifies a message as spam | Delete the current message; mute human senders when supported. Bot senders receive deletion only. Referenced authors and guest callers are not punished. |

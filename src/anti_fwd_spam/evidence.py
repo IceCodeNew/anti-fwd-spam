@@ -587,6 +587,18 @@ class ReportStore:
             )
         return _pending_review(row) if row is not None else None
 
+    async def report_json(self, bot_id: int, update_id: int) -> str | None:
+        """Read one stored report update so a review verdict can replay it as a listed report."""
+        with storage_errors():
+            row = await (
+                self.database.prepare(
+                    "SELECT raw_update FROM reports WHERE bot_id = ? AND update_id = ? AND subject_id = 0",
+                )
+                .bind(bot_id, update_id)
+                .first()
+            )
+        return str(row.raw_update) if row is not None else None
+
     async def resolve_review(self, bot_id: int, update_id: int, *, verdict: str, outcome: str, now: int) -> bool:
         """Record the first verdict for a queued review and clear its stored target payload."""
         with storage_errors():

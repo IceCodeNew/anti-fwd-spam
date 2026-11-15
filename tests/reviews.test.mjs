@@ -56,9 +56,10 @@ test('user: Given a review secret, When an unlisted member reports spam, Then a 
   const resolved = await resolve(800, 'spam');
   assert.equal(resolved.status, 200);
   assert.equal(telegram.has(81), false);
-  assert.equal(telegram.canSend(33), true);
+  assert.equal(telegram.has(95), false);
+  assert.equal(telegram.canJoin(33), false);
   const row = await database.prepare('SELECT verdict, outcome FROM pending_reviews WHERE update_id = 800').first();
-  assert.deepEqual({ verdict: row.verdict, outcome: row.outcome }, { verdict: 'spam', outcome: 'deleted' });
+  assert.deepEqual({ verdict: row.verdict, outcome: row.outcome }, { verdict: 'spam', outcome: 'banned' });
   const { reviews: remaining } = await (await pending()).json();
   assert.equal(remaining.length, 0);
 });

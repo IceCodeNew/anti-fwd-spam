@@ -56,6 +56,16 @@ TELEGRAM_WEBHOOK_SECRET="$(mise exec -- python -c 'import secrets; print(secrets
 printf '%s' "$TELEGRAM_WEBHOOK_SECRET" | mise exec -- uv run pywrangler secret put TELEGRAM_WEBHOOK_SECRET
 ```
 
+## Optional external review of unlisted reports
+
+Reports from identities outside `REPORTER_IDS` are recorded and queued, but nobody is notified inside Telegram. To let an external reviewer (a person or an automation) work that queue, set one more Worker secret with a long random value, generated the same way as the webhook secret, and share it only with that reviewer:
+
+```bash
+mise exec -- uv run pywrangler secret put REVIEW_SECRET
+```
+
+With `REVIEW_SECRET` set, the Worker serves `GET /reviews/pending` and `POST /reviews/resolve` on the same Worker URL, authenticated by an `X-Review-Secret` header carrying that value. Without the secret, both paths return 404 and the queue is only visible in D1. The secret grants exactly two capabilities: reading queued unlisted reports and resolving them (a spam verdict deletes only the reported message). It cannot send messages, ban accounts, or read other stored state. Rotate it like any other credential if a reviewer loses it. See [Operations](operations.md#external-review-of-unlisted-reports) for the review workflow.
+
 ## Optional model provider
 
 Semantic classification is optional and uses GPT-6 Luna Decisions. Review provider privacy and pricing terms before saving a provider key as a Worker secret. A supported key enables classification.

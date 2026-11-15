@@ -8,6 +8,30 @@ Use an identity in `REPORTER_IDS` to reply to a spam message and mention the bot
 
 Use `/bs @source_bot` to register a source bot, including a guest bot that sends messages directly. A named command registers the source only, even when sent as a reply. To register and immediately report a direct bot sender, reply to its message with bare `/bs`; no username lookup is needed. Bare `/bs` on an inline message still handles both its sender and inline source. Use the complete `https://t.me/addstickers/<set_name>` URL with `/bs` to register a sticker set. See [the behavior contract](behavior.md) for authorization and retry outcomes.
 
+## External review of unlisted reports
+
+Unlisted reports do not notify anyone inside Telegram. When `REVIEW_SECRET` is configured (see [setup](setup.md#optional-external-review-of-unlisted-reports)), a reviewer works the queue over HTTPS instead:
+
+```bash
+curl --silent --show-error \
+  -H "X-Review-Secret: $REVIEW_SECRET" \
+  "$WORKER_URL/reviews/pending?limit=20"
+```
+
+Each entry shows the report's `update_id`, the target's chat and message IDs, the sender and reporter IDs, and the reported message's bounded content. Judge the content by the same standard as model classification: the current sender promoting an offer or recruiting is spam; warnings, reports, and discussion about an offer are not.
+
+Record the verdict with the same `update_id`:
+
+```bash
+curl --silent --show-error -X POST \
+  -H "X-Review-Secret: $REVIEW_SECRET" \
+  -H 'content-type: application/json' \
+  -d '{"update_id": 123456, "verdict": "spam"}' \
+  "$WORKER_URL/reviews/resolve"
+```
+
+Use `"spam"` or `"not_spam"`. A spam verdict deletes only that message — it does not mute, ban, or blacklist anyone — and administrator or anonymous-group messages are protected even here. Work the queue promptly: entries expire with report evidence (three days), and an expired report can no longer be acted on. A `503` response means the deletion hit a temporary failure and the entry is still pending; retry the same verdict later. Entries can also be inspected directly in D1 (`pending_reviews` table), but resolve them through the endpoint so the verdict, outcome, and payload cleanup stay consistent.
+
 ## False positives and restrictions
 
 Ordinary message filtering deletes the triggering message and can permanently mute a human sender without adding an account blacklist entry. Join-profile filtering instead permanently bans the matched new member and deletes the join notice, recording the confirmed account ban. Administrators and group owners are protected. Deleted messages cannot be restored.
@@ -67,6 +91,6 @@ curl --silent --show-error --fail-with-body \
 
 The bot sends bounded text context and selected profile data to a configured decision-model provider only when classification is enabled. It does not download or inspect images, video, or audio. Provider image support does not change this boundary. Review provider terms before enabling classification.
 
-D1 keeps reports, temporary processing records, and moderation progress for a limited retention period. The recent-message index stores identifiers and timestamps rather than message text; pending model tasks may temporarily retain submitted content until classification finishes. Source, account, and sticker blacklists remain until removed. Member-activity counters persist after their observations expire, capped at the maturity threshold; changing the message index window changes how quickly that threshold can be earned. Exact retention constants are maintained in `src/anti_fwd_spam/evidence.py` and cleanup is performed by the scheduled Worker trigger.
+D1 keeps reports, temporary processing records, and moderation progress for a limited retention period. The recent-message index stores identifiers and timestamps rather than message text; pending model tasks may temporarily retain submitted content until classification finishes, and pending review entries retain a reported message's bounded content until the review resolves or expires. Source, account, and sticker blacklists remain until removed. Member-activity counters persist after their observations expire, capped at the maturity threshold; changing the message index window changes how quickly that threshold can be earned. Exact retention constants are maintained in `src/anti_fwd_spam/evidence.py` and cleanup is performed by the scheduled Worker trigger.
 
 Keep tokens, secrets, member IDs, report JSON, and database exports out of public logs and repository files.

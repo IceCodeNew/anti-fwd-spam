@@ -19,7 +19,7 @@ Use a **supergroup** for the complete feature set. Basic groups can delete messa
 | Situation | Result |
 | --- | --- |
 | An authorized reporter replies to a spam message and mentions the bot | Ban the reported sender and clean eligible indexed history. |
-| An unlisted member submits a valid reply report | Save evidence without automatic punishment. |
+| An unlisted member submits a valid reply report | Save evidence and queue it for external review, without automatic punishment. A reviewer's spam verdict deletes only that message. |
 | A message comes from a registered source bot | Delete the current message; moderate the source account separately. |
 | A new message matches a local rule or registered sticker | Delete the current message; mute human senders when supported. Bot senders receive deletion only. |
 | The model classifies a message as spam | Delete the current message; mute human senders when supported. Bot senders receive deletion only. Referenced authors and guest callers are not punished. |
@@ -40,6 +40,8 @@ The complete copy-pasteable setup is in [Deployment setup](docs/setup.md). Start
 ## Everyday use
 
 - **Report spam:** reply to the target message and mention the moderation bot from a trusted reporting identity.
+
+- **Review unlisted reports:** with `REVIEW_SECRET` configured, an external reviewer can fetch queued unlisted reports and resolve them over HTTPS. See [Operations](docs/operations.md#external-review-of-unlisted-reports).
 - **Register a source:** send `/bs @source_bot` from a trusted identity. Only authorized `/bs` commands add sources to the global blacklist, which also covers direct and guest bot messages.
 - **Block and report a bot source:** reply with bare `/bs` to a direct bot message, or to an inline message when both its sender and source should be handled.
 - **Register a sticker set:** send its complete `https://t.me/addstickers/<set_name>` URL with `/bs`.

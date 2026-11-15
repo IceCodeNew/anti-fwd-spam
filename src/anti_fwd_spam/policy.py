@@ -10,6 +10,7 @@ from .constants import (
     GROUP_CHAT_TYPES,
     MAX_CONFIG_LENGTH,
     MAX_ID_ENTRIES,
+    MAX_SECRET_LENGTH,
     MAX_TELEGRAM_ID,
     SUPPORTED_CHAT_TYPES,
     SUPPORTED_FORWARD_ORIGINS,
@@ -133,6 +134,7 @@ class Config:
     bot_token: str
     webhook_secret: str
     reporter_ids: frozenset[int]
+    review_secret: str | None = None
 
     @classmethod
     def from_values(
@@ -141,6 +143,7 @@ class Config:
         bot_token: object,
         webhook_secret: object,
         reporter_ids: object = "",
+        review_secret: object = "",
     ) -> Config:
         """Validate raw environment values and construct a configuration."""
         token = _required_string("BOT_TOKEN", bot_token, maximum=128)
@@ -162,7 +165,7 @@ class Config:
             message = "BOT_TOKEN contains an invalid bot ID"
             raise ConfigError(message) from error
 
-        secret = _required_string("TELEGRAM_WEBHOOK_SECRET", webhook_secret, maximum=256)
+        secret = _required_string("TELEGRAM_WEBHOOK_SECRET", webhook_secret, maximum=MAX_SECRET_LENGTH)
         if not all(character.isascii() and (character.isalnum() or character in "_-") for character in secret):
             message = "TELEGRAM_WEBHOOK_SECRET contains unsupported characters"
             raise ConfigError(message)
@@ -171,6 +174,7 @@ class Config:
             token,
             secret,
             _parse_reporter_ids(reporter_ids),
+            _parse_review_secret(review_secret),
         )
 
 
@@ -288,6 +292,19 @@ def _validate_join(message: dict[str, object], chat_type: str, update_id: int | 
 def _required_string(name: str, value: object, *, maximum: int) -> str:
     if not isinstance(value, str) or not value or len(value) > maximum:
         message = f"{name} must contain 1 to {maximum} characters"
+        raise ConfigError(message)
+    return value
+
+
+def _parse_review_secret(value: object) -> str | None:
+    """Return the optional review-endpoint secret, or None when the endpoints stay disabled."""
+    if value is None or value == "":
+        return None
+    if not isinstance(value, str) or len(value) > MAX_SECRET_LENGTH:
+        message = f"REVIEW_SECRET must be a string no longer than {MAX_SECRET_LENGTH} characters"
+        raise ConfigError(message)
+    if not all(character.isascii() and (character.isalnum() or character in "_-") for character in value):
+        message = "REVIEW_SECRET contains unsupported characters"
         raise ConfigError(message)
     return value
 

@@ -8,9 +8,9 @@ from dataclasses import replace
 from http import HTTPStatus
 from typing import TYPE_CHECKING
 
-from .actions import Actions, AppResponse, BanTarget, user_id
+from .actions import ADMIN_STATUSES, Actions, AppResponse, BanTarget, user_id
 from .constants import MAX_TELEGRAM_ID, MODEL_CONTENT_FIELDS
-from .evidence import MESSAGE_WINDOW_SECONDS, EvidenceError, ReportStore
+from .evidence import MESSAGE_WINDOW_SECONDS, EvidenceError, PendingReview, ReportStore
 from .model import join_model_input, model_input, profile_ids
 from .policy import (
     matches_spam_pattern,
@@ -92,6 +92,14 @@ def reported_target(update: TelegramUpdate) -> BanTarget | None:
         target_id,
         username=username if isinstance(username, str) else None,
     )
+
+
+def reporter_id(update: TelegramUpdate) -> int | None:
+    """Identify a report's sender: its sender chat when present, otherwise its genuine user."""
+    sender_chat = update.message.get("sender_chat")
+    if isinstance(sender_chat, dict) and type(sender_chat.get("id")) is int:
+        return sender_chat["id"]
+    return user_id(update.message, include_bots=True)
 
 
 def recent(sent_at: int, now: int) -> bool:
@@ -318,12 +326,120 @@ class Moderator:
         return await self.record_report(update)
 
     async def record_report(self, update: TelegramUpdate) -> AppResponse:
-        """Save an unlisted identity's valid reply without taking moderation action."""
-        if update.update_id is None or reported_target(update) is None:
+        """Save an unlisted identity's valid reply and queue it for external review.
+
+        No moderation action is taken here. The queue entry carries the reported
+        message's bounded model input so a reviewer can judge it before its
+        evidence expires; a spam verdict there deletes only that message.
+        """
+        target_info = reported_target(update)
+        target = reply_target(update.message)
+        if update.update_id is None or target_info is None or target_info.message_id is None or target is None:
             return AppResponse(400, "invalid report target")
         key = (self.actions.bot_id, update.update_id)
-        await self.store.save(key, update.raw_json, int(time.time()), 0)
+        now = int(time.time())
+        await self.store.save(key, update.raw_json, now, 0)
+        sender_chat = target.get("sender_chat")
+        payload: dict[str, object] = {
+            "reporter_id": reporter_id(update),
+            "target": {
+                "chat_id": update.chat_id,
+                "message_id": target_info.message_id,
+                "sender_id": target_info.user_id,
+                "sender_chat_id": sender_chat.get("id") if isinstance(sender_chat, dict) else None,
+                "state": model_input(target),
+            },
+        }
+        await self.store.enqueue_review(
+            self.actions.bot_id,
+            update.update_id,
+            chat_id=update.chat_id,
+            target_message_id=target_info.message_id,
+            target_sender_id=target_info.user_id,
+            reporter_id=reporter_id(update),
+            payload_json=json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+            now=now,
+        )
         return AppResponse(200, "report recorded")
+
+    async def list_pending_reviews(self, limit: int) -> list[dict[str, object]]:
+        """Return queued unlisted reports with their bounded target payloads for an external reviewer."""
+        reviews = await self.store.pending_reviews(self.actions.bot_id, int(time.time()), limit)
+        result: list[dict[str, object]] = []
+        for review in reviews:
+            try:
+                payload = json.loads(review.payload_json)
+            except json.JSONDecodeError:
+                payload = {}
+            result.append(
+                {
+                    "update_id": review.update_id,
+                    "chat_id": review.chat_id,
+                    "target_message_id": review.target_message_id,
+                    "target_sender_id": review.target_sender_id,
+                    "reporter_id": review.reporter_id,
+                    "created_at": review.created_at,
+                    "payload": payload if isinstance(payload, dict) else {},
+                },
+            )
+        return result
+
+    async def resolve_review(self, update_id: int, verdict: str) -> AppResponse:
+        """Apply an external reviewer's verdict to one queued unlisted report.
+
+        A spam verdict deletes only the reported message: it never mutes, bans or
+        blacklists the sender. A not-spam verdict simply closes the review.
+        """
+        if verdict not in {"spam", "not_spam"}:
+            return AppResponse(400, "invalid verdict")
+        try:
+            review = await self.store.review(self.actions.bot_id, update_id)
+            if review is None:
+                return AppResponse(404, "review not found")
+            if review.resolved_at is not None:
+                return AppResponse(200, "review already resolved")
+            outcome = "kept" if verdict == "not_spam" else await self._review_delete_outcome(review)
+            if outcome is None:
+                return AppResponse(503, "review deletion pending; retry")
+            await self.store.resolve_review(
+                self.actions.bot_id, update_id, verdict=verdict, outcome=outcome, now=int(time.time())
+            )
+            return AppResponse(200, f"review resolved; {outcome}")
+        except EvidenceError:
+            return AppResponse(503, "review storage unavailable; retry pending")
+
+    async def _review_delete_outcome(  # noqa: PLR0911 - Each return is a distinct review resolution outcome.
+        self, review: PendingReview
+    ) -> str | None:
+        """Delete a spam-verdict target once, honoring administrator protection and newer allows.
+
+        Return None when a temporary failure should leave the review pending.
+        """
+        try:
+            payload = json.loads(review.payload_json)
+        except json.JSONDecodeError:
+            payload = {}
+        target = payload.get("target") if isinstance(payload, dict) else None
+        sender_chat_id = target.get("sender_chat_id") if isinstance(target, dict) else None
+        if sender_chat_id == review.chat_id:
+            return "protected_administrator"
+        sender_id = review.target_sender_id
+        if sender_id is not None:
+            try:
+                if await self.actions.member_status(review.chat_id, sender_id) in ADMIN_STATUSES:
+                    return "protected_administrator"
+            except TelegramError as error:
+                return None if error.retryable else "authority_check_failed"
+            if (await self.store.newer_allow(self.actions.bot_id, sender_id, review.update_id)) is not None:
+                return "superseded_by_allow"
+        outcome = await delete_message(self.fetcher, self.config.bot_token, review.chat_id, review.target_message_id)
+        if outcome is DeleteOutcome.RETRYABLE_FAILURE:
+            return None
+        if outcome is DeleteOutcome.DELETED:
+            return "deleted"
+        if outcome is DeleteOutcome.ALREADY_ABSENT:
+            return "already_absent"
+        return "delete_rejected"
 
     async def _finish_command(self, update: TelegramUpdate, reply: str, response: AppResponse) -> AppResponse:
         """Acknowledge the result and retain commands that require manual inspection."""

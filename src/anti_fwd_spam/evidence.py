@@ -49,6 +49,20 @@ class StoredReport:
     ban_claimed: bool
 
 
+@dataclass(frozen=True, slots=True)
+class PendingReview:
+    """One unlisted report awaiting an external reviewer's verdict."""
+
+    update_id: int
+    chat_id: int
+    target_message_id: int
+    target_sender_id: int | None
+    reporter_id: int | None
+    payload_json: str
+    created_at: int
+    resolved_at: int | None = None
+
+
 class ReportStore:
     """Use the Worker D1 binding without exposing report contents in logs."""
 
@@ -509,6 +523,83 @@ class ReportStore:
                 bool(row.ban_claimed),
             )
 
+    async def enqueue_review(  # noqa: PLR0913 - Queue identity, target and payload are independent inputs.
+        self,
+        bot_id: int,
+        update_id: int,
+        *,
+        chat_id: int,
+        target_message_id: int,
+        target_sender_id: int | None,
+        reporter_id: int | None,
+        payload_json: str,
+        now: int,
+    ) -> None:
+        """Queue one unlisted report for external review; redelivery cannot duplicate or refresh it."""
+        with storage_errors():
+            await (
+                self.database.prepare(
+                    "INSERT INTO pending_reviews "
+                    "(bot_id, update_id, chat_id, target_message_id, target_sender_id, reporter_id, "
+                    "payload_json, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                    "ON CONFLICT(bot_id, update_id) DO NOTHING",
+                )
+                .bind(
+                    bot_id,
+                    update_id,
+                    chat_id,
+                    target_message_id,
+                    target_sender_id,
+                    reporter_id,
+                    payload_json,
+                    now,
+                    now + RETENTION_SECONDS,
+                )
+                .run()
+            )
+
+    async def pending_reviews(self, bot_id: int, now: int, limit: int) -> list[PendingReview]:
+        """List unresolved, unexpired reviews oldest first for an external reviewer."""
+        with storage_errors():
+            rows = await (
+                self.database.prepare(
+                    "SELECT update_id, chat_id, target_message_id, target_sender_id, reporter_id, "
+                    "payload_json, created_at, resolved_at FROM pending_reviews "
+                    "WHERE bot_id = ? AND resolved_at IS NULL AND expires_at > ? "
+                    "ORDER BY created_at, update_id LIMIT ?",
+                )
+                .bind(bot_id, now, limit)
+                .all()
+            )
+        return [_pending_review(row) for row in rows.results]
+
+    async def review(self, bot_id: int, update_id: int) -> PendingReview | None:
+        """Read one queued review, including its resolution state, by its report update ID."""
+        with storage_errors():
+            row = await (
+                self.database.prepare(
+                    "SELECT update_id, chat_id, target_message_id, target_sender_id, reporter_id, "
+                    "payload_json, created_at, resolved_at FROM pending_reviews "
+                    "WHERE bot_id = ? AND update_id = ?",
+                )
+                .bind(bot_id, update_id)
+                .first()
+            )
+        return _pending_review(row) if row is not None else None
+
+    async def resolve_review(self, bot_id: int, update_id: int, *, verdict: str, outcome: str, now: int) -> bool:
+        """Record the first verdict for a queued review and clear its stored target payload."""
+        with storage_errors():
+            row = await (
+                self.database.prepare(
+                    "UPDATE pending_reviews SET resolved_at = ?, verdict = ?, outcome = ?, payload_json = '' "
+                    "WHERE bot_id = ? AND update_id = ? AND resolved_at IS NULL RETURNING bot_id",
+                )
+                .bind(now, verdict, outcome, bot_id, update_id)
+                .first()
+            )
+        return row is not None
+
     async def claim_ban(self, bot_id: int, update_id: int, subject_id: int) -> bool:
         """Allow only one delivery to issue a destructive Telegram request."""
         with storage_errors():
@@ -597,3 +688,25 @@ class ReportStore:
             .bind(now)
             .run()
         )
+        await (
+            self.database.prepare(
+                "DELETE FROM pending_reviews WHERE rowid IN "
+                "(SELECT rowid FROM pending_reviews WHERE expires_at <= ? ORDER BY expires_at LIMIT 1000)",
+            )
+            .bind(now)
+            .run()
+        )
+
+
+def _pending_review(row: Any) -> PendingReview:  # noqa: ANN401 - D1 rows are untyped JavaScript proxies.
+    """Convert one pending_reviews row into its typed form."""
+    return PendingReview(
+        update_id=int(row.update_id),
+        chat_id=int(row.chat_id),
+        target_message_id=int(row.target_message_id),
+        target_sender_id=int(row.target_sender_id) if row.target_sender_id is not None else None,
+        reporter_id=int(row.reporter_id) if row.reporter_id is not None else None,
+        payload_json=str(row.payload_json),
+        created_at=int(row.created_at),
+        resolved_at=int(row.resolved_at) if row.resolved_at is not None else None,
+    )

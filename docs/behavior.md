@@ -10,8 +10,8 @@ A reporting identity is either a configured user ID or a configured sender-chat 
 
 - A listed `/bs` command is handled before automatic filtering. `/bs @username` registers the named source without immediately moderating a reply target. A bare `/bs` reply registers the target's inline bot, or its actual bot sender when there is no inline bot; registration must succeed before the target and registered source receive Action 2. The guest caller is not a source or moderation target. Sticker registration and target validation still apply.
 - A listed `/allow @username` or `/allow <account ID>` in a supergroup removes the selected account from this bot's account blacklist and the shared source blacklist and restores its access there. A kicked account is unbanned; a restricted member's personal restrictions are lifted without changing group-wide defaults. Telegram restoration confirmation precedes blacklist removal. Ordinary members, administrators, other groups' bans/restrictions, other bots' account entries, and sticker lists are unchanged. Recorded usernames are checked against the account's current profile before first resolution, then stay pinned on retry; unresolved, renamed or ambiguous identities require the numeric ID. `/allow` uses the same configured reporting identities as `/bs`, not administrator status alone; edited, private-chat and basic-group forms do not change state.
-- An unlisted bare `/bs` reply to a valid group target records evidence but does not register a source or punish an account.
-- An unlisted reply that mentions the bot records evidence and ends routing.
+- An unlisted bare `/bs` reply to a valid group target records evidence and queues the report for external review, but does not register a source or punish an account.
+- An unlisted reply that mentions the bot records evidence, queues the report for external review, and ends routing.
 - An explicit unlisted `/bs` argument continues through ordinary filtering instead of registering a source.
 - A report target must be a valid message in the same group; a forum topic's creation message is not a target.
 
@@ -45,7 +45,7 @@ flowchart TD
     F -->|No blacklist match| I[Index eligible message]
     I --> J{Reply report?}
     J -->|Trusted| K[Action 2 on reported sender]
-    J -->|Unlisted| L[Save evidence only]
+    J -->|Unlisted| L[Save evidence and queue for review]
     J -->|No report| R{Actual bot sender?}
     R -->|Yes| O[Existing local rules on current message]
     R -->|No| M{Ten naturally matured observations?}
@@ -81,7 +81,7 @@ flowchart LR
     B -->|Trusted reply report| E[Reported account A: Action 2]
     B -->|Local rule, sticker, or model decision on a message| F[Current sender A: Action 1]
     B -->|Joined account match| M[Joined member: Action 2 and notice removal]
-    G[Unlisted report] --> H[Evidence only]
+    G[Unlisted report] --> H[Evidence and review queue]
     C --> I{Protected administrator or owner?}
     F --> I
     I -->|Yes| J[Keep message/account protected]
@@ -185,6 +185,14 @@ In message classification, direct attempts by the current sender to override the
 
 The inclusive score threshold is the `SPAM_THRESHOLD` value maintained in `src/anti_fwd_spam/constants.py`. A message score at or above it uses Action 1; the separate joining-account scope uses the join outcome above. A lower score, invalid answer, missing provider, or failed request leaves the message visible.
 
+## External review of unlisted reports
+
+Every valid unlisted report — a reply that mentions the bot, or a bare `/bs` reply — is also queued for external review. The queue entry carries the reporter's identity, the reported message's identity and sender, and the reported message's bounded model input (the same shaping used for classification, without media identifiers). Redelivery of the same report does not duplicate or refresh its entry. Queue entries expire with report evidence.
+
+The queue is reachable only through two Worker endpoints, and only when the operator has configured `REVIEW_SECRET`: `GET /reviews/pending` lists unresolved, unexpired entries oldest first, and `POST /reviews/resolve` records a verdict for one entry by its report update ID. Both require the secret in an `X-Review-Secret` header; without a configured secret both paths return 404. The reviewer is trusted for exactly one decision per report: whether the reported message is spam.
+
+A `not_spam` verdict closes the review and leaves the message unchanged. A `spam` verdict deletes only the reported message. It never mutes or bans the sender, registers a source, adds a blacklist entry, or cleans history. Group owners, administrators, and messages sent as the group's anonymous identity remain protected: a spam verdict on their message closes as protected without deletion. A newer `/allow` for the sender supersedes a pending spam deletion. A target that is already absent closes the review as already absent; a temporary Telegram failure leaves the review pending so the verdict can be retried, while a permanent rejection closes it as rejected. The first verdict recorded wins; later verdicts for the same report change nothing. Resolving a review clears its stored target payload; the verdict and outcome remain until expiry.
+
 ## Edits and retries
 
 An edit fences older model work for that message: classification and deletion require the task's current generation and unexpired lease. An edited message still passes source and report routing. An edited low-history human message without a reference can use immediate local rules but does not start fresh profile classification; an eligible referenced edit or established member's edit starts fresh model classification. Bot edits use local rules first and start fresh model classification when unmatched, with or without a reference. Durable classification and deletion retries retain the actual bot identity and cannot mute a guest caller or turn the bot into a human moderation target. Edits do not rerun automatic account-blacklist checks.
@@ -195,4 +203,4 @@ Within retained evidence, `/allow` fences older source registration and moderati
 
 ## Stored state and privacy
 
-The bot stores report evidence, moderation progress, bounded pending model input, message identifiers, and long-lived source/account/sticker blacklists in D1. Authorized source commands retain their pinned source ID in report evidence; evidence expiry does not remove the long-lived source entry. Recent-message indexes contain identifiers, timestamps and activity eligibility rather than message text. Persistent member-activity rows contain only scoped identifiers and a capped mature-message count. Pending model content is cleared after classification finishes. Retention and cleanup are implementation-owned; operators should keep database exports and member information private.
+The bot stores report evidence, moderation progress, bounded pending model input, pending review entries for unlisted reports, message identifiers, and long-lived source/account/sticker blacklists in D1. Authorized source commands retain their pinned source ID in report evidence; evidence expiry does not remove the long-lived source entry. Recent-message indexes contain identifiers, timestamps and activity eligibility rather than message text. Persistent member-activity rows contain only scoped identifiers and a capped mature-message count. Pending model content is cleared after classification finishes. Retention and cleanup are implementation-owned; operators should keep database exports and member information private.

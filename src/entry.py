@@ -23,7 +23,7 @@ MAX_REVIEW_BODY_BYTES = 4_096
 MAX_REVIEW_LIMIT = 100
 DEFAULT_REVIEW_LIMIT = 20
 SCHEDULED_TASKS_PER_RUN = 3
-REVIEW_PATHS = frozenset({"/reviews/pending", "/reviews/resolve"})
+REVIEW_PATHS = frozenset({"/reviews/pending", "/reviews/resolve", "/reviews/samples"})
 
 
 def _environment_string(env: object, name: str, *, default: str | None = None) -> str | None:
@@ -93,14 +93,8 @@ class Default(WorkerEntrypoint):
             bot_username,
             self._get_models(),
         )
-        if path == "/reviews/pending":
-            if request.method is not HTTPMethod.GET:
-                return _json_response(405, {"error": "method not allowed"})
-            try:
-                reviews = await moderator.list_pending_reviews(_review_limit(request.url))
-            except EvidenceError:
-                return _json_response(503, {"error": "review storage unavailable"})
-            return _json_response(200, {"reviews": reviews})
+        if path in {"/reviews/pending", "/reviews/samples"}:
+            return await _review_list(request, moderator, path)
         if request.method is not HTTPMethod.POST:
             return _json_response(405, {"error": "method not allowed"})
         try:
@@ -195,6 +189,18 @@ async def _read_bounded_body(request: Request, maximum: int) -> bytes:
             chunks.append(chunk)
     finally:
         reader.releaseLock()
+
+
+async def _review_list(request: Request, moderator: Moderator, path: str) -> Response:
+    """Serve one read-only review list: queued unlisted reports, or acted listed samples."""
+    if request.method is not HTTPMethod.GET:
+        return _json_response(405, {"error": "method not allowed"})
+    try:
+        if path == "/reviews/pending":
+            return _json_response(200, {"reviews": await moderator.list_pending_reviews(_review_limit(request.url))})
+        return _json_response(200, {"samples": await moderator.list_review_samples(_review_limit(request.url))})
+    except EvidenceError:
+        return _json_response(503, {"error": "review storage unavailable"})
 
 
 def _review_limit(url: str) -> int:

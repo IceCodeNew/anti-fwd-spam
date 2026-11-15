@@ -21,6 +21,21 @@ async function pending(headers = reviewHeaders) {
   return runtime.dispatchFetch('https://worker.test/reviews/pending', { headers });
 }
 
+async function samples(headers = reviewHeaders) {
+  return runtime.dispatchFetch('https://worker.test/reviews/samples', { headers });
+}
+
+function listedReport(updateId = 802) {
+  const target = { ...message(81, 33), text: 'An offer the filters missed' };
+  return {
+    update_id: updateId,
+    message: {
+      ...message(95, 11), reply_to_message: target, text: '@test_gate_bot spam',
+      entities: [{ type: 'mention', offset: 0, length: 14 }],
+    },
+  };
+}
+
 async function resolve(updateId, verdict) {
   return runtime.dispatchFetch('https://worker.test/reviews/resolve', {
     method: 'POST',
@@ -33,6 +48,7 @@ test('user: Given no review secret, When the review endpoints are called, Then t
   await setBindings({ REVIEW_SECRET: undefined });
   assert.equal((await pending()).status, 404);
   assert.equal((await resolve(800, 'spam')).status, 404);
+  assert.equal((await samples()).status, 404);
 });
 
 test('user: Given a review secret, When an unlisted member reports spam, Then a reviewer can fetch and resolve it', async () => {
@@ -74,4 +90,26 @@ test('user: Given a queued report, When the verdict is not spam, Then the messag
   assert.equal(telegram.has(81), true);
   const row = await database.prepare('SELECT verdict, outcome FROM pending_reviews WHERE update_id = 801').first();
   assert.deepEqual({ verdict: row.verdict, outcome: row.outcome }, { verdict: 'not_spam', outcome: 'kept' });
+});
+
+test('user: Given a listed reporter reports spam, When it is acted on, Then it is exposed as a sample', async () => {
+  await setBindings({ REVIEW_SECRET: reviewSecret });
+  assert.equal((await samples({ 'x-review-secret': 'wrong' })).status, 401);
+  const update = listedReport();
+  telegram.send(update.message.reply_to_message);
+  telegram.send(update.message);
+  telegram.members.set(33, { status: 'member' });
+  assert.equal((await dispatch(update)).status, 200);
+  assert.equal(telegram.has(81), false);
+  assert.equal(telegram.canJoin(33), false);
+
+  const { reviews } = await (await pending()).json();
+  assert.equal(reviews.length, 0);
+  const listed = await samples();
+  assert.equal(listed.status, 200);
+  const { samples: rows } = await listed.json();
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].update_id, 802);
+  assert.equal(rows[0].outcome, 'banned');
+  assert.equal(rows[0].payload.target.state.message.text, 'An offer the filters missed');
 });

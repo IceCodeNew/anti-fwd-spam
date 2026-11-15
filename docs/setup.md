@@ -64,7 +64,7 @@ Reports from identities outside `REPORTER_IDS` are recorded and queued, but nobo
 mise exec -- uv run pywrangler secret put REVIEW_SECRET
 ```
 
-With `REVIEW_SECRET` set, the Worker serves `GET /reviews/pending` and `POST /reviews/resolve` on the same Worker URL. Callers authenticate with an `X-Review-Secret` header that carries the secret. Without the secret, both paths return 404 and the queue is visible only in D1. The secret grants exactly two capabilities: reading queued unlisted reports and resolving them. A spam verdict applies the same ban and cleanup as a listed reporter's successful report. The secret cannot send messages, ban accounts directly, or read other stored state. If a reviewer loses the secret, rotate it like any other credential. See [Operations](operations.md#external-review-of-unlisted-reports) for the review workflow.
+With `REVIEW_SECRET` set, the Worker serves `GET /reviews/pending`, `POST /reviews/resolve`, and `GET /reviews/samples` on the same Worker URL. Callers authenticate with an `X-Review-Secret` header that carries the secret. Without the secret, all three paths return 404 and the queue is visible only in D1. The secret grants exactly three capabilities: reading queued unlisted reports, resolving them, and reading acted listed reports as rule-learning samples. A spam verdict applies the same ban and cleanup as a listed reporter's successful report. The secret cannot send messages, ban accounts directly, or read other stored state. If a reviewer loses the secret, rotate it like any other credential. See [Operations](operations.md#external-review-of-unlisted-reports) for the review workflow.
 
 ## Optional model provider
 

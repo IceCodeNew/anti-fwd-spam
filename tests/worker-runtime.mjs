@@ -99,6 +99,7 @@ beforeEach(async () => {
   outboundRequests.length = 0;
   Object.assign(model, { probability: 0, profile: null, profiles: new Map(), state: null, response: null });
   await database.prepare('DELETE FROM reports').run();
+  await database.prepare('DELETE FROM pending_reviews').run();
   await database.prepare('DELETE FROM recent_messages').run();
   await database.prepare('DELETE FROM member_activity').run();
   await database.prepare('DELETE FROM automatic_mutes').run();

@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 from .actions import Actions, AppResponse, BanTarget, user_id
 from .constants import MAX_TELEGRAM_ID, MODEL_CONTENT_FIELDS
-from .evidence import MESSAGE_WINDOW_SECONDS, EvidenceError, ReportStore
+from .evidence import MESSAGE_WINDOW_SECONDS, EvidenceError, PendingReview, ReportStore
 from .model import join_model_input, model_input, profile_ids
 from .policy import (
     matches_spam_pattern,
@@ -92,6 +92,29 @@ def reported_target(update: TelegramUpdate) -> BanTarget | None:
         target_id,
         username=username if isinstance(username, str) else None,
     )
+
+
+def _review_outcome(response: AppResponse) -> str:
+    """Summarize a replayed report's moderation result as one review outcome."""
+    if response.body == "evidence missing":
+        return "evidence_missing"
+    if response.needs_confirmation:
+        return "needs_confirmation"
+    if response.sender_banned:
+        return "banned"
+    if "moderation cancelled" in response.body:
+        return "superseded_by_allow"
+    if response.target_removed:
+        return "deleted"
+    return "no_action"
+
+
+def reporter_id(update: TelegramUpdate) -> int | None:
+    """Identify a report's sender: its sender chat when present, otherwise its genuine user."""
+    sender_chat = update.message.get("sender_chat")
+    if isinstance(sender_chat, dict) and type(sender_chat.get("id")) is int:
+        return sender_chat["id"]
+    return user_id(update.message, include_bots=True)
 
 
 def recent(sent_at: int, now: int) -> bool:
@@ -312,18 +335,150 @@ class Moderator:
         )
 
     async def record_denied_source(self, update: TelegramUpdate) -> AppResponse | None:
-        """Keep a bare reply command as evidence without registering its source."""
+        """Keep a bare reply command as evidence without registering its source or sticker."""
         if command_argument(update.message, self.bot_username, "/bs") != "" or not update.in_group:
             return None
-        return await self.record_report(update)
+        target = reply_target(update.message)
+        set_name = sticker_set_name(target) if target is not None else None
+        identity = set_name or (sticker_unique_id(target) if target is not None else None)
+        sticker = (identity, set_name is not None) if identity is not None else None
+        return await self.record_report(update, source_id=replied_source(update.message), sticker=sticker)
 
-    async def record_report(self, update: TelegramUpdate) -> AppResponse:
-        """Save an unlisted identity's valid reply without taking moderation action."""
-        if update.update_id is None or reported_target(update) is None:
+    async def record_report(
+        self,
+        update: TelegramUpdate,
+        *,
+        source_id: int | None = None,
+        sticker: tuple[str, bool] | None = None,
+    ) -> AppResponse:
+        """Save an unlisted identity's valid reply and queue it for external review.
+
+        No moderation action is taken here. The queue entry carries the reported
+        message's bounded model input so a reviewer can judge it before its
+        evidence expires. A bare /bs reply also carries its source and sticker
+        identity, still unregistered, so a later spam verdict can apply the
+        same registration a listed reporter's command would have made.
+        """
+        target_info = reported_target(update)
+        target = reply_target(update.message)
+        if update.update_id is None or target_info is None or target_info.message_id is None or target is None:
             return AppResponse(400, "invalid report target")
         key = (self.actions.bot_id, update.update_id)
-        await self.store.save(key, update.raw_json, int(time.time()), 0)
+        now = int(time.time())
+        await self.store.save(key, update.raw_json, now, 0)
+        sender_chat = target.get("sender_chat")
+        payload: dict[str, object] = {
+            "reporter_id": reporter_id(update),
+            "source_id": source_id,
+            "sticker": {"identity": sticker[0], "whole_set": sticker[1]} if sticker is not None else None,
+            "target": {
+                "chat_id": update.chat_id,
+                "message_id": target_info.message_id,
+                "sender_id": target_info.user_id,
+                "sender_chat_id": sender_chat.get("id") if isinstance(sender_chat, dict) else None,
+                "state": model_input(target),
+            },
+        }
+        await self.store.enqueue_review(
+            self.actions.bot_id,
+            update.update_id,
+            chat_id=update.chat_id,
+            target_message_id=target_info.message_id,
+            target_sender_id=target_info.user_id,
+            reporter_id=reporter_id(update),
+            payload_json=json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+            now=now,
+        )
         return AppResponse(200, "report recorded")
+
+    async def list_pending_reviews(self, limit: int) -> list[dict[str, object]]:
+        """Return queued unlisted reports with their bounded target payloads for an external reviewer."""
+        reviews = await self.store.pending_reviews(self.actions.bot_id, int(time.time()), limit)
+        result: list[dict[str, object]] = []
+        for review in reviews:
+            try:
+                payload = json.loads(review.payload_json)
+            except json.JSONDecodeError:
+                payload = {}
+            result.append(
+                {
+                    "update_id": review.update_id,
+                    "chat_id": review.chat_id,
+                    "target_message_id": review.target_message_id,
+                    "target_sender_id": review.target_sender_id,
+                    "reporter_id": review.reporter_id,
+                    "created_at": review.created_at,
+                    "payload": payload if isinstance(payload, dict) else {},
+                },
+            )
+        return result
+
+    async def resolve_review(self, update_id: int, verdict: str) -> AppResponse:
+        """Apply an external reviewer's verdict to one queued unlisted report.
+
+        Being reported is itself strong evidence; the verdict exists to keep
+        unlisted identities from abusing that power. A spam verdict replays the
+        stored report through the same action a listed reporter's successful
+        report performs. A not-spam verdict simply closes the review.
+        """
+        if verdict not in {"spam", "not_spam"}:
+            return AppResponse(400, "invalid verdict")
+        try:
+            review = await self.store.review(self.actions.bot_id, update_id)
+            if review is None:
+                return AppResponse(404, "review not found")
+            if review.resolved_at is not None:
+                return AppResponse(200, "review already resolved")
+            if verdict == "not_spam":
+                outcome = "kept"
+            else:
+                response = await self._replay_reviewed_report(review)
+                if response.status != HTTPStatus.OK:
+                    return AppResponse(503, "review moderation pending; retry")
+                outcome = _review_outcome(response)
+            await self.store.resolve_review(
+                self.actions.bot_id, update_id, verdict=verdict, outcome=outcome, now=int(time.time())
+            )
+            return AppResponse(200, f"review resolved; {outcome}")
+        except EvidenceError:
+            return AppResponse(503, "review storage unavailable; retry pending")
+
+    async def _replay_reviewed_report(self, review: PendingReview) -> AppResponse:
+        """Run a spam-verdict report through the listed reporter's moderation action.
+
+        The stored report update is replayed unchanged, so ban claiming,
+        administrator protection, /allow fences, target deletion, indexed
+        history cleanup and blacklist effects are exactly the authorized
+        report's. A queued /bs source or sticker is registered first, as the
+        authorized command does. No acknowledgement is sent; the report
+        message is removed after successful moderation, as with a reply report.
+        """
+        raw_json = await self.store.report_json(self.actions.bot_id, review.update_id)
+        if raw_json is None:
+            return AppResponse(200, "evidence missing")
+        try:
+            update = parse_update(raw_json)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return AppResponse(200, "evidence missing")
+        if update is None:
+            return AppResponse(200, "evidence missing")
+        try:
+            payload = json.loads(review.payload_json)
+        except json.JSONDecodeError:
+            payload = {}
+        if not isinstance(payload, dict):
+            payload = {}
+        sticker = payload.get("sticker")
+        if isinstance(sticker, dict) and isinstance(sticker.get("identity"), str):
+            await self.store.add_sticker(
+                self.actions.bot_id,
+                sticker["identity"],
+                int(time.time()),
+                whole_set=sticker.get("whole_set") is True,
+            )
+        source = payload.get("source_id")
+        source_id = await self._register_source(review.update_id, raw_json, source) if type(source) is int else None
+        return await self.report(update, source_id=source_id, remove_report=True)
 
     async def _finish_command(self, update: TelegramUpdate, reply: str, response: AppResponse) -> AppResponse:
         """Acknowledge the result and retain commands that require manual inspection."""

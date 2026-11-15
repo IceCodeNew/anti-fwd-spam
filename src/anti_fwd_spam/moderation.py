@@ -412,13 +412,15 @@ class Moderator:
         payload = _review_payload(update, target_info, target, source_id=source_id, sticker=sticker)
         await self.store.enqueue_review(
             self.actions.bot_id,
-            update.update_id,
-            chat_id=update.chat_id,
-            target_message_id=target_info.message_id,
-            target_sender_id=target_info.user_id,
-            reporter_id=reporter_id(update),
-            payload_json=json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
-            now=now,
+            PendingReview(
+                update_id=update.update_id,
+                chat_id=update.chat_id,
+                target_message_id=target_info.message_id,
+                target_sender_id=target_info.user_id,
+                reporter_id=reporter_id(update),
+                payload_json=json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+                created_at=now,
+            ),
         )
         return AppResponse(200, "report recorded")
 
@@ -449,17 +451,21 @@ class Moderator:
         if target_info is None or target_info.message_id is None or target is None:
             return
         payload = _review_payload(update, target_info, target, source_id=source_id, sticker=None)
+        now = int(time.time())
         with contextlib.suppress(EvidenceError):
             await self.store.record_review_sample(
                 self.actions.bot_id,
-                update.update_id,
-                chat_id=update.chat_id,
-                target_message_id=target_info.message_id,
-                target_sender_id=target_info.user_id,
-                reporter_id=reporter_id(update),
-                payload_json=json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
-                outcome=_review_outcome(response),
-                now=int(time.time()),
+                PendingReview(
+                    update_id=update.update_id,
+                    chat_id=update.chat_id,
+                    target_message_id=target_info.message_id,
+                    target_sender_id=target_info.user_id,
+                    reporter_id=reporter_id(update),
+                    payload_json=json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+                    created_at=now,
+                    resolved_at=now,
+                    outcome=_review_outcome(response),
+                ),
             )
 
     async def resolve_review(self, update_id: int, verdict: str) -> AppResponse:

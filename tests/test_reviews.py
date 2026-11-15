@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING
 from unittest.mock import patch
 
-from anti_fwd_spam.evidence import RETENTION_SECONDS, ReportStore
+from anti_fwd_spam.evidence import RETENTION_SECONDS, PendingReview, ReportStore
 from anti_fwd_spam.moderation import Moderator
 from anti_fwd_spam.policy import Config, ConfigError
 
@@ -370,13 +370,15 @@ class ReviewQueueTests(unittest.IsolatedAsyncioTestCase):
         """user: Given a review past its retention, When expiry runs, Then it no longer awaits a verdict."""
         await self.store.enqueue_review(
             BOT_ID,
-            700,
-            chat_id=-100,
-            target_message_id=81,
-            target_sender_id=33,
-            reporter_id=42,
-            payload_json="{}",
-            now=NOW - RETENTION_SECONDS - 1,
+            PendingReview(
+                update_id=700,
+                chat_id=-100,
+                target_message_id=81,
+                target_sender_id=33,
+                reporter_id=42,
+                payload_json="{}",
+                created_at=NOW - RETENTION_SECONDS - 1,
+            ),
         )
         self.assertEqual(await self.store.pending_reviews(BOT_ID, NOW, 10), [])
         await self.store.expire(NOW)

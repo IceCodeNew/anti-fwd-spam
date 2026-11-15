@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING
 from unittest.mock import patch
 
-from anti_fwd_spam.evidence import RETENTION_SECONDS, ReportStore
+from anti_fwd_spam.evidence import RETENTION_SECONDS, PendingReview, ReportStore
 from anti_fwd_spam.moderation import Moderator
 from anti_fwd_spam.policy import Config, ConfigError
 
@@ -199,10 +199,49 @@ class ReviewQueueTests(unittest.IsolatedAsyncioTestCase):
         await self.dispatch(report_update())
         self.assertEqual(len(await self.queued()), 1)
 
-    async def test_listed_report_is_not_queued(self) -> None:
-        """user: Given a listed reporter's report, When it moderates directly, Then no review is queued."""
+    async def test_listed_report_is_sampled_not_queued(self) -> None:
+        """user: Given a listed reporter's report, When it moderates directly, Then it is kept as a sample."""
         await self.dispatch(report_update(reporter=99))
-        self.assertEqual(await self.queued(), [])
+        self.assertEqual(await self.moderator.list_pending_reviews(10), [])
+        samples = await self.moderator.list_review_samples(10)
+        self.assertEqual(len(samples), 1)
+        self.assertEqual(samples[0]["update_id"], 500)
+        self.assertEqual(samples[0]["outcome"], "banned")
+        row = (await self.queued())[0]
+        self.assertEqual((row.verdict, row.outcome), ("spam", "banned"))
+        self.assertIsNotNone(row.resolved_at)
+        self.assertNotEqual(row.payload_json, "")
+        payload = json.loads(row.payload_json)
+        self.assertEqual(payload["target"]["state"]["message"]["text"], TARGET_TEXT)
+        self.assertEqual(await self.store.review_samples(BOT_ID, NOW + RETENTION_SECONDS + 1, 10), [])
+
+    async def test_listed_report_redelivery_does_not_duplicate_the_sample(self) -> None:
+        """user: Given a redelivered listed report, When recorded twice, Then one sample stays stored."""
+        await self.dispatch(report_update(reporter=99))
+        await self.dispatch(report_update(reporter=99))
+        self.assertEqual(len(await self.moderator.list_review_samples(10)), 1)
+
+    async def test_listed_source_command_is_sampled_with_its_source(self) -> None:
+        """user: Given a listed /bs on a bot message, When it moderates, Then the sample carries the source."""
+        bot_target: dict[str, object] = {
+            "message_id": 81,
+            "date": NOW,
+            "chat": {"id": -100, "type": "supergroup"},
+            "from": {"id": 22, "is_bot": True, "first_name": "Source Bot"},
+            "text": TARGET_TEXT,
+        }
+        await self.dispatch(source_command_update(reporter=99, target=bot_target))
+        samples = await self.moderator.list_review_samples(10)
+        self.assertEqual(len(samples), 1)
+        self.assertEqual(samples[0]["outcome"], "banned")
+        row = (await self.queued())[0]
+        self.assertEqual(json.loads(row.payload_json)["source_id"], 22)
+
+    async def test_resolved_unlisted_review_is_not_a_sample(self) -> None:
+        """user: Given a resolved unlisted review, When samples are listed, Then its cleared payload stays out."""
+        await self.dispatch(report_update())
+        await self.moderator.resolve_review(500, "not_spam")
+        self.assertEqual(await self.moderator.list_review_samples(10), [])
 
     async def test_resolve_not_spam_keeps_the_message(self) -> None:
         """user: Given a queued report, When the verdict is not spam, Then the message stays and the review closes."""
@@ -331,13 +370,15 @@ class ReviewQueueTests(unittest.IsolatedAsyncioTestCase):
         """user: Given a review past its retention, When expiry runs, Then it no longer awaits a verdict."""
         await self.store.enqueue_review(
             BOT_ID,
-            700,
-            chat_id=-100,
-            target_message_id=81,
-            target_sender_id=33,
-            reporter_id=42,
-            payload_json="{}",
-            now=NOW - RETENTION_SECONDS - 1,
+            PendingReview(
+                update_id=700,
+                chat_id=-100,
+                target_message_id=81,
+                target_sender_id=33,
+                reporter_id=42,
+                payload_json="{}",
+                created_at=NOW - RETENTION_SECONDS - 1,
+            ),
         )
         self.assertEqual(await self.store.pending_reviews(BOT_ID, NOW, 10), [])
         await self.store.expire(NOW)

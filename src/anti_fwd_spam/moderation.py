@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import time
 from dataclasses import replace
@@ -117,6 +118,47 @@ def reporter_id(update: TelegramUpdate) -> int | None:
     return user_id(update.message, include_bots=True)
 
 
+def _review_payload(
+    update: TelegramUpdate,
+    target_info: BanTarget,
+    target: dict[str, object],
+    *,
+    source_id: int | None,
+    sticker: tuple[str, bool] | None,
+) -> dict[str, object]:
+    """Shape one reported message into the bounded payload stored for external review."""
+    sender_chat = target.get("sender_chat")
+    return {
+        "reporter_id": reporter_id(update),
+        "source_id": source_id,
+        "sticker": {"identity": sticker[0], "whole_set": sticker[1]} if sticker is not None else None,
+        "target": {
+            "chat_id": update.chat_id,
+            "message_id": target_info.message_id,
+            "sender_id": target_info.user_id,
+            "sender_chat_id": sender_chat.get("id") if isinstance(sender_chat, dict) else None,
+            "state": model_input(target),
+        },
+    }
+
+
+def _review_item(review: PendingReview) -> dict[str, object]:
+    """Render one stored review or sample as the external review API's item shape."""
+    try:
+        payload = json.loads(review.payload_json)
+    except json.JSONDecodeError:
+        payload = {}
+    return {
+        "update_id": review.update_id,
+        "chat_id": review.chat_id,
+        "target_message_id": review.target_message_id,
+        "target_sender_id": review.target_sender_id,
+        "reporter_id": review.reporter_id,
+        "created_at": review.created_at,
+        "payload": payload if isinstance(payload, dict) else {},
+    }
+
+
 def recent(sent_at: int, now: int) -> bool:
     """Return True while the bot can still delete and index the message."""
     return now - MESSAGE_WINDOW_SECONDS < sent_at <= now
@@ -166,7 +208,7 @@ class Moderator:
                 lambda update: (
                     reply_target(update.message) is not None and mentions_bot(update.message, self.bot_username)
                 ),
-                self.report,
+                self._report_listed,
                 self.record_report,
             ),
         )
@@ -283,6 +325,7 @@ class Moderator:
             response = await self.report(update, source_id=identifier, remove_report=False)
             if response.status != HTTPStatus.OK:
                 return response
+            await self._capture_listed_sample(update, response, source_id=identifier)
         if response.needs_confirmation:
             reply += "\nBan result is uncertain; check membership before submitting a new report."
         return await self._finish_command(update, reply, response)
@@ -366,52 +409,64 @@ class Moderator:
         key = (self.actions.bot_id, update.update_id)
         now = int(time.time())
         await self.store.save(key, update.raw_json, now, 0)
-        sender_chat = target.get("sender_chat")
-        payload: dict[str, object] = {
-            "reporter_id": reporter_id(update),
-            "source_id": source_id,
-            "sticker": {"identity": sticker[0], "whole_set": sticker[1]} if sticker is not None else None,
-            "target": {
-                "chat_id": update.chat_id,
-                "message_id": target_info.message_id,
-                "sender_id": target_info.user_id,
-                "sender_chat_id": sender_chat.get("id") if isinstance(sender_chat, dict) else None,
-                "state": model_input(target),
-            },
-        }
+        payload = _review_payload(update, target_info, target, source_id=source_id, sticker=sticker)
         await self.store.enqueue_review(
             self.actions.bot_id,
-            update.update_id,
-            chat_id=update.chat_id,
-            target_message_id=target_info.message_id,
-            target_sender_id=target_info.user_id,
-            reporter_id=reporter_id(update),
-            payload_json=json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
-            now=now,
+            PendingReview(
+                update_id=update.update_id,
+                chat_id=update.chat_id,
+                target_message_id=target_info.message_id,
+                target_sender_id=target_info.user_id,
+                reporter_id=reporter_id(update),
+                payload_json=json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+                created_at=now,
+            ),
         )
         return AppResponse(200, "report recorded")
 
     async def list_pending_reviews(self, limit: int) -> list[dict[str, object]]:
         """Return queued unlisted reports with their bounded target payloads for an external reviewer."""
         reviews = await self.store.pending_reviews(self.actions.bot_id, int(time.time()), limit)
-        result: list[dict[str, object]] = []
-        for review in reviews:
-            try:
-                payload = json.loads(review.payload_json)
-            except json.JSONDecodeError:
-                payload = {}
-            result.append(
-                {
-                    "update_id": review.update_id,
-                    "chat_id": review.chat_id,
-                    "target_message_id": review.target_message_id,
-                    "target_sender_id": review.target_sender_id,
-                    "reporter_id": review.reporter_id,
-                    "created_at": review.created_at,
-                    "payload": payload if isinstance(payload, dict) else {},
-                },
+        return [_review_item(review) for review in reviews]
+
+    async def list_review_samples(self, limit: int) -> list[dict[str, object]]:
+        """Return acted listed reports kept as samples so a reviewer can learn rules from them."""
+        samples = await self.store.review_samples(self.actions.bot_id, int(time.time()), limit)
+        return [{**_review_item(sample), "outcome": sample.outcome} for sample in samples]
+
+    async def _report_listed(self, update: TelegramUpdate) -> AppResponse:
+        """Apply a listed reporter's reply report and keep it as a rule-learning sample."""
+        response = await self.report(update)
+        await self._capture_listed_sample(update, response)
+        return response
+
+    async def _capture_listed_sample(
+        self, update: TelegramUpdate, response: AppResponse, *, source_id: int | None = None
+    ) -> None:
+        """Keep one acted listed report as a rule-learning sample; never fail the moderation for it."""
+        if response.status != HTTPStatus.OK or update.update_id is None:
+            return
+        target_info = reported_target(update)
+        target = reply_target(update.message)
+        if target_info is None or target_info.message_id is None or target is None:
+            return
+        payload = _review_payload(update, target_info, target, source_id=source_id, sticker=None)
+        now = int(time.time())
+        with contextlib.suppress(EvidenceError):
+            await self.store.record_review_sample(
+                self.actions.bot_id,
+                PendingReview(
+                    update_id=update.update_id,
+                    chat_id=update.chat_id,
+                    target_message_id=target_info.message_id,
+                    target_sender_id=target_info.user_id,
+                    reporter_id=reporter_id(update),
+                    payload_json=json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+                    created_at=now,
+                    resolved_at=now,
+                    outcome=_review_outcome(response),
+                ),
             )
-        return result
 
     async def resolve_review(self, update_id: int, verdict: str) -> AppResponse:
         """Apply an external reviewer's verdict to one queued unlisted report.

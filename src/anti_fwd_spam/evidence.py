@@ -51,7 +51,7 @@ class StoredReport:
 
 @dataclass(frozen=True, slots=True)
 class PendingReview:
-    """One unlisted report awaiting an external reviewer's verdict."""
+    """One report in the review store: queued, or a resolved sample kept for rule learning."""
 
     update_id: int
     chat_id: int
@@ -61,6 +61,7 @@ class PendingReview:
     payload_json: str
     created_at: int
     resolved_at: int | None = None
+    outcome: str | None = None
 
 
 class ReportStore:
@@ -523,18 +524,7 @@ class ReportStore:
                 bool(row.ban_claimed),
             )
 
-    async def enqueue_review(  # noqa: PLR0913 - Queue identity, target and payload are independent inputs.
-        self,
-        bot_id: int,
-        update_id: int,
-        *,
-        chat_id: int,
-        target_message_id: int,
-        target_sender_id: int | None,
-        reporter_id: int | None,
-        payload_json: str,
-        now: int,
-    ) -> None:
+    async def enqueue_review(self, bot_id: int, review: PendingReview) -> None:
         """Queue one unlisted report for external review; redelivery cannot duplicate or refresh it."""
         with storage_errors():
             await (
@@ -546,14 +536,14 @@ class ReportStore:
                 )
                 .bind(
                     bot_id,
-                    update_id,
-                    chat_id,
-                    target_message_id,
-                    target_sender_id,
-                    reporter_id,
-                    payload_json,
-                    now,
-                    now + RETENTION_SECONDS,
+                    review.update_id,
+                    review.chat_id,
+                    review.target_message_id,
+                    review.target_sender_id,
+                    review.reporter_id,
+                    review.payload_json,
+                    review.created_at,
+                    review.created_at + RETENTION_SECONDS,
                 )
                 .run()
             )
@@ -564,7 +554,7 @@ class ReportStore:
             rows = await (
                 self.database.prepare(
                     "SELECT update_id, chat_id, target_message_id, target_sender_id, reporter_id, "
-                    "payload_json, created_at, resolved_at FROM pending_reviews "
+                    "payload_json, created_at, resolved_at, outcome FROM pending_reviews "
                     "WHERE bot_id = ? AND resolved_at IS NULL AND expires_at > ? "
                     "ORDER BY created_at, update_id LIMIT ?",
                 )
@@ -579,7 +569,7 @@ class ReportStore:
             row = await (
                 self.database.prepare(
                     "SELECT update_id, chat_id, target_message_id, target_sender_id, reporter_id, "
-                    "payload_json, created_at, resolved_at FROM pending_reviews "
+                    "payload_json, created_at, resolved_at, outcome FROM pending_reviews "
                     "WHERE bot_id = ? AND update_id = ?",
                 )
                 .bind(bot_id, update_id)
@@ -611,6 +601,54 @@ class ReportStore:
                 .first()
             )
         return row is not None
+
+    async def record_review_sample(self, bot_id: int, review: PendingReview) -> None:
+        """Record one listed reporter's acted report as a resolved sample for rule learning.
+
+        The row is born resolved with its payload retained until evidence
+        expiry, so an external reviewer can study what trusted reports caught
+        without any further moderation being driven from it. Redelivery
+        cannot duplicate it.
+        """
+        with storage_errors():
+            await (
+                self.database.prepare(
+                    "INSERT INTO pending_reviews "
+                    "(bot_id, update_id, chat_id, target_message_id, target_sender_id, reporter_id, "
+                    "payload_json, created_at, expires_at, resolved_at, verdict, outcome) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'spam', ?) "
+                    "ON CONFLICT(bot_id, update_id) DO NOTHING",
+                )
+                .bind(
+                    bot_id,
+                    review.update_id,
+                    review.chat_id,
+                    review.target_message_id,
+                    review.target_sender_id,
+                    review.reporter_id,
+                    review.payload_json,
+                    review.created_at,
+                    review.created_at + RETENTION_SECONDS,
+                    review.created_at,
+                    review.outcome,
+                )
+                .run()
+            )
+
+    async def review_samples(self, bot_id: int, now: int, limit: int) -> list[PendingReview]:
+        """List resolved samples that kept their payload, oldest first, for rule learning."""
+        with storage_errors():
+            rows = await (
+                self.database.prepare(
+                    "SELECT update_id, chat_id, target_message_id, target_sender_id, reporter_id, "
+                    "payload_json, created_at, resolved_at, outcome FROM pending_reviews "
+                    "WHERE bot_id = ? AND resolved_at IS NOT NULL AND payload_json != '' AND expires_at > ? "
+                    "ORDER BY update_id LIMIT ?",
+                )
+                .bind(bot_id, now, limit)
+                .all()
+            )
+        return [_pending_review(row) for row in rows.results]
 
     async def claim_ban(self, bot_id: int, update_id: int, subject_id: int) -> bool:
         """Allow only one delivery to issue a destructive Telegram request."""
@@ -721,4 +759,5 @@ def _pending_review(row: Any) -> PendingReview:  # noqa: ANN401 - D1 rows are un
         payload_json=str(row.payload_json),
         created_at=int(row.created_at),
         resolved_at=int(row.resolved_at) if row.resolved_at is not None else None,
+        outcome=str(row.outcome) if row.outcome is not None else None,
     )

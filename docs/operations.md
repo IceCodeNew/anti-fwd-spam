@@ -32,6 +32,16 @@ curl --silent --show-error -X POST \
 
 Use `"spam"` or `"not_spam"`. A spam verdict carries the full weight of a listed report. The sender is banned, eligible indexed history is cleaned, and the reported message is deleted. A queued bare `/bs` also registers its source or sticker. Administrators and owners are not banned, but their explicitly reported message can still be deleted, exactly as with a listed report. Judge accordingly: return `spam` only when you would stand behind a listed reporter's ban. Work the queue promptly: entries expire with report evidence (three days), and an expired report can no longer be acted on. A `503` response means a temporary failure during moderation and the entry is still pending; retry the same verdict later, and confirmed steps are not repeated. Entries can also be inspected directly in D1 (`pending_reviews` table), but resolve them through the endpoint so the verdict, outcome, and payload cleanup stay consistent.
 
+Listed reporters' acted reports are available as read-only samples for rule learning. Each sample carries the same bounded content as a queue entry, plus the outcome the direct moderation recorded:
+
+```bash
+curl --silent --show-error \
+  -H "X-Review-Secret: $REVIEW_SECRET" \
+  "$WORKER_URL/reviews/samples?limit=20"
+```
+
+Samples drive no moderation. An agent can study them alongside judged queue entries to find patterns the rules miss and propose rule changes. Samples expire with report evidence, so collect them on the same polling schedule.
+
 ## False positives and restrictions
 
 Ordinary message filtering deletes the triggering message and can permanently mute a human sender without adding an account blacklist entry. Join-profile filtering instead permanently bans the matched new member and deletes the join notice, recording the confirmed account ban. Administrators and group owners are protected. Deleted messages cannot be restored.

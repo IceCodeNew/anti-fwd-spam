@@ -41,7 +41,7 @@
 
 - **举报垃圾消息：** 用可信身份回复目标消息，并提及管理 bot。
 
-- **审查未授权举报：** 配置 `REVIEW_SECRET` 后，外部审查者可通过 HTTPS 拉取队列中的未授权举报并给出判定。可以把这个密钥交给 Muse 等 AI 智能体服务：智能体定时轮询队列，逐条判定举报并回传结论，无人盯着的举报也能得到审查。该密钥只能读取和处理队列，bot token 始终留在 Worker 内，见[运维](docs/operations.md#external-review-of-unlisted-reports)。
+- **审查未授权举报：** 配置 `REVIEW_SECRET` 后，外部审查者可通过 HTTPS 拉取队列中的未授权举报并给出判定。可以把这个密钥交给 Muse 等 AI 智能体服务：智能体定时轮询队列，逐条判定举报并回传结论，无人盯着的举报也能得到审查。同一密钥还可只读获取名单内举报已处置的样本，供智能体归纳并提议完善拦截规则。该密钥只能读取和处理队列，bot token 始终留在 Worker 内，见[运维](docs/operations.md#external-review-of-unlisted-reports)。
 - **登记来源：** 用可信身份发送 `/bs @source_bot`。只有鉴权通过的 `/bs` 命令会写入全局来源黑名单；名单也拦截 bot 直接发送的消息，包括 guest bot。
 - **拉黑并举报 bot 来源：** 回复 bot 直接发送的消息并发送裸 `/bs`；对于内联消息，同样的命令会同时处理发送者和来源。
 - **登记贴纸包：** 用 `/bs` 发送完整的 `https://t.me/addstickers/<set_name>` 链接。

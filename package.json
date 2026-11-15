@@ -2,7 +2,7 @@
   "name": "anti-fwd-spam-worker-tools",
   "private": true,
   "scripts": {
-    "build": "uv run pywrangler deploy --dry-run",
+    "build": "uv run --with uv==0.13.6 pywrangler deploy --dry-run",
     "test": "npm run test:unit && npm run test:e2e",
     "test:unit": "PYTHONPATH=src uv run python -m unittest discover -s tests -v",
     "pretest:e2e": "rm -rf .wrangler/test-build && npm run build -- --outdir .wrangler/test-build",

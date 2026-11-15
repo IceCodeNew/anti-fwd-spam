@@ -40,8 +40,7 @@ The complete copy-pasteable setup is in [Deployment setup](docs/setup.md). Start
 ## Everyday use
 
 - **Report spam:** reply to the target message and mention the moderation bot from a trusted reporting identity.
-
-- **Review unlisted reports:** with `REVIEW_SECRET` configured, an external reviewer can fetch queued unlisted reports and resolve them over HTTPS. See [Operations](docs/operations.md#external-review-of-unlisted-reports).
+- **Review unlisted reports:** with `REVIEW_SECRET` configured, an external reviewer can fetch queued unlisted reports and resolve them over HTTPS. You can give the secret to an AI agent service such as Muse: the agent polls the queue on a schedule, judges each report, and returns verdicts, so reports that no human watches still get reviewed. The secret can only read and resolve the queue; the bot token never leaves the Worker. See [Operations](docs/operations.md#external-review-of-unlisted-reports).
 - **Register a source:** send `/bs @source_bot` from a trusted identity. Only authorized `/bs` commands add sources to the global blacklist, which also covers direct and guest bot messages.
 - **Block and report a bot source:** reply with bare `/bs` to a direct bot message, or to an inline message when both its sender and source should be handled.
 - **Register a sticker set:** send its complete `https://t.me/addstickers/<set_name>` URL with `/bs`.

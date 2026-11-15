@@ -10,7 +10,7 @@ Use `/bs @source_bot` to register a source bot, including a guest bot that sends
 
 ## External review of unlisted reports
 
-Unlisted reports do not notify anyone inside Telegram. When `REVIEW_SECRET` is configured (see [setup](setup.md#optional-external-review-of-unlisted-reports)), a reviewer works the queue over HTTPS instead:
+With `REVIEW_SECRET` configured (see [setup](setup.md#optional-external-review-of-unlisted-reports)), a reviewer works the queue over HTTPS. Nothing inside Telegram announces new entries, so poll the queue on a schedule. An AI agent service that holds the secret, such as Muse, can poll, judge, and resolve entries unattended:
 
 ```bash
 curl --silent --show-error \
@@ -30,7 +30,7 @@ curl --silent --show-error -X POST \
   "$WORKER_URL/reviews/resolve"
 ```
 
-Use `"spam"` or `"not_spam"`. A spam verdict carries the full weight of a listed report: the sender is banned, eligible indexed history is cleaned, the reported message is deleted, and a queued bare `/bs` also registers its source or sticker. Administrators and owners are not banned, but their explicitly reported message can still be deleted, exactly as with a listed report. Judge accordingly: return `spam` only when you would stand behind a listed reporter's ban. Work the queue promptly: entries expire with report evidence (three days), and an expired report can no longer be acted on. A `503` response means a temporary failure during moderation and the entry is still pending; retry the same verdict later, and confirmed steps are not repeated. Entries can also be inspected directly in D1 (`pending_reviews` table), but resolve them through the endpoint so the verdict, outcome, and payload cleanup stay consistent.
+Use `"spam"` or `"not_spam"`. A spam verdict carries the full weight of a listed report. The sender is banned, eligible indexed history is cleaned, and the reported message is deleted. A queued bare `/bs` also registers its source or sticker. Administrators and owners are not banned, but their explicitly reported message can still be deleted, exactly as with a listed report. Judge accordingly: return `spam` only when you would stand behind a listed reporter's ban. Work the queue promptly: entries expire with report evidence (three days), and an expired report can no longer be acted on. A `503` response means a temporary failure during moderation and the entry is still pending; retry the same verdict later, and confirmed steps are not repeated. Entries can also be inspected directly in D1 (`pending_reviews` table), but resolve them through the endpoint so the verdict, outcome, and payload cleanup stay consistent.
 
 ## False positives and restrictions
 

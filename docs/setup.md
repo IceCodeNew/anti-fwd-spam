@@ -58,13 +58,13 @@ printf '%s' "$TELEGRAM_WEBHOOK_SECRET" | mise exec -- uv run pywrangler secret p
 
 ## Optional external review of unlisted reports
 
-Reports from identities outside `REPORTER_IDS` are recorded and queued, but nobody is notified inside Telegram. To let an external reviewer (a person or an automation) work that queue, set one more Worker secret with a long random value, generated the same way as the webhook secret, and share it only with that reviewer:
+Reports from identities outside `REPORTER_IDS` are recorded and queued, but nobody is notified inside Telegram. An external reviewer — a person, an automation, or an AI agent service such as Muse — can work that queue over HTTPS. Set one more Worker secret with a long random value, generated the same way as the webhook secret, and share it only with that reviewer:
 
 ```bash
 mise exec -- uv run pywrangler secret put REVIEW_SECRET
 ```
 
-With `REVIEW_SECRET` set, the Worker serves `GET /reviews/pending` and `POST /reviews/resolve` on the same Worker URL, authenticated by an `X-Review-Secret` header carrying that value. Without the secret, both paths return 404 and the queue is only visible in D1. The secret grants exactly two capabilities: reading queued unlisted reports and resolving them (a spam verdict applies the same ban and cleanup as a listed reporter's successful report). It cannot send messages, ban accounts, or read other stored state. Rotate it like any other credential if a reviewer loses it. See [Operations](operations.md#external-review-of-unlisted-reports) for the review workflow.
+With `REVIEW_SECRET` set, the Worker serves `GET /reviews/pending` and `POST /reviews/resolve` on the same Worker URL. Callers authenticate with an `X-Review-Secret` header that carries the secret. Without the secret, both paths return 404 and the queue is visible only in D1. The secret grants exactly two capabilities: reading queued unlisted reports and resolving them. A spam verdict applies the same ban and cleanup as a listed reporter's successful report. The secret cannot send messages, ban accounts directly, or read other stored state. If a reviewer loses the secret, rotate it like any other credential. See [Operations](operations.md#external-review-of-unlisted-reports) for the review workflow.
 
 ## Optional model provider
 

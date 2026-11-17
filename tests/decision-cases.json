@@ -1840,5 +1840,49 @@
       "kind": "synthetic boundary control",
       "notes": "Current analysis frames the copied text and keyboard as evidence."
     }
+  },
+  {
+    "name": "profanity-wrapped-daily-earnings",
+    "category": "profanity-wrapped-solicitation",
+    "spam": true,
+    "message": {"from": {"first_name": "Member"}, "text": "草死你们的妈，来我这一天搞个几k"},
+    "source": {
+      "date": "2026-11-18",
+      "kind": "screenshot transcription",
+      "notes": "Solicitation text retained; sender name replaced with a synthetic placeholder. Sender avatar and biography were unavailable and are not submitted."
+    }
+  },
+  {
+    "name": "profanity-wrapped-loan-hook",
+    "category": "profanity-wrapped-solicitation",
+    "spam": true,
+    "message": {"from": {"first_name": "Member"}, "text": "我日你死妈 还在为了那点逼货款发愁？来我这看看"},
+    "source": {
+      "date": "2026-11-18",
+      "kind": "screenshot transcription",
+      "notes": "Solicitation text retained; sender name replaced with a synthetic placeholder. Sender avatar and biography were unavailable and are not submitted."
+    }
+  },
+  {
+    "name": "profanity-venting-ordinary",
+    "category": "profanity-wrapped-solicitation",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "草，气死我了，今天加班到十一点，老板还说明天继续"},
+    "source": {
+      "date": "2026-11-18",
+      "kind": "synthetic negative control",
+      "notes": "Profanity as ordinary venting, with no offer or invitation to the sender."
+    }
+  },
+  {
+    "name": "loan-worry-ordinary",
+    "category": "profanity-wrapped-solicitation",
+    "spam": false,
+    "message": {"from": {"first_name": "Member"}, "text": "这个月的货款还没到账，愁死了，再拖下去工资都发不出来"},
+    "source": {
+      "date": "2026-11-18",
+      "kind": "synthetic negative control",
+      "notes": "Personal money difficulty described without inviting readers to the sender for relief."
+    }
   }
 ]

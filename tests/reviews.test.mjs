@@ -51,6 +51,21 @@ test('user: Given no review secret, When the review endpoints are called, Then t
   assert.equal((await samples()).status, 404);
 });
 
+test('user: Given a review secret, When a reviewer smoke-tests resolve with an unqueued update ID, Then the probe is rejected without action', async () => {
+  await setBindings({ REVIEW_SECRET: reviewSecret });
+  const wrong = await runtime.dispatchFetch('https://worker.test/reviews/resolve', {
+    method: 'POST',
+    headers: { 'x-review-secret': 'wrong', 'content-type': 'application/json' },
+    body: JSON.stringify({ update_id: 999999999999, verdict: 'not_spam' }),
+  });
+  assert.equal(wrong.status, 401);
+  const probe = await resolve(999999999999, 'not_spam');
+  assert.equal(probe.status, 404);
+  assert.deepEqual(await probe.json(), { result: 'review not found' });
+  const { reviews } = await (await pending()).json();
+  assert.equal(reviews.length, 0);
+});
+
 test('user: Given a review secret, When an unlisted member reports spam, Then a reviewer can fetch and resolve it', async () => {
   await setBindings({ REVIEW_SECRET: reviewSecret });
   assert.equal((await pending({ 'x-review-secret': 'wrong' })).status, 401);

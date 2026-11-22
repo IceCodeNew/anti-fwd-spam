@@ -10,7 +10,23 @@ Use `/bs @source_bot` to register a source bot, including a guest bot that sends
 
 ## External review of unlisted reports
 
-With `REVIEW_SECRET` configured (see [setup](setup.md#optional-external-review-of-unlisted-reports)), a reviewer works the queue over HTTPS. Nothing inside Telegram announces new entries, so poll the queue on a schedule. An AI agent service that holds the secret, such as Muse, can poll, judge, and resolve entries unattended:
+With `REVIEW_SECRET` configured (see [setup](setup.md#optional-external-review-of-unlisted-reports)), a reviewer works the queue over HTTPS. Nothing inside Telegram announces new entries, so poll the queue on a schedule. An AI agent service that holds the secret, such as Muse, can poll, judge, and resolve entries unattended.
+
+Smoke-test the connection once, interactively, before leaving a reviewer — especially an agent — to work unattended. An agent platform may gate the agent's first call to the Worker behind an interactive approval, above all the `POST` that records a verdict. If that approval is first requested during a scheduled background run, nobody may see the prompt: verdicts stall while queue entries expire. Run both calls once and approve any prompt the platform shows:
+
+```bash
+curl --silent --show-error \
+  -H "X-Review-Secret: $REVIEW_SECRET" \
+  "$WORKER_URL/reviews/pending?limit=1"
+
+curl --silent --show-error -X POST \
+  -H "X-Review-Secret: $REVIEW_SECRET" \
+  -H 'content-type: application/json' \
+  -d '{"update_id": 999999999999, "verdict": "not_spam"}' \
+  "$WORKER_URL/reviews/resolve"
+```
+
+The first call returns `200`. The second returns `404` with `review not found`. The probe ID `999999999999` sits far above the update IDs this bot has received, so it cannot belong to a queued report; the call still exercises the full write path — authentication, the storage lookup, and any approval the platform requires — without recording a verdict or moderating anything. Never probe with an ID that appears in the pending list; a verdict for a queued ID is acted on. Zero or negative IDs do not work as probes: the endpoint rejects them as invalid before any storage access, so a `400` from them proves nothing about the write path. The smoke test passes when both calls complete with these results and no approval prompt remains.
 
 ```bash
 curl --silent --show-error \

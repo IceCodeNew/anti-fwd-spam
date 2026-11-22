@@ -361,7 +361,9 @@ class ReviewQueueTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_resolve_rejects_unknown_reviews_and_verdicts(self) -> None:
         """user: Given an unknown review or verdict, When resolving, Then the request is rejected without action."""
-        self.assertEqual((await self.moderator.resolve_review(424242, "spam")).status, 404)
+        unknown = await self.moderator.resolve_review(424242, "spam")
+        self.assertEqual(unknown.status, 404)
+        self.assertEqual(unknown.body, "review not found")
         await self.dispatch(report_update())
         self.assertEqual((await self.moderator.resolve_review(500, "maybe")).status, 400)
         self.assertEqual(len(await self.moderator.list_pending_reviews(10)), 1)

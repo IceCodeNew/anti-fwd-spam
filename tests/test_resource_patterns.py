@@ -61,6 +61,43 @@ class ResourcePatternTests(unittest.TestCase):
         for field in ("reply_to_message", "quote", "external_reply"):
             self.assertFalse(matches_spam_pattern({field: {"text": TRIGGER}, "text": "普通聊天"}))
 
+    def test_bot_mention_only_message_matches(self) -> None:
+        for text in (
+            "@example_bot",
+            " @example_bot ",
+            "@example_bot @sample_bot",
+            "@example_bot\n@sample_bot\n@demo_bot",
+            "@aabot @" + "x" * 29 + "BOT",
+            " \n\t@example_bot\r\n@sample_bot \r\n",
+        ):
+            for field in ("text", "caption"):
+                with self.subTest(text=text, field=field):
+                    self.assertTrue(matches_spam_pattern({field: text}))
+            self.assertFalse(matches_spam_text(text))
+
+    def test_bot_mention_only_does_not_match_mentions_with_content(self) -> None:
+        for text in (
+            "@example_bot hello",
+            "@alice_bot @bobby_bot 看一下",
+            "/start @example_bot",
+            "@example_bot @ordinary_user",
+            "@ordinary_user",
+            "hello @example_bot",
+            "@example_bot,@sample_bot",
+            "@example_bot_extra",
+            "@example_bot @sample_bot_extra",
+            "",
+            "   ",
+        ):
+            with self.subTest(text=text):
+                self.assertFalse(matches_spam_pattern({"text": text}))
+
+    def test_bot_mention_only_in_profiles_or_references_does_not_match(self) -> None:
+        for field in ("from", "contact"):
+            self.assertFalse(matches_spam_pattern({field: {"first_name": "@example_bot"}, "text": "普通聊天"}))
+        for field in ("reply_to_message", "quote", "external_reply"):
+            self.assertFalse(matches_spam_pattern({field: {"text": "@example_bot"}, "text": "普通聊天"}))
+
     def test_resource_message_and_independent_combinations_match(self) -> None:
         for text in (
             RESOURCE_MESSAGE,

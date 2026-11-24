@@ -106,6 +106,9 @@ AUTHORED_SPAM_PATTERNS = (
     # Numeric /start payload plus multiple bot handles, each 5-32 ASCII characters
     # including the bot suffix. Ordinary commands and mentions are not signatures.
     re.compile(r"\A\s*/start\s+\d+(?:\s+@[A-Za-z0-9_]{2,29}(?i:bot)){2,}\s*\Z"),
+    # A message consisting solely of @bot handles, each 5-32 ASCII characters
+    # including the bot suffix. Mentions inside real text are not signatures.
+    re.compile(r"\A\s*@[A-Za-z0-9_]{2,29}(?i:bot)(?:\s+@[A-Za-z0-9_]{2,29}(?i:bot))*\s*\Z"),
     re.compile(r"\A承接广\*告\*戴\*發\uff0c十万精准各行业裙\s+包效果 包效果 @[A-Za-z0-9_]{5,32}\s*\Z"),
 )
 

@@ -49,24 +49,6 @@ def matches_spam_pattern(message: dict[str, object]) -> bool:
     )
 
 
-def only_mentions_bot(message: dict[str, object], bot_username: str) -> bool:
-    """Whether every content field consists solely of mentions of this bot.
-
-    Members summon this bot by mentioning it, typically to report a message.
-    A message containing nothing but this bot's own handle carries no content
-    to moderate, even when the report's target is already gone.
-    """
-    handle = f"@{bot_username}".casefold()
-    texts = [text for field in ("text", "caption") if isinstance(text := message.get(field), str)]
-    if not texts:
-        return False
-    for text in texts:
-        tokens = text.split()
-        if not tokens or any(token.casefold() != handle for token in tokens):
-            return False
-    return True
-
-
 def _endorses_sexual_resource(message: dict[str, object]) -> bool:
     """Require the exact current reaction and visible resource features, regardless of framing."""
     current = "\n".join(text for field in ("text", "caption") if isinstance(text := message.get(field), str))

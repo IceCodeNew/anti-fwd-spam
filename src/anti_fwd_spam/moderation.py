@@ -372,9 +372,10 @@ class Moderator:
         """Run /allow for a supergroup administrator who is not a listed reporter.
 
         Administrators can already lift restrictions in Telegram itself; the
-        command additionally removes this bot's blacklist entries and records
-        the allow fence a manual restoration cannot write. Every other
-        command stays limited to listed reporters.
+        command additionally records the allow fence a manual restoration
+        cannot write. It restores access in this group only and leaves the
+        global blacklist entries to listed reporters. Every other command
+        stays limited to listed reporters.
         """
         if (
             update.edited
@@ -389,10 +390,10 @@ class Moderator:
             status = await self.actions.member_status(update.chat_id, identifier)
         except TelegramError:
             return None
-        return await self.allow_command(update) if status in ADMIN_STATUSES else None
+        return await self.allow_command(update, global_cleanup=False) if status in ADMIN_STATUSES else None
 
-    async def allow_command(self, update: TelegramUpdate) -> AppResponse:
-        """Remove this account's blacklist rules and lift its ban in the current supergroup."""
+    async def allow_command(self, update: TelegramUpdate, *, global_cleanup: bool = True) -> AppResponse:
+        """Lift this account's ban in the current supergroup; a global allow also removes its blacklist rules."""
         argument = command_argument(update.message, self.bot_username, "/allow")
         if update.edited or update.chat_type != "supergroup" or argument is None or update.update_id is None:
             return AppResponse(200, "allow ignored")
@@ -411,14 +412,15 @@ class Moderator:
         response = AppResponse(saved.status, saved.body) if saved.status is not None else None
         if response is None:
             await self.store.request_allow(self.actions.bot_id, update.update_id)
-            response = await self.actions.allow_account(update, identifier)
+            response = await self.actions.allow_account(update, identifier, global_cleanup=global_cleanup)
         if response.status != HTTPStatus.OK:
             return response
-        reply = (
-            f"Recovery not completed; superseded by newer moderation. Check membership.\nID: {identifier}"
-            if response.needs_confirmation
-            else f"Account removed from D1 blacklists; access restored in this group.\nID: {identifier}"
-        )
+        if response.needs_confirmation:
+            reply = f"Recovery not completed; superseded by newer moderation. Check membership.\nID: {identifier}"
+        elif global_cleanup:
+            reply = f"Account removed from D1 blacklists; access restored in this group.\nID: {identifier}"
+        else:
+            reply = f"Access restored in this group; D1 blacklist entries unchanged.\nID: {identifier}"
         return await self._finish_command(update, reply, response)
 
     async def _allow_identity(self, argument: str, update_id: int) -> int | None:
@@ -724,7 +726,11 @@ class Moderator:
         sender = message.get("from")
         bot_sender = isinstance(sender, dict) and sender.get("is_bot") is True and "sender_chat" not in message
         identifier = user_id(message, include_bots=True)
-        pattern_match = matches_spam_pattern(message) and not only_mentions_bot(message, self.bot_username)
+        pattern_match = matches_spam_pattern(message)
+        if pattern_match and only_mentions_bot(message, self.bot_username):
+            # A sole mention of this bot is a report summon, so the mention-only
+            # template must not punish it; every other match still applies.
+            pattern_match = matches_spam_pattern(message, mention_template=False)
         established = (
             identifier is not None
             and not bot_sender

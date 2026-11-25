@@ -132,6 +132,29 @@ class ModerationGuardTests(unittest.IsolatedAsyncioTestCase):
                 texts.append(text)
         return texts
 
+    async def seed_blacklist(self, identifier: int = 42) -> None:
+        await (
+            self.database.prepare("INSERT INTO blacklisted_users (bot_id, user_id, added_at) VALUES (?, ?, ?)")
+            .bind(BOT_ID, identifier, NOW)
+            .run()
+        )
+        await self.database.prepare("INSERT INTO blacklisted_sources (source_id) VALUES (?)").bind(identifier).run()
+
+    async def blacklist_counts(self, identifier: int = 42) -> tuple[int, int]:
+        users = (
+            await self.database.prepare("SELECT COUNT(*) AS n FROM blacklisted_users WHERE bot_id = ? AND user_id = ?")
+            .bind(BOT_ID, identifier)
+            .first()
+        )
+        sources = (
+            await self.database.prepare("SELECT COUNT(*) AS n FROM blacklisted_sources WHERE source_id = ?")
+            .bind(identifier)
+            .first()
+        )
+        assert users is not None
+        assert sources is not None
+        return (users.n, sources.n)
+
     async def test_unlisted_self_report_is_not_queued(self) -> None:
         """user: Given an unlisted member reports their own message, When it is recorded, Then nothing is queued."""
         response = await self.dispatch(self_report_update(700, 42))
@@ -213,7 +236,8 @@ class ModerationGuardTests(unittest.IsolatedAsyncioTestCase):
         response = await self.dispatch(allow_update(705, 98, 55))
         self.assertEqual(response.status, 200)
         self.assertEqual(len(self.restored()), 1)
-        self.assertTrue(any("access restored" in text for text in self.reply_texts()))
+        self.assertTrue(any("Access restored in this group" in text for text in self.reply_texts()))
+        self.assertTrue(any("blacklist entries unchanged" in text for text in self.reply_texts()))
 
     async def test_ordinary_member_allow_changes_nothing(self) -> None:
         """user: Given an ordinary member is not a reporter, When they /allow, Then no access is restored."""
@@ -221,7 +245,7 @@ class ModerationGuardTests(unittest.IsolatedAsyncioTestCase):
         response = await self.dispatch(allow_update(706, 99, 55))
         self.assertEqual(response.status, 200)
         self.assertEqual(self.restored(), [])
-        self.assertFalse(any("access restored" in text for text in self.reply_texts()))
+        self.assertFalse(any("Access restored" in text for text in self.reply_texts()))
 
     async def test_reporter_allow_still_restores(self) -> None:
         """user: Given a listed reporter, When they /allow a restricted member, Then access is restored as before."""
@@ -230,3 +254,24 @@ class ModerationGuardTests(unittest.IsolatedAsyncioTestCase):
         response = await self.dispatch(allow_update(707, 100, 99))
         self.assertEqual(response.status, 200)
         self.assertEqual(len(self.restored()), 1)
+
+    async def test_administrator_allow_keeps_blacklist_entries(self) -> None:
+        """user: Given an administrator /allows a blacklisted member, Then access returns but the entries stay."""
+        self.telegram.messages.add(102)
+        self.telegram.statuses = {55: "administrator", 42: "restricted"}
+        await self.seed_blacklist()
+        response = await self.dispatch(allow_update(708, 102, 55))
+        self.assertEqual(response.status, 200)
+        self.assertEqual(len(self.restored()), 1)
+        self.assertEqual(await self.blacklist_counts(), (1, 1))
+
+    async def test_reporter_allow_removes_blacklist_entries(self) -> None:
+        """user: Given a reporter /allows a blacklisted member, Then the account and source entries are removed."""
+        self.telegram.messages.add(103)
+        self.telegram.statuses = {42: "restricted"}
+        await self.seed_blacklist()
+        response = await self.dispatch(allow_update(709, 103, 99))
+        self.assertEqual(response.status, 200)
+        self.assertEqual(len(self.restored()), 1)
+        self.assertEqual(await self.blacklist_counts(), (0, 0))
+        self.assertTrue(any("removed from D1 blacklists" in text for text in self.reply_texts()))

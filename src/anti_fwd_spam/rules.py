@@ -100,15 +100,17 @@ DISABLED_GROUP_NOTICE_RE = re.compile(
     r"|[^。\uff01\uff1f\n]{0,80}点击\s*(?:新地址|新链接|https?://\S+))"
 )
 
+# A message consisting solely of @bot handles, each 5-32 ASCII characters
+# including the bot suffix. Mentions inside real text are not signatures.
+BOT_MENTION_ONLY_RE = re.compile(r"\A\s*@[A-Za-z0-9_]{2,29}(?i:bot)(?:\s+@[A-Za-z0-9_]{2,29}(?i:bot))*\s*\Z")
+
 # Whole-message signatures stay out of shared contact and profile checks.
 AUTHORED_SPAM_PATTERNS = (
     DISABLED_GROUP_NOTICE_RE,
     # Numeric /start payload plus multiple bot handles, each 5-32 ASCII characters
     # including the bot suffix. Ordinary commands and mentions are not signatures.
     re.compile(r"\A\s*/start\s+\d+(?:\s+@[A-Za-z0-9_]{2,29}(?i:bot)){2,}\s*\Z"),
-    # A message consisting solely of @bot handles, each 5-32 ASCII characters
-    # including the bot suffix. Mentions inside real text are not signatures.
-    re.compile(r"\A\s*@[A-Za-z0-9_]{2,29}(?i:bot)(?:\s+@[A-Za-z0-9_]{2,29}(?i:bot))*\s*\Z"),
+    BOT_MENTION_ONLY_RE,
     re.compile(r"\A承接广\*告\*戴\*發\uff0c十万精准各行业裙\s+包效果 包效果 @[A-Za-z0-9_]{5,32}\s*\Z"),
 )
 

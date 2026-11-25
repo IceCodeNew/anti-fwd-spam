@@ -207,43 +207,52 @@ class ReportStore:
             )
         return row is not None
 
-    async def complete_allow(self, bot_id: int, identifier: int, update_id: int) -> bool:
-        """Atomically remove rules only while this confirmed unban is still the latest account decision."""
+    async def complete_allow(
+        self, bot_id: int, identifier: int, update_id: int, *, remove_blacklist: bool = True
+    ) -> bool:
+        """Atomically finish an allow only while this confirmed unban is still the latest account decision.
+
+        A reporter-issued allow also removes the account and source blacklist
+        entries; an administrator-issued allow records the same decision but
+        leaves those entries in place.
+        """
         key = (bot_id, update_id)
         with storage_errors():
-            await self.database.batch(
-                [
-                    self.database.prepare(
-                        "UPDATE reports SET moderation_result = ? WHERE bot_id = ? AND update_id = ? "
-                        "AND subject_id = 0 AND moderation_result = ? AND response_status IS NULL "
-                        "AND NOT EXISTS (SELECT 1 FROM reports AS n WHERE n.bot_id = ? AND n.update_id > ? AND "
-                        "((n.command_source_id = ? AND (n.moderation_result IS NULL "
-                        "OR n.moderation_result NOT IN (?, ?, ?, ?))) OR "
-                        "((n.subject_id = ? OR (n.subject_id = 0 AND "
-                        "COALESCE(json_extract(n.raw_update, '$.message.reply_to_message.from.id'), "
-                        "json_extract(n.raw_update, '$.edited_message.reply_to_message.from.id')) = ?)) "
-                        "AND (n.ban_claimed = 1 OR n.moderation_result = ? OR n.moderation_result LIKE '%; banned')))) "
-                        "AND NOT EXISTS (SELECT 1 FROM automatic_mutes AS m WHERE m.bot_id = reports.bot_id "
-                        "AND m.chat_id = json_extract(reports.raw_update, '$.message.chat.id') "
-                        "AND m.user_id = reports.command_source_id AND m.update_id > reports.update_id) "
-                        "AND NOT EXISTS (SELECT 1 FROM reports AS newer WHERE newer.bot_id = reports.bot_id "
-                        "AND newer.subject_id = 0 AND newer.command_source_id = reports.command_source_id "
-                        "AND newer.update_id > reports.update_id "
-                        "AND json_extract(newer.raw_update, '$.message.chat.id') = "
-                        "json_extract(reports.raw_update, '$.message.chat.id') "
-                        "AND newer.moderation_result IN (?, ?, ?, ?))"
-                    ).bind(
-                        ALLOWED,
-                        *key,
-                        UNBANNED,
-                        *key,
-                        identifier,
-                        *ALLOW_MARKERS,
-                        identifier,
-                        identifier,
-                        BANNED,
-                        *ALLOW_MARKERS,
-                    ),
+            statements = [
+                self.database.prepare(
+                    "UPDATE reports SET moderation_result = ? WHERE bot_id = ? AND update_id = ? "
+                    "AND subject_id = 0 AND moderation_result = ? AND response_status IS NULL "
+                    "AND NOT EXISTS (SELECT 1 FROM reports AS n WHERE n.bot_id = ? AND n.update_id > ? AND "
+                    "((n.command_source_id = ? AND (n.moderation_result IS NULL "
+                    "OR n.moderation_result NOT IN (?, ?, ?, ?))) OR "
+                    "((n.subject_id = ? OR (n.subject_id = 0 AND "
+                    "COALESCE(json_extract(n.raw_update, '$.message.reply_to_message.from.id'), "
+                    "json_extract(n.raw_update, '$.edited_message.reply_to_message.from.id')) = ?)) "
+                    "AND (n.ban_claimed = 1 OR n.moderation_result = ? OR n.moderation_result LIKE '%; banned')))) "
+                    "AND NOT EXISTS (SELECT 1 FROM automatic_mutes AS m WHERE m.bot_id = reports.bot_id "
+                    "AND m.chat_id = json_extract(reports.raw_update, '$.message.chat.id') "
+                    "AND m.user_id = reports.command_source_id AND m.update_id > reports.update_id) "
+                    "AND NOT EXISTS (SELECT 1 FROM reports AS newer WHERE newer.bot_id = reports.bot_id "
+                    "AND newer.subject_id = 0 AND newer.command_source_id = reports.command_source_id "
+                    "AND newer.update_id > reports.update_id "
+                    "AND json_extract(newer.raw_update, '$.message.chat.id') = "
+                    "json_extract(reports.raw_update, '$.message.chat.id') "
+                    "AND newer.moderation_result IN (?, ?, ?, ?))"
+                ).bind(
+                    ALLOWED,
+                    *key,
+                    UNBANNED,
+                    *key,
+                    identifier,
+                    *ALLOW_MARKERS,
+                    identifier,
+                    identifier,
+                    BANNED,
+                    *ALLOW_MARKERS,
+                ),
+            ]
+            if remove_blacklist:
+                statements += [
                     self.database.prepare(
                         "DELETE FROM blacklisted_users WHERE bot_id = ? AND user_id = ? AND EXISTS "
                         "(SELECT 1 FROM reports WHERE bot_id = ? AND update_id = ? AND subject_id = 0 "
@@ -254,21 +263,23 @@ class ReportStore:
                         "(SELECT 1 FROM reports WHERE bot_id = ? AND update_id = ? AND subject_id = 0 "
                         "AND moderation_result = ? AND response_status IS NULL)"
                     ).bind(identifier, *key, ALLOWED),
-                    self.database.prepare(
-                        "UPDATE model_tasks SET phase = 'done', input_json = NULL, generation = generation + 1, "
-                        "lease_until = 0 WHERE bot_id = ? AND json_extract(input_json, '$.target.from.id') = ? "
-                        "AND (json_extract(input_json, '$.update_id') IS NULL "
-                        "OR json_extract(input_json, '$.update_id') < ?) "
-                        "AND EXISTS (SELECT 1 FROM reports WHERE bot_id = ? AND update_id = ? AND subject_id = 0 "
-                        "AND moderation_result = ? AND response_status IS NULL)"
-                    ).bind(bot_id, identifier, update_id, *key, ALLOWED),
-                    self.database.prepare(
-                        "UPDATE reports SET response_status = 200, response_body = ? "
-                        "WHERE bot_id = ? AND update_id = ? AND subject_id = 0 AND moderation_result = ? "
-                        "AND response_status IS NULL"
-                    ).bind(ALLOWED, *key, ALLOWED),
-                ],
-            )
+                ]
+            statements += [
+                self.database.prepare(
+                    "UPDATE model_tasks SET phase = 'done', input_json = NULL, generation = generation + 1, "
+                    "lease_until = 0 WHERE bot_id = ? AND json_extract(input_json, '$.target.from.id') = ? "
+                    "AND (json_extract(input_json, '$.update_id') IS NULL "
+                    "OR json_extract(input_json, '$.update_id') < ?) "
+                    "AND EXISTS (SELECT 1 FROM reports WHERE bot_id = ? AND update_id = ? AND subject_id = 0 "
+                    "AND moderation_result = ? AND response_status IS NULL)"
+                ).bind(bot_id, identifier, update_id, *key, ALLOWED),
+                self.database.prepare(
+                    "UPDATE reports SET response_status = 200, response_body = ? "
+                    "WHERE bot_id = ? AND update_id = ? AND subject_id = 0 AND moderation_result = ? "
+                    "AND response_status IS NULL"
+                ).bind(ALLOWED, *key, ALLOWED),
+            ]
+            await self.database.batch(statements)
             row = (
                 await self.database.prepare(
                     "SELECT response_status FROM reports WHERE bot_id = ? AND update_id = ? AND subject_id = 0"

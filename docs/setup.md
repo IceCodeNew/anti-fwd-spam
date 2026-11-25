@@ -36,7 +36,7 @@ mise exec -- uv run pywrangler d1 migrations apply anti-fwd-spam-reports --remot
 
 ## Worker secrets
 
-Keep the bot token in the current shell only until webhook registration is complete. The reporting allowlist accepts user IDs and sender-chat IDs separated by commas; an empty allowlist disables direct report moderation, source registration, and `/allow` recovery.
+Keep the bot token in the current shell only until webhook registration is complete. The reporting allowlist accepts user IDs and sender-chat IDs separated by commas; an empty allowlist disables direct report moderation and source registration; `/allow` recovery then remains available to the affected supergroup's administrators.
 
 First obtain trusted user IDs by privately messaging the new bot, then query updates:
 

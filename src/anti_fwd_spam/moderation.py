@@ -9,7 +9,7 @@ from dataclasses import replace
 from http import HTTPStatus
 from typing import TYPE_CHECKING
 
-from .actions import Actions, AppResponse, BanTarget, user_id
+from .actions import ADMIN_STATUSES, Actions, AppResponse, BanTarget, user_id
 from .constants import MAX_TELEGRAM_ID, MODEL_CONTENT_FIELDS
 from .evidence import MESSAGE_WINDOW_SECONDS, EvidenceError, PendingReview, ReportStore
 from .model import join_model_input, model_input, profile_ids
@@ -233,7 +233,8 @@ class Moderator:
                     except EvidenceError:
                         return AppResponse(503, MODEL_TASK_STORAGE_FAILURE)
                 return response
-        return await self.process_update(update)
+        response = await self._admin_allow(update)
+        return response if response is not None else await self.process_update(update)
 
     async def process_update(self, update: TelegramUpdate) -> AppResponse:
         """Route a group message through account, source, report and content policies."""
@@ -288,6 +289,37 @@ class Moderator:
                 response = source_response
         return response
 
+    async def _own_source_command(
+        self,
+        update: TelegramUpdate,
+        *,
+        argument: str,
+        reply_report: bool,
+        target: dict[str, object] | None,
+        identity: str | None,
+    ) -> AppResponse | None:
+        """Refuse a /bs that targets the issuer's own message or account.
+
+        Registering or reporting yourself would blacklist and ban the person
+        using the tool, so the command is acknowledged and otherwise ignored.
+        """
+        issuer = reporter_id(update)
+        if reply_report and target is not None and user_id(target, include_bots=True) == issuer:
+            return await self._finish_command(
+                update,
+                "Your own message cannot be reported or registered as a source.",
+                AppResponse(200, "command ignored"),
+            )
+        if not reply_report and identity is None and argument:
+            resolved = await resolve_source(self.fetcher, self.config.bot_token, argument.removeprefix("@"))
+            if resolved is not None and resolved == issuer:
+                return await self._finish_command(
+                    update,
+                    "Your own account cannot be registered as a source.",
+                    AppResponse(200, "command ignored"),
+                )
+        return None
+
     async def source_command(self, update: TelegramUpdate) -> AppResponse:
         """Register sources, moderate bare replies, then acknowledge and clean the command."""
         argument = command_argument(update.message, self.bot_username, "/bs")
@@ -299,6 +331,11 @@ class Moderator:
             return AppResponse(400, "invalid command")
         set_name = sticker_set_name(target) if reply_report and target is not None else sticker_set_argument(argument)
         identity = set_name or (sticker_unique_id(target) if reply_report and target is not None else None)
+        ignored = await self._own_source_command(
+            update, argument=argument, reply_report=reply_report, target=target, identity=identity
+        )
+        if ignored is not None:
+            return ignored
         replies = []
         if identity is not None:
             now = int(time.time())
@@ -330,6 +367,29 @@ class Moderator:
         if response.needs_confirmation:
             reply += "\nBan result is uncertain; check membership before submitting a new report."
         return await self._finish_command(update, reply, response)
+
+    async def _admin_allow(self, update: TelegramUpdate) -> AppResponse | None:
+        """Run /allow for a supergroup administrator who is not a listed reporter.
+
+        Administrators can already lift restrictions in Telegram itself; the
+        command additionally removes this bot's blacklist entries and records
+        the allow fence a manual restoration cannot write. Every other
+        command stays limited to listed reporters.
+        """
+        if (
+            update.edited
+            or update.chat_type != "supergroup"
+            or command_argument(update.message, self.bot_username, "/allow") is None
+        ):
+            return None
+        identifier = user_id(update.message)
+        if identifier is None:
+            return None
+        try:
+            status = await self.actions.member_status(update.chat_id, identifier)
+        except TelegramError:
+            return None
+        return await self.allow_command(update) if status in ADMIN_STATUSES else None
 
     async def allow_command(self, update: TelegramUpdate) -> AppResponse:
         """Remove this account's blacklist rules and lift its ban in the current supergroup."""
@@ -407,6 +467,8 @@ class Moderator:
         target = reply_target(update.message)
         if update.update_id is None or target_info is None or target_info.message_id is None or target is None:
             return AppResponse(400, "invalid report target")
+        if target_info.user_id is not None and target_info.user_id == reporter_id(update):
+            return AppResponse(200, "report ignored")
         key = (self.actions.bot_id, update.update_id)
         now = int(time.time())
         await self.store.save(key, update.raw_json, now, 0)
@@ -533,7 +595,11 @@ class Moderator:
                 whole_set=sticker.get("whole_set") is True,
             )
         source = payload.get("source_id")
-        source_id = await self._register_source(review.update_id, raw_json, source) if type(source) is int else None
+        source_id = (
+            await self._register_source(review.update_id, raw_json, source)
+            if type(source) is int and source != reporter_id(update)
+            else None
+        )
         return await self.report(update, source_id=source_id, remove_report=True)
 
     async def _finish_command(self, update: TelegramUpdate, reply: str, response: AppResponse) -> AppResponse:
@@ -833,6 +899,10 @@ class Moderator:
         if source_id is not None and source_id != target.user_id:
             identifier = source_id if update.chat_type == "supergroup" else None
             subjects.append((replace(target, user_id=identifier, username=None), source_id))
+        reporter = reporter_id(update)
+        subjects = [(subject, progress_id) for subject, progress_id in subjects if subject.user_id != reporter]
+        if not subjects:
+            return AppResponse(200, "report ignored")
         response = AppResponse(200, "report recorded")
         needs_confirmation = False
         for subject, progress_id in subjects:

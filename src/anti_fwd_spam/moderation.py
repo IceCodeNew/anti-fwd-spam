@@ -15,6 +15,7 @@ from .evidence import MESSAGE_WINDOW_SECONDS, EvidenceError, PendingReview, Repo
 from .model import join_model_input, model_input, profile_ids
 from .policy import (
     matches_spam_pattern,
+    only_mentions_bot,
     parse_update,
     reply_target,
     sticker_set_name,
@@ -657,7 +658,7 @@ class Moderator:
         sender = message.get("from")
         bot_sender = isinstance(sender, dict) and sender.get("is_bot") is True and "sender_chat" not in message
         identifier = user_id(message, include_bots=True)
-        pattern_match = matches_spam_pattern(message)
+        pattern_match = matches_spam_pattern(message) and not only_mentions_bot(message, self.bot_username)
         established = (
             identifier is not None
             and not bot_sender

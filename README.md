@@ -44,7 +44,7 @@ The complete copy-pasteable setup is in [Deployment setup](docs/setup.md). Start
 - **Register a source:** send `/bs @source_bot` from a trusted identity. Only authorized `/bs` commands add sources to the global blacklist, which also covers direct and guest bot messages.
 - **Block and report a bot source:** reply with bare `/bs` to a direct bot message, or to an inline message when both its sender and source should be handled.
 - **Register a sticker set:** send its complete `https://t.me/addstickers/<set_name>` URL with `/bs`.
-- **Undo a ban or mute:** from a trusted identity in the affected supergroup, send `/allow @username` or `/allow <account ID>` to remove its blacklist entries and restore access. See [Operations](docs/operations.md) for username lookup limits and other false-positive recovery.
+- **Undo a ban or mute:** a listed reporter sends `/allow @username` or `/allow <account ID>` in the affected supergroup to remove its blacklist entries and restore access; an administrator of that supergroup can also send it to restore access there only, leaving the blacklist entries in place. See [Operations](docs/operations.md) for username lookup limits and other false-positive recovery.
 
 Reporting identity, administrator protection, source attribution, sticker handling, and false-positive recovery are defined by [the behavior contract](docs/behavior.md).
 

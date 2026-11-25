@@ -147,8 +147,10 @@ class Actions:
             response = AppResponse(503, "mute storage unavailable; retry pending")
         return response
 
-    async def allow_account(self, update: TelegramUpdate, identifier: int) -> AppResponse:
-        """Unban a pinned account once, then atomically remove its retained blacklist entries."""
+    async def allow_account(
+        self, update: TelegramUpdate, identifier: int, *, global_cleanup: bool = True
+    ) -> AppResponse:
+        """Unban a pinned account once, then atomically finish the allow; global allows remove blacklist entries."""
         if update.update_id is None or update.edited or update.chat_type != "supergroup" or identifier <= 0:
             return AppResponse(400, "invalid allow target")
         key = (self.bot_id, update.update_id)
@@ -156,14 +158,22 @@ class Actions:
             saved = await self.store.save(key, update.raw_json, int(time.time()), 0)
             if saved.status is not None:
                 return AppResponse(saved.status, saved.body)
-            return await self._complete_allow(update, identifier, saved, update.update_id)
+            return await self._complete_allow(
+                update, identifier, saved, update.update_id, global_cleanup=global_cleanup
+            )
         except TelegramError:
             return AppResponse(503, "unban failed; retry pending")
         except EvidenceError:
             return AppResponse(503, "allow storage unavailable; retry pending")
 
     async def _complete_allow(
-        self, update: TelegramUpdate, identifier: int, saved: StoredReport, update_id: int
+        self,
+        update: TelegramUpdate,
+        identifier: int,
+        saved: StoredReport,
+        update_id: int,
+        *,
+        global_cleanup: bool = True,
     ) -> AppResponse:
         key = (self.bot_id, update_id)
         if await self.store.command_source(*key) != identifier or saved.moderation_result not in ALLOW_MARKERS:
@@ -177,7 +187,7 @@ class Actions:
             if response is not None:
                 return response
         if await self._allow_superseded(identifier, update.chat_id, update_id) or not await self.store.complete_allow(
-            self.bot_id, identifier, update_id
+            self.bot_id, identifier, update_id, remove_blacklist=global_cleanup
         ):
             return AppResponse(200, "allow superseded by newer moderation; check membership", needs_confirmation=True)
         return AppResponse(200, ALLOWED)

@@ -18,14 +18,19 @@ from .constants import (
 )
 from .rules import (
     AUTHORED_SPAM_PATTERNS,
+    BOT_MENTION_ONLY_RE,
     REPEATED_SYMBOLS_RE,
     SEXUAL_ENDORSEMENT_RE,
     SEXUAL_RESOURCE_RE,
     SPAM_PATTERNS,
 )
 
+_AUTHORED_WITHOUT_MENTION_TEMPLATE = tuple(
+    pattern for pattern in AUTHORED_SPAM_PATTERNS if pattern is not BOT_MENTION_ONLY_RE
+)
 
-def matches_spam_pattern(message: dict[str, object]) -> bool:
+
+def matches_spam_pattern(message: dict[str, object], *, mention_template: bool = True) -> bool:
     """Check authored fields and the narrow, source-separated sexual endorsement rule."""
     texts = _pattern_texts(message)
     if _endorses_sexual_resource(message) or any(matches_spam_text(text) for text in texts):
@@ -43,10 +48,29 @@ def matches_spam_pattern(message: dict[str, object]) -> bool:
         )
     if REPEATED_SYMBOLS_RE.search("\n".join(texts)):
         return True
+    authored = AUTHORED_SPAM_PATTERNS if mention_template else _AUTHORED_WITHOUT_MENTION_TEMPLATE
     return any(
-        isinstance(text := message.get(field), str) and any(pattern.search(text) for pattern in AUTHORED_SPAM_PATTERNS)
+        isinstance(text := message.get(field), str) and any(pattern.search(text) for pattern in authored)
         for field in ("text", "caption")
     )
+
+
+def only_mentions_bot(message: dict[str, object], bot_username: str) -> bool:
+    """Whether every content field consists solely of mentions of this bot.
+
+    Members summon this bot by mentioning it, typically to report a message.
+    Such a message matches the mention-only template as a summon rather than
+    as authored spam, even when the report's target is already gone.
+    """
+    handle = f"@{bot_username}".casefold()
+    texts = [text for field in ("text", "caption") if isinstance(text := message.get(field), str)]
+    if not texts:
+        return False
+    for text in texts:
+        tokens = text.split()
+        if not tokens or any(token.casefold() != handle for token in tokens):
+            return False
+    return True
 
 
 def _endorses_sexual_resource(message: dict[str, object]) -> bool:
